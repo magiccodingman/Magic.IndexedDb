@@ -106,6 +106,7 @@ public class Person
     public string SecretDecrypted { get; set; }
 }
 ```
+I highly suggest you always add the string parameters as that sets the IndexedDb column name. By default it'll use the C# class property name. But You should always have some very unique and static set string for the attribute. That way if/when you change the c# property names, class names, or anything, the schema will not care because the code has smart logic to differentiate the C# class property names and the IndexedDb column names that was set in your attribute. This way you can freely change any C# class properties without ever caring about needing to create migration code. You can additionally add or remove columns freely without issue.
 
 ## Attributes
 
