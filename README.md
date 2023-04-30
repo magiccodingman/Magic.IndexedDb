@@ -169,6 +169,9 @@ These MagicQuery methods allow you to build complex queries similar to standard 
 To start using MagicIndexedDb, you need to create a `DbManager` instance for your specific database.
 
 ```csharp
+private List<Person> allPeople { get; set; } = new List<Person>();
+private IEnumerable<Person> WhereExample { get; set; } = Enumerable.Empty<Person>();
+
 protected override async Task OnAfterRenderAsync(bool firstRender)
 {
     if (firstRender)
