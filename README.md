@@ -190,7 +190,7 @@ The `Where` method supports the following standard operations when defining a pr
 Example usage:
 
 ```csharp
-var evenNumbers = numbers.Where(n => n % 2 == 0);
+var evenNumbers = numbers.Where(n => n > 3);
 ```
 
 ## String Comparison Functions
