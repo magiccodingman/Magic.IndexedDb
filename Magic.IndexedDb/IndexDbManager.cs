@@ -695,17 +695,22 @@ namespace Magic.IndexedDb
             return JsonConvert.SerializeObject(orConditions, serializerSettings);
         }
 
+        public class QuotaUsage
+        {
+            public long quota { get; set; }
+            public long usage { get; set; }
+        }
+
         /// <summary>
         /// Returns Mb
         /// </summary>
         /// <returns></returns>
         public async Task<(double quota, double usage)> GetStorageEstimateAsync()
         {
-            //var storageInfo = await _jsRuntime.InvokeAsync<(long, long)>("storageInterop.getStorageEstimate");
-            var storageInfo = await CallJavascriptNoTransaction<(long, long)>(IndexedDbFunctions.GET_STORAGE_ESTIMATE);
+            var storageInfo = await CallJavascriptNoTransaction<QuotaUsage>(IndexedDbFunctions.GET_STORAGE_ESTIMATE);
 
-            double quotaInMB = ConvertBytesToMegabytes(storageInfo.Item1);
-            double usageInMB = ConvertBytesToMegabytes(storageInfo.Item2);
+            double quotaInMB = ConvertBytesToMegabytes(storageInfo.quota);
+            double usageInMB = ConvertBytesToMegabytes(storageInfo.usage);
             return (quotaInMB, usageInMB);
         }
 

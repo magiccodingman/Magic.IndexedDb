@@ -1,7 +1,42 @@
 ﻿@page "/"
 @inject IMagicDbFactory _MagicDb
 
-<p>Storage: @storageQuota - @storageUsage</p>
+@{
+    string storageQuotaText;
+    string storageUsageText;
+    if (storageQuota >= 1024)
+    {
+        storageQuota = storageQuota / 1024.0;
+        // Round the value to two decimal places
+        storageQuota = Math.Round(storageQuota, 2);
+        // Display the value in GB
+        storageQuotaText = $"{storageQuota} GB";
+    }
+    else
+    {
+        // Display the value in MB
+        storageQuotaText = $"{Math.Round(storageQuota, 2)} MB";
+    }
+
+    if (storageUsage >= 1024)
+    {
+        storageUsage = storageUsage / 1024.0;
+        // Round the value to two decimal places
+        storageUsage = Math.Round(storageUsage, 2);
+        // Display the value in GB
+        storageUsageText = $"{storageUsage} GB";
+    }
+    else
+    {
+        // Display the value in MB
+        storageUsageText = $"{Math.Round(storageUsage, 2)} MB";
+    }
+
+    // Display the storage size on the front-end
+    <p>Storage Used: @storageUsageText</p>
+    <p>Storage Quota: @storageQuotaText</p>
+
+}
 
 <PageTitle>Example</PageTitle>
 
@@ -34,7 +69,7 @@
                         @person.Secret
                     </div>
                 </td>
-                
+
             </tr>
         }
     </tbody>
