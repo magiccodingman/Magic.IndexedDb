@@ -1,4 +1,4 @@
-# Magic.IndexedDb
+# Magic IndexedDb
 
 This open source library provides an IndexedDb wrapper for C# and Blazor WebAssembly applications. It simplifies working with IndexedDb and makes it similar to using LINQ to SQL.
 
