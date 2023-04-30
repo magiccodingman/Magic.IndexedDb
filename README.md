@@ -271,7 +271,7 @@ In this example, the query returns `Person` records where the `Name` property st
 These examples demonstrate the basics of using MagicIndexedDb in a Blazor WebAssembly application. You can also perform other operations, such as updating and deleting records, by using the appropriate methods provided by the `DbManager`.
 
 
-##Acknowledgements
+## Acknowledgements
 
 Thank you to nwestfall for his BlazorDB work, which was a fork of Blazor.IndexedDB.Framework by Reshiru. My branch was a direct fork off of the BlazorDB work as I liked the direction.
 https://github.com/nwestfall/BlazorDB
