@@ -120,9 +120,30 @@ var manager = await _MagicDb.GetDbManager(DbNames.Client);
 2. Perform operations with the `DbManager`, such as adding, updating, deleting, and querying data.
 
 
-MagicIndexedDb is an open-source IndexedDb wrapper for C# designed specifically for Blazor WebAssembly applications. It simplifies the use of IndexedDb and provides a LINQ to SQL-like experience. This document provides detailed examples of how to use MagicIndexedDb in your projects.
+Here's a grid-style documentation for the methods:
 
-## Example
+| Method | Description |
+| ------ | ----------- |
+| `AddRange<T>(IEnumerable<T> records)` | Bulk add records to a table. |
+| `ClearTableAsync(string storeName)` | Clear all records in a table. |
+| `DeleteDbAsync(string dbName)` | Delete a database by name. |
+| `Add<T>(T record, Action<BlazorDbEvent> action)` | Add a single record to a table. |
+| `AddRange<T>(IEnumerable<T> records, Action<BlazorDbEvent> action)` | Bulk add records to a table with an action callback. |
+| `ClearTable(string storeName, Action<BlazorDbEvent> action)` | Clear all records in a table with an action callback. |
+| `ClearTable<T>(Action<BlazorDbEvent> action)` | Clear all records in a table of type `T` with an action callback. |
+| `Delete<T>(T item, Action<BlazorDbEvent> action)` | Delete a record of type `T` with an action callback. |
+| `DeleteDb(string dbName, Action<BlazorDbEvent> action)` | Delete a database by name with an action callback. |
+| `OpenDb(Action<BlazorDbEvent> action)` | Open a database with an action callback. |
+| `Update<T>(T item, Action<BlazorDbEvent> action)` | Update a record of type `T` with an action callback. |
+| `UpdateRange<T>(IEnumerable<T> items, Action<BlazorDbEvent> action)` | Bulk update records of type `T` with an action callback. |
+| `GetAll<T>()` | Get all records of type `T` from a table. |
+| `DeleteRange<TResult>(IEnumerable<TResult> items)` | Bulk delete records of type `TResult`. |
+| `Decrypt(string EncryptedValue)` | Decrypt an encrypted string. |
+| `GetById<TResult>(object key)` | Get a record of type `TResult` by its primary key. |
+| `Where<T>(Expression<Func<T, bool>> predicate)` | Query method to allow complex query capabilities for records of type `T`. |
+
+
+## Examples
 
 To start using MagicIndexedDb, you need to create a `DbManager` instance for your specific database.
 
