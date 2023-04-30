@@ -156,6 +156,9 @@ Here's a grid-style documentation for the methods:
 | `GetById<TResult>(object key)` | Get a record of type `TResult` by its primary key. |
 | `Where<T>(Expression<Func<T, bool>> predicate)` | Query method to allow complex query capabilities for records of type `T`. |
 
+# Where Query Capabilities Documentation
+
+This documentation explains the various query capabilities available in the `Where` method. The `Where` method provides a way to filter collections or sequences based on specific conditions. It allows the use of standard operations, string comparison functions, and case insensitive string comparisons.
 
 ## Where Method MagicQuery syntax
 
@@ -169,10 +172,6 @@ Here's a grid-style documentation for the methods:
 | `Execute()` | Executes the MagicQuery and returns the results as an `IEnumerable<T>`. |
 
 These MagicQuery methods allow you to build complex queries similar to standard LINQ in C#. Remember to call the `Execute` method at the end of your MagicQuery to execute the query and retrieve the results.
-
-# Where Query Capabilities Documentation
-
-This documentation explains the various query capabilities available in the `Where` method. The `Where` method provides a way to filter collections or sequences based on specific conditions. It allows the use of standard operations, string comparison functions, and case insensitive string comparisons.
 
 ## Standard Operations
 
