@@ -2,7 +2,7 @@
 
 This open source library provides an IndexedDb wrapper for C# and Blazor WebAssembly applications. It simplifies working with IndexedDb and makes it similar to using LINQ to SQL.
 
-Thank you to nwestfall for his BlazorDB work, which was a frok of Blazor.IndexedDB.Framework by Reshiru
+Thank you to nwestfall for his BlazorDB work, which was a fork of Blazor.IndexedDB.Framework by Reshiru
 
 https://github.com/nwestfall/BlazorDB
 
