@@ -18,39 +18,6 @@ This open source library provides an IndexedDb wrapper for C# and Blazor WebAsse
 2. Add the following code to your `Program.cs` file:
 
 ```csharp
-string EncryptionKey = "zQfTuWnZi8u7x!A%C*F-JaBdRlUkXp2l";
-
-builder.Services.AddBlazorDB(options =>
-{
-    options.Name = DbNames.Client;
-    options.Version = "1";
-    options.EncryptionKey = EncryptionKey;
-    options.StoreSchemas = SchemaHelper.GetAllSchemas(DbNames.Client);
-    // Add your migrations here, if any
-});
-```
-
-3. Add the following scripts to the end of the body tag in your `Index.html`:
-
-```html
-<script src="_content/Magic.IndexedDb/dexie.min.js"></script>
-<script src="_content/Magic.IndexedDb/blazorDb.js"></script>
-```
-
-## Usage
-
-### Setting up the project
-
-1. Add the following to your _Import.razor:
-
-```csharp
-@using Magic.IndexedDb
-@inject IMagicDbFactory _MagicDb
-```
-
-2. Add the following to your Programs.cs:
-```csharp
-
 /*
  * This is an example encryption key. You must make your own 128 bit or 256 bit 
  * key! Do not use this example encryption key that I've provided here as that's
@@ -92,6 +59,20 @@ builder.Services.AddBlazorDB(options =>
     }
 };
 });
+```
+
+3. Add the following scripts to the end of the body tag in your `Index.html`:
+
+```html
+<script src="_content/Magic.IndexedDb/dexie.min.js"></script>
+<script src="_content/Magic.IndexedDb/blazorDb.js"></script>
+```
+
+4. Add the following to your _Import.razor:
+
+```csharp
+@using Magic.IndexedDb
+@inject IMagicDbFactory _MagicDb
 ```
 
 ### Creating a class with Magic attributes
