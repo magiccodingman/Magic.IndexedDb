@@ -9,7 +9,8 @@ namespace IndexDb.Example.Pages
 
         private IEnumerable<Person> WhereExample { get; set; } = Enumerable.Empty<Person>();
 
-
+        private double storageQuota { get; set; }
+        private double storageUsage { get; set; }
         protected override async Task OnAfterRenderAsync(bool firstRender)
         {
             if (firstRender)
@@ -37,6 +38,12 @@ namespace IndexDb.Example.Pages
 
                         await manager.AddRange(persons);
                     }
+
+
+                    //var StorageLimit = await manager.GetStorageEstimateAsync();
+                    var storageInfo = await manager.GetStorageEstimateAsync();
+                    storageQuota = storageInfo.quota;
+                    storageUsage = storageInfo.usage;
 
                     var allPeopleDecrypted = await manager.GetAll<Person>();
 

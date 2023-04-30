@@ -17,7 +17,8 @@ namespace Magic.IndexedDb
         public const string WHERE = "where";
         public const string WHEREV2 = "wherev2";
         public const string BULK_DELETE = "bulkDelete";
+        public const string GET_STORAGE_ESTIMATE = "getStorageEstimate";
 
-        
+
     }
 }

@@ -1,9 +1,12 @@
 ﻿@page "/"
 @inject IMagicDbFactory _MagicDb
 
+<p>Storage: @storageQuota - @storageUsage</p>
+
 <PageTitle>Example</PageTitle>
 
 <h3>People In IndexedDb!</h3>
+
 <table class="table">
     <thead>
         <tr>

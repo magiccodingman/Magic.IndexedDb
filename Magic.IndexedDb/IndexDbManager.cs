@@ -695,6 +695,26 @@ namespace Magic.IndexedDb
             return JsonConvert.SerializeObject(orConditions, serializerSettings);
         }
 
+        /// <summary>
+        /// Returns Mb
+        /// </summary>
+        /// <returns></returns>
+        public async Task<(double quota, double usage)> GetStorageEstimateAsync()
+        {
+            //var storageInfo = await _jsRuntime.InvokeAsync<(long, long)>("storageInterop.getStorageEstimate");
+            var storageInfo = await CallJavascriptNoTransaction<(long, long)>(IndexedDbFunctions.GET_STORAGE_ESTIMATE);
+
+            double quotaInMB = ConvertBytesToMegabytes(storageInfo.Item1);
+            double usageInMB = ConvertBytesToMegabytes(storageInfo.Item2);
+            return (quotaInMB, usageInMB);
+        }
+
+
+        private static double ConvertBytesToMegabytes(long bytes)
+        {
+            return (double)bytes / (1024 * 1024);
+        }
+
 
         public async Task<IEnumerable<T>> GetAll<T>() where T : class
         {
@@ -868,6 +888,11 @@ namespace Magic.IndexedDb
                 else
                     RaiseEvent(transaction, failed, message);
             }
+        }
+
+        async Task<TResult> CallJavascriptNoTransaction<TResult>(string functionName, params object[] args)
+        {
+            return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", args);
         }
 
         async Task<TResult> CallJavascript<TResult>(string functionName, Guid transaction, params object[] args)

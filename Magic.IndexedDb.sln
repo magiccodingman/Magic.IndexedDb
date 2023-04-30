@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.33502.453
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Magic.IndexedDb", "Magic.IndexedDb\Magic.IndexedDb.csproj", "{A92429BE-E180-4150-BFC7-6C09558978D0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Magic.IndexedDb", "Magic.IndexedDb\Magic.IndexedDb.csproj", "{A92429BE-E180-4150-BFC7-6C09558978D0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IndexDb.Example", "IndexDb.Example\IndexDb.Example.csproj", "{4607CA8C-3AE3-4288-A52A-B3887B254657}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IndexDb.Example", "IndexDb.Example\IndexDb.Example.csproj", "{4607CA8C-3AE3-4288-A52A-B3887B254657}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,11 +14,9 @@ Global
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{A92429BE-E180-4150-BFC7-6C09558978D0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A92429BE-E180-4150-BFC7-6C09558978D0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A92429BE-E180-4150-BFC7-6C09558978D0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A92429BE-E180-4150-BFC7-6C09558978D0}.Release|Any CPU.Build.0 = Release|Any CPU
 		{4607CA8C-3AE3-4288-A52A-B3887B254657}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{4607CA8C-3AE3-4288-A52A-B3887B254657}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4607CA8C-3AE3-4288-A52A-B3887B254657}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4607CA8C-3AE3-4288-A52A-B3887B254657}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection

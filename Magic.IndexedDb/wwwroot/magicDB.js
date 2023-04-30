@@ -579,6 +579,20 @@ window.magicBlazorDB = {
                 });
             });
         });
+    },
+    getStorageEstimate: async () => {
+        if (navigator.storage && navigator.storage.estimate) {
+            const estimate = await navigator.storage.estimate();
+            return {
+                quota: estimate.quota,
+                usage: estimate.usage
+            };
+        } else {
+            return {
+                quota: -1,
+                usage: -1
+            };
+        }
     }
 }
 
