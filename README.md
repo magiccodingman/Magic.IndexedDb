@@ -72,7 +72,7 @@ builder.Services.AddBlazorDB(options =>
 
 ```html
 <script src="_content/Magic.IndexedDb/dexie.min.js"></script>
-<script src="_content/Magic.IndexedDb/magicDb.js"></script>
+<script src="_content/Magic.IndexedDb/magicDB.js"></script>
 ```
 
 4. Add the following to your _Import.razor:
