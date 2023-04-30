@@ -118,3 +118,78 @@ var manager = await _MagicDb.GetDbManager(DbNames.Client);
 ```
 
 2. Perform operations with the `DbManager`, such as adding, updating, deleting, and querying data.
+
+
+MagicIndexedDb is an open-source IndexedDb wrapper for C# designed specifically for Blazor WebAssembly applications. It simplifies the use of IndexedDb and provides a LINQ to SQL-like experience. This document provides detailed examples of how to use MagicIndexedDb in your projects.
+
+## Example
+
+To start using MagicIndexedDb, you need to create a `DbManager` instance for your specific database.
+
+```csharp
+protected override async Task OnAfterRenderAsync(bool firstRender)
+{
+    if (firstRender)
+    {
+        try
+        {
+            var manager = await _MagicDb.GetDbManager(DbNames.Client);
+
+            // Your code here
+        }
+        catch (Exception ex)
+        {
+            // Handle exception
+        }
+    }
+}
+```
+
+## Adding Records
+
+To add new records, use the `AddRange` method on the `DbManager` instance. This example adds new `Person` records to the database:
+
+```csharp
+if (AllThePeeps.Count() < 1)
+{
+    Person[] persons = new Person[] {
+        // ... (list of Person objects)
+    };
+
+    await manager.AddRange(persons);
+}
+```
+
+## Retrieving Records
+
+To retrieve all records of a specific type, use the `GetAll` method on the `DbManager` instance. This example retrieves all `Person` records:
+
+```csharp
+var allPeople = await manager.GetAll<Person>();
+```
+
+## Decrypting Records
+
+To decrypt a specific property of a record, use the `Decrypt` method on the `DbManager` instance. This example decrypts the `Secret` property of each `Person`:
+
+```csharp
+foreach (Person person in allPeople)
+{
+    person.SecretDecrypted = await manager.Decrypt(person.Secret);
+}
+```
+
+## Querying Records
+
+To query records based on specific conditions, use the `Where` method on the `DbManager` instance. You can chain additional LINQ methods, such as `OrderBy`, `Skip`, and `Execute`, to further refine your query. This example retrieves `Person` records that match certain criteria:
+
+```csharp
+var whereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+    || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
+    || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
+).OrderBy(x => x._Id).Skip(1).Execute();
+```
+
+In this example, the query returns `Person` records where the `Name` property starts with "c", "l", or "j" (case-insensitive), and the `_Age` property is greater than 35. The results are ordered by the `_Id` property and the first record is skipped.
+
+These examples demonstrate the basics of using MagicIndexedDb in a Blazor WebAssembly application. You can also perform other operations, such as updating and deleting records, by using the appropriate methods provided by the `DbManager`.
