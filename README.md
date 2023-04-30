@@ -15,6 +15,13 @@ This code is still very young. I will be making updates for this code as I come 
   - [Creating a class with Magic attributes](#creating-a-class-with-magic-attributes)
   - [Using the DbManager](#using-the-dbmanager)
 - [Attributes](#attributes)
+- [Where Method MagicQuery syntax](#Where-Method-MagicQuery-syntax)
+- [Standard Operations](#standard-operations)
+- [String Comparison Functions](#string-comparison-functions)
+  - [Contains](#contains)
+  - [StartsWith](#startswith)
+  - [Equals](#equals)
+- [Case Insensitive String Comparison](#case-insensitive-string-comparison)
 - [Examples](#examples)
 - [Acknowledgements](#acknowledgements)
 
@@ -150,7 +157,7 @@ Here's a grid-style documentation for the methods:
 | `Where<T>(Expression<Func<T, bool>> predicate)` | Query method to allow complex query capabilities for records of type `T`. |
 
 
-### "Where" Method MagicQuery syntax
+## Where Method MagicQuery syntax
 
 | Method | Description |
 | ------ | ----------- |
@@ -162,6 +169,73 @@ Here's a grid-style documentation for the methods:
 | `Execute()` | Executes the MagicQuery and returns the results as an `IEnumerable<T>`. |
 
 These MagicQuery methods allow you to build complex queries similar to standard LINQ in C#. Remember to call the `Execute` method at the end of your MagicQuery to execute the query and retrieve the results.
+
+# Where Query Capabilities Documentation
+
+This documentation explains the various query capabilities available in the `Where` method. The `Where` method provides a way to filter collections or sequences based on specific conditions. It allows the use of standard operations, string comparison functions, and case insensitive string comparisons.
+
+## Standard Operations
+
+The `Where` method supports the following standard operations when defining a predicate:
+
+| Operation | Description                                         |
+|-----------|-----------------------------------------------------|
+| ==        | Equal to                                            |
+| !=        | Not equal to                                        |
+| >         | Greater than                                        |
+| >=        | Greater than or equal to                            |
+| <         | Less than                                           |
+| <=        | Less than or equal to                               |
+
+Example usage:
+
+```csharp
+var evenNumbers = numbers.Where(n => n % 2 == 0);
+```
+
+## String Comparison Functions
+
+The `Where` method also supports the following string comparison functions:
+
+### Contains
+
+Filters the sequence based on whether a specified substring is present in the element.
+
+Example usage:
+
+```csharp
+var filteredStrings = strings.Where(s => s.Contains("example"));
+```
+
+### StartsWith
+
+Filters the sequence based on whether the element starts with a specified substring.
+
+Example usage:
+
+```csharp
+var filteredStrings = strings.Where(s => s.StartsWith("prefix"));
+```
+
+### Equals
+
+Filters the sequence based on whether the element is equal to a specified string.
+
+Example usage:
+
+```csharp
+var filteredStrings = strings.Where(s => s.Equals("exactString"));
+```
+
+## Case Insensitive String Comparison
+
+To perform case insensitive string comparisons, use the `StringComparison.OrdinalIgnoreCase` option. This can be applied to the `Contains`, `StartsWith`, and `Equals` functions.
+
+Example usage:
+
+```csharp
+var filteredStrings = strings.Where(s => s.StartsWith("prefix", StringComparison.OrdinalIgnoreCase));
+```
 
 ## Examples
 
