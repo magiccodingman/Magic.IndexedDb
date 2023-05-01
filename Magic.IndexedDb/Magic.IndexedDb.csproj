@@ -11,7 +11,7 @@
     <PackageProjectUrl></PackageProjectUrl>
     <RepositoryUrl>https://github.com/magiccodingman/Magic.IndexedDb</RepositoryUrl>
     <PackageTags>IndexedDb, Blazor IndexedDb, c# IndexedDb, local database, blazor</PackageTags>
-    <PackageIcon>icons8-wizard-96.png</PackageIcon>
+    <PackageIcon></PackageIcon>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <AssemblyVersion>1.0.1</AssemblyVersion>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -21,10 +21,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\..\Users\lance\Downloads\icons8-wizard-color\icons8-wizard-96.png">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
     <None Include="..\LICENSE.txt">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
