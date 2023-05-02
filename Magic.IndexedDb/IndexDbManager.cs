@@ -450,15 +450,25 @@ namespace Magic.IndexedDb
             return default(TResult);
         }
 
-
         public MagicQuery<T> Where<T>(Expression<Func<T, bool>> predicate) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
             MagicQuery<T> query = new MagicQuery<T>(schemaName, this);
 
-            CollectBinaryExpressions(predicate.Body, predicate, query.JsonQueries);
+            // Preprocess the predicate to break down Any and All expressions
+            var preprocessedPredicate = PreprocessPredicate(predicate);
+            var asdf = preprocessedPredicate.ToString();
+            CollectBinaryExpressions(preprocessedPredicate.Body, preprocessedPredicate, query.JsonQueries);
 
             return query;
+        }
+
+        private Expression<Func<T, bool>> PreprocessPredicate<T>(Expression<Func<T, bool>> predicate)
+        {
+            var visitor = new PredicateVisitor<T>();
+            var newExpression = visitor.Visit(predicate.Body);
+
+            return Expression.Lambda<Func<T, bool>>(newExpression, predicate.Parameters);
         }
 
         internal async Task<IList<T>> WhereV2<T>(string storeName, List<string> jsonQuery, MagicQuery<T> query) where T : class
@@ -506,6 +516,9 @@ namespace Magic.IndexedDb
             else
             {
                 // If the expression is a single condition, create a query for it
+                var test = expression.ToString();
+                var tes2t = predicate.ToString();
+
                 string jsonQuery = GetJsonQueryFromExpression(Expression.Lambda<Func<T, bool>>(expression, predicate.Parameters));
                 jsonQueries.Add(jsonQuery);
             }
@@ -605,11 +618,38 @@ namespace Magic.IndexedDb
             {
                 if (expression is BinaryExpression binaryExpression)
                 {
-                    var left = binaryExpression.Left as MemberExpression;
-                    var right = binaryExpression.Right as ConstantExpression;
+                    var leftMember = binaryExpression.Left as MemberExpression;
+                    var rightMember = binaryExpression.Right as MemberExpression;
+                    var leftConstant = binaryExpression.Left as ConstantExpression;
+                    var rightConstant = binaryExpression.Right as ConstantExpression;
                     var operation = binaryExpression.NodeType.ToString();
 
-                    AddConditionInternal(left, right, operation, inOrBranch);
+                    if (leftMember != null && rightConstant != null)
+                    {
+                        AddConditionInternal(leftMember, rightConstant, operation, inOrBranch);
+                    }
+                    else if (leftConstant != null && rightMember != null)
+                    {
+                        // Swap the order of the left and right expressions and the operation
+                        if (operation == "GreaterThan")
+                        {
+                            operation = "LessThan";
+                        }
+                        else if (operation == "LessThan")
+                        {
+                            operation = "GreaterThan";
+                        }
+                        else if (operation == "GreaterThanOrEqual")
+                        {
+                            operation = "LessThanOrEqual";
+                        }
+                        else if (operation == "LessThanOrEqual")
+                        {
+                            operation = "GreaterThanOrEqual";
+                        }
+
+                        AddConditionInternal(rightMember, leftConstant, operation, inOrBranch);
+                    }
                 }
                 else if (expression is MethodCallExpression methodCallExpression)
                 {
