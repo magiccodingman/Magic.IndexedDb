@@ -12,6 +12,8 @@ This code is still very young. I will be making updates for this code as I come 
 
 [] Compound Index
 
+[] Easy table syncing functionality with API
+
 ## Table of Contents
 
 - [Installation](#installation)
