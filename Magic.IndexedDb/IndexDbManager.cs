@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Dynamic;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -14,6 +15,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using static System.Collections.Specialized.BitVector32;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Magic.IndexedDb
 {
@@ -310,6 +312,8 @@ namespace Magic.IndexedDb
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
+            //var trans = GenerateTransaction(null);
+            //var TableCount = await CallJavascript<int>(IndexedDbFunctions.COUNT_TABLE, trans, DbName, schemaName);
             List<Dictionary<string, object>> processedRecords = new List<Dictionary<string, object>>();
             foreach (var record in records)
             {

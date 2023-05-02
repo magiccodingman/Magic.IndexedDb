@@ -69,7 +69,7 @@ window.magicBlazorDB = {
             });
         });
     },
-    bulkAddItem: function (dotnetReference, transaction, dbName, storeName, items) {
+    bulkAddItem: function (dotnetReference, transaction, dbName, items) {
         window.magicBlazorDB.getTable(dbName, storeName).then(table => {
             table.bulkAdd(items).then(_ => {
                 dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Item(s) bulk added');
@@ -77,6 +77,23 @@ window.magicBlazorDB = {
                 console.error(e);
                 dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Item(s) could not be bulk added');
             });
+        });
+    },
+    countTable: function (dotnetReference, transaction, dbName, storeName) {
+        var promise = new Promise((resolve, reject) => {
+            window.magicBlazorDB.getTable(dbName, storeName).then(table => {
+                table.count().then(count => {
+                    dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Table count: ' + count);
+                    resolve(count);
+                }).catch(e => {
+                    console.error(e);
+                    dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Could not get table count');
+                    reject(e);
+                });
+            });
+        });
+        return promise.then(count => {
+            return count;
         });
     },
     putItem: function (dotnetReference, transaction, item) {
