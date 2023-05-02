@@ -97,6 +97,11 @@ namespace Magic.IndexedDb.Models
             return await Manager.WhereV2<T>(SchemaName, JsonQueries, this);
         }
 
+        public async Task<int> Count()
+        {
+            return (await Manager.WhereV2<T>(SchemaName, JsonQueries, this)).Count();
+        }
+
 
         // Not currently available in Dexie version 1,2, or 3
         public MagicQuery<T> OrderBy(Expression<Func<T, object>> predicate)
