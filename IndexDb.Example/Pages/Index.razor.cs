@@ -3,18 +3,6 @@ using System;
 
 namespace IndexDb.Example.Pages
 {
-
-    public class Dinner
-    {
-        public Food food { get; set; }
-        public string Name { get; set; }
-    }
-    public class Food
-    {
-        public string Name { get; set; }
-        public string Type { get; set; }
-    }
-
     public partial class Index
     {
         private List<Person> allPeople { get; set; } = new List<Person>();
@@ -65,18 +53,10 @@ namespace IndexDb.Example.Pages
                         allPeople.Add(person);
                     }
 
-                    List<int> ages = new List<int>();
-                    ages.Add(22);
-                    ages.Add(80);
-
-
-                    WhereExample = await manager.Where<Person>(x =>
-                    x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                    WhereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                     || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
                     || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                    && ages.Any(age => age == x._Age) || x.Name.Equals("Bob", StringComparison.OrdinalIgnoreCase)
-                    ).OrderBy(x => x._Id).Execute();
-
+                    ).OrderBy(x => x._Id).Skip(1).Execute();
 
                     StateHasChanged();
                 }
