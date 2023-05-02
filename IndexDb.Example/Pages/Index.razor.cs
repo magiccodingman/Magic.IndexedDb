@@ -20,7 +20,7 @@ namespace IndexDb.Example.Pages
                 {
                     var manager = await _MagicDb.GetDbManager(DbNames.Client);
 
-                    //await manager.ClearTable<Person>();
+                    await manager.ClearTable<Person>();
 
                     var AllThePeeps = await manager.GetAll<Person>();
                     if (AllThePeeps.Count() < 1)

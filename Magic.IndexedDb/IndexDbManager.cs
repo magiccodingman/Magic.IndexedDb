@@ -204,10 +204,21 @@ namespace Magic.IndexedDb
 
                 if (primaryKeyProperty != null)
                 {
-                    // Create a dictionary containing all properties except the primary key and those with NotMappedDbAttribute
-                    var recordAsDict = typeof(T).GetProperties()
+                    Dictionary<string, object?> recordAsDict;
+
+                    var primaryKeyValue = primaryKeyProperty.GetValue(record);
+                    if (primaryKeyValue == null || primaryKeyValue.Equals(GetDefaultValue(primaryKeyValue.GetType())))
+                    {
+                        recordAsDict = typeof(T).GetProperties()
                         .Where(p => p.Name != primaryKeyProperty.Name && p.GetCustomAttributes(typeof(MagicNotMappedAttribute), false).Length == 0)
                         .ToDictionary(p => p.Name, p => p.GetValue(record));
+                    }
+                    else
+                    {
+                        recordAsDict = typeof(T).GetProperties()
+                        .Where(p => p.GetCustomAttributes(typeof(MagicNotMappedAttribute), false).Length == 0)
+                        .ToDictionary(p => p.Name, p => p.GetValue(record));
+                    }
 
                     // Create a new ExpandoObject and copy the key-value pairs from the dictionary
                     var expandoRecord = new ExpandoObject() as IDictionary<string, object>;
@@ -221,6 +232,12 @@ namespace Magic.IndexedDb
             }
 
             return record;
+        }
+
+        // Returns the default value for the given type
+        private static object GetDefaultValue(Type type)
+        {
+            return type.IsValueType ? Activator.CreateInstance(type) : null;
         }
 
         /// <summary>
@@ -243,30 +260,30 @@ namespace Magic.IndexedDb
             return trans;
         }
 
-        public async Task<Guid> AddRange<T>(IEnumerable<T> records, Action<BlazorDbEvent> action = null) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
+        //public async Task<Guid> AddRange<T>(IEnumerable<T> records, Action<BlazorDbEvent> action = null) where T : class
+        //{
+        //    string schemaName = SchemaHelper.GetSchemaName<T>();
+        //    var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
 
-            List<object> processedRecords = new List<object>();
-            foreach (var record in records)
-            {
-                object processedRecord = await ProcessRecord(record);
+        //    List<object> processedRecords = new List<object>();
+        //    foreach (var record in records)
+        //    {
+        //        object processedRecord = await ProcessRecord(record);
 
-                if (processedRecord is ExpandoObject)
-                {
-                    var convertedRecord = ((ExpandoObject)processedRecord).ToDictionary(kv => kv.Key, kv => (object)kv.Value);
-                    processedRecords.Add(ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings));
-                }
-                else
-                {
-                    var convertedRecord = ManagerHelper.ConvertRecordToDictionary((T)processedRecord);
-                    processedRecords.Add(ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings));
-                }
-            }
+        //        if (processedRecord is ExpandoObject)
+        //        {
+        //            var convertedRecord = ((ExpandoObject)processedRecord).ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+        //            processedRecords.Add(ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings));
+        //        }
+        //        else
+        //        {
+        //            var convertedRecord = ManagerHelper.ConvertRecordToDictionary((T)processedRecord);
+        //            processedRecords.Add(ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings));
+        //        }
+        //    }
 
-            return await BulkAddRecord(schemaName, processedRecords, action);
-        }
+        //    return await BulkAddRecord(schemaName, processedRecords, action);
+        //}
 
         /// <summary>
         /// Adds records/objects to the specified store in bulk
@@ -289,7 +306,7 @@ namespace Magic.IndexedDb
             return await trans.task;
         }
 
-        public async Task<BlazorDbEvent> AddRange<T>(IEnumerable<T> records) where T : class
+        public async Task AddRange<T>(IEnumerable<T> records) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
@@ -322,15 +339,27 @@ namespace Magic.IndexedDb
                 processedRecords.Add(updatedRecord);
             }
 
-            if (processedRecords.All(r => r is ExpandoObject))
-            {
-                return await BulkAddRecordAsync(schemaName, processedRecords.Cast<Dictionary<string, object>>());
-            }
-            else
-            {
-                return await BulkAddRecordAsync(schemaName, processedRecords);
-            }
+            //if (processedRecords.All(r => r is ExpandoObject))
+            //{
+            //    return await BulkAddRecordAsync(schemaName, processedRecords.Cast<Dictionary<string, object>>());
+            //}
+            //else
+            //{
+            //    return await BulkAddRecordAsync(schemaName, processedRecords);
+            //}
+            var groups = processedRecords.GroupBy(r => r.GetType());
 
+            foreach (var group in groups)
+            {
+                if (group.Key == typeof(ExpandoObject))
+                {
+                    await BulkAddRecordAsync(schemaName, group.Cast<Dictionary<string, object>>());
+                }
+                else
+                {
+                    await BulkAddRecordAsync(schemaName, group);
+                }
+            }
         }
 
 
