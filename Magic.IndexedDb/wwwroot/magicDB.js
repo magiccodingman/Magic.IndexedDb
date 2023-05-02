@@ -297,7 +297,7 @@ window.magicBlazorDB = {
             });
         });
     },
-    wherev2: function (dotnetReference, transaction, dbName, storeName, jsonQueries, jsonQueryAdditions) {
+    wherev2: function (dotnetReference, transaction, dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
         const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
         const QueryAdditions = JSON.parse(jsonQueryAdditions);
 
@@ -495,8 +495,20 @@ window.magicBlazorDB = {
                         // Apply query additions to the combined results
                         combinedResults = applyArrayQueryAdditions(combinedResults, QueryAdditions);
 
-                        dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
-                        resolve(combinedResults);
+                        if (uniqueResults) {
+                            // Make sure the objects in the array are unique
+                            let uniqueResults = combinedResults.filter((result, index, self) =>
+                                index === self.findIndex((r) => (
+                                    r.id === result.id && r.Name === result.Name && r.Age === result.Age
+                                ))
+                            );
+                            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
+                            resolve(uniqueResults);
+                        }
+                        else {
+                            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
+                            resolve(combinedResults);
+                        }
                     } else {
                         dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
                         resolve([]);

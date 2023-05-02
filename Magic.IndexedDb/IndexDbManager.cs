@@ -485,7 +485,7 @@ namespace Magic.IndexedDb
                 var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
                 IList<Dictionary<string, object>>? ListToConvert =
                     await CallJavascript<IList<Dictionary<string, object>>>
-                    (IndexedDbFunctions.WHEREV2, trans, DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions);
+                    (IndexedDbFunctions.WHEREV2, trans, DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions, query?.ResultsUnique);
 
                 var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
 

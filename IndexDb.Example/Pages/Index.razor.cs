@@ -58,6 +58,16 @@ namespace IndexDb.Example.Pages
                     || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
                     ).OrderBy(x => x._Id).Skip(1).Execute();
 
+
+                    /*
+                     * Still working on allowing nested
+                     */
+                    //// Should return "Zack"
+                    //var NestedResult = await manager.Where<Person>(p => (p.Name == "Zack" || p.Name == "Luna") && (p._Age >= 35 && p._Age <= 45)).Execute();
+
+                    //// should return "Luna", "Jerry" and "Jon"
+                    //var NonNestedResult = await manager.Where<Person>(p => p.TestInt == 9 && p._Age >= 35 && p._Age <= 45).Execute();
+
                     StateHasChanged();
                 }
                 catch (Exception ex)
