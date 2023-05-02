@@ -70,11 +70,10 @@ namespace IndexDb.Example.Pages
                     ages.Add(80);
 
 
-
                     WhereExample = await manager.Where<Person>(x =>
-                    (x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                    x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                     || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
-                    || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35)
+                    || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
                     && ages.Any(age => age == x._Age) || x.Name.Equals("Bob", StringComparison.OrdinalIgnoreCase)
                     ).OrderBy(x => x._Id).Execute();
 

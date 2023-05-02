@@ -445,46 +445,6 @@ window.magicBlazorDB = {
 
                 }
 
-
-                function applyQueryAdditions(dexieQuery, queryAdditions) {
-                    if (queryAdditions != null) {
-                        for (let i = 0; i < queryAdditions.length; i++) {
-                            const queryAddition = queryAdditions[i];
-
-                            switch (queryAddition.Name) {
-                                case 'skip':
-                                    dexieQuery = dexieQuery.offset(queryAddition.IntValue);
-                                    break;
-                                case 'take':
-                                    dexieQuery = dexieQuery.limit(queryAddition.IntValue);
-                                    break;
-                                case 'takeLast':
-                                    dexieQuery = dexieQuery.reverse().limit(queryAddition.IntValue);
-                                    break;
-                                //case 'orderBy': // Not currently available in Dexie version 1,2, or 3
-                                //    dexieQuery = dexieQuery.sortBy(queryAddition.StringValue);
-                                //    break;
-                                //case 'orderByDescending': // Not currently available in Dexie version 1,2, or 3
-                                //    dexieQuery = dexieQuery.reverse().sortBy(queryAddition.StringValue);
-                                //    break;
-                                case 'reverse':
-                                    dexieQuery = dexieQuery.reverse();
-                                    break;
-                                //case 'first': // not working
-                                //    dexieQuery = dexieQuery.first();
-                                //    break;
-                                //case 'last': // not working
-                                //    dexieQuery = dexieQuery.last();
-                                //    break;
-                                default:
-                                    console.error('Unsupported query addition:', queryAddition.Name);
-                                    break;
-                            }
-                        }
-                    }
-                    return dexieQuery;
-                }
-
                 function applyArrayQueryAdditions(results, queryAdditions) {
                     if (queryAdditions != null) {
                         for (let i = 0; i < queryAdditions.length; i++) {
