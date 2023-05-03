@@ -2,7 +2,7 @@
 
 This open source library provides an IndexedDb wrapper for C# and Blazor WebAssembly applications. It simplifies working with IndexedDb and makes it similar to using LINQ to SQL.
 
-**Nuget Package Link**: https://www.nuget.org/packages/Magic.IndexedDb/1.0.1
+**Nuget Package Link**: https://www.nuget.org/packages/Magic.IndexedDb/1.0.2
 
 **NOTE:**
 This code is still very young. I will be making updates for this code as I come across it. I will try my best to not depreciate or break syntax already in use. But please take note of any version updates before you use my code if you're updating it in the future. As I will not guarentee right now that I won't break your stuff if you download this version and then come back in a year and get the latest version.
