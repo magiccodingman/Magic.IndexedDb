@@ -11,7 +11,7 @@
     <PackageProjectUrl></PackageProjectUrl>
     <RepositoryUrl>https://github.com/magiccodingman/Magic.IndexedDb</RepositoryUrl>
     <PackageTags>IndexedDb, Blazor IndexedDb, c# IndexedDb, local database, blazor</PackageTags>
-    <PackageIcon></PackageIcon>
+    <PackageIcon>wizardHatIcon.png</PackageIcon>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <AssemblyVersion>1.0.1</AssemblyVersion>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -26,6 +26,10 @@
       <PackagePath>\</PackagePath>
     </None>
     <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Include="wwwroot\wizardHatIcon.png">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>
