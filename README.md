@@ -14,6 +14,10 @@ This code is still very young. I will be making updates for this code as I come 
 
 [] Easy table syncing functionality with API
 
+[X] Allow Any and/or All Linq statements inside the WHERE query
+
+[] Handling of Nested OR conditions in where query
+
 ## Table of Contents
 
 - [Installation](#installation)
