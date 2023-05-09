@@ -357,38 +357,6 @@ namespace Magic.IndexedDb
             }
 
             await BulkAddRecordAsync(schemaName, processedRecords);
-
-
-            //if (processedRecords.All(r => r is ExpandoObject))
-            //{
-            //    return await BulkAddRecordAsync(schemaName, processedRecords.Cast<Dictionary<string, object>>());
-            //}
-            //else
-            //{
-            //    return await BulkAddRecordAsync(schemaName, processedRecords);
-            //}
-            //var groups = processedRecords.GroupBy(r => r.GetType());
-
-            ////var expandoVersions = processedRecords.Where(x => x != null && x is ExpandoObject);
-            ////var nonExpandoVersions = processedRecords.Where(x => x != null && !(x is ExpandoObject));
-
-            //if (expandoVersions.Count() > 0)
-            //    await BulkAddRecordAsync(schemaName, expandoVersions.Cast<Dictionary<string, object>>());
-
-            //if (nonExpandoVersions.Count() > 0)
-            //    await BulkAddRecordAsync(schemaName, nonExpandoVersions);
-
-            //foreach (var group in groups)
-            //{
-            //    if (group.Key == typeof(ExpandoObject))
-            //    {
-            //        await BulkAddRecordAsync(schemaName, group.Cast<Dictionary<string, object>>());
-            //    }
-            //    else
-            //    {
-            //        await BulkAddRecordAsync(schemaName, group);
-            //    }
-            //}
         }
 
 
