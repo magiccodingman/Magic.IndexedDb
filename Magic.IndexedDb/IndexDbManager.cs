@@ -317,11 +317,15 @@ namespace Magic.IndexedDb
             List<Dictionary<string, object>> processedRecords = new List<Dictionary<string, object>>();
             foreach (var record in records)
             {
+                bool IsExpando = false;
                 T? myClass = null;
 
                 object processedRecord = await ProcessRecord(record);
                 if (processedRecord is ExpandoObject)
+                {
                     myClass = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(processedRecord));
+                    IsExpando = true;
+                }
                 else
                     myClass = (T)processedRecord;
 
@@ -340,8 +344,20 @@ namespace Magic.IndexedDb
                 // Convert the property names in the convertedRecord dictionary
                 var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
 
-                processedRecords.Add(updatedRecord);
+                if (IsExpando)
+                {
+                    //var test = updatedRecord.Cast<Dictionary<string, object>();
+                    var dictionary = (Dictionary<string, object>)updatedRecord;
+                    processedRecords.Add(dictionary);
+                }
+                else
+                {
+                    processedRecords.Add(updatedRecord);
+                }
             }
+
+            await BulkAddRecordAsync(schemaName, processedRecords);
+
 
             //if (processedRecords.All(r => r is ExpandoObject))
             //{
@@ -351,19 +367,28 @@ namespace Magic.IndexedDb
             //{
             //    return await BulkAddRecordAsync(schemaName, processedRecords);
             //}
-            var groups = processedRecords.GroupBy(r => r.GetType());
+            //var groups = processedRecords.GroupBy(r => r.GetType());
 
-            foreach (var group in groups)
-            {
-                if (group.Key == typeof(ExpandoObject))
-                {
-                    await BulkAddRecordAsync(schemaName, group.Cast<Dictionary<string, object>>());
-                }
-                else
-                {
-                    await BulkAddRecordAsync(schemaName, group);
-                }
-            }
+            ////var expandoVersions = processedRecords.Where(x => x != null && x is ExpandoObject);
+            ////var nonExpandoVersions = processedRecords.Where(x => x != null && !(x is ExpandoObject));
+
+            //if (expandoVersions.Count() > 0)
+            //    await BulkAddRecordAsync(schemaName, expandoVersions.Cast<Dictionary<string, object>>());
+
+            //if (nonExpandoVersions.Count() > 0)
+            //    await BulkAddRecordAsync(schemaName, nonExpandoVersions);
+
+            //foreach (var group in groups)
+            //{
+            //    if (group.Key == typeof(ExpandoObject))
+            //    {
+            //        await BulkAddRecordAsync(schemaName, group.Cast<Dictionary<string, object>>());
+            //    }
+            //    else
+            //    {
+            //        await BulkAddRecordAsync(schemaName, group);
+            //    }
+            //}
         }
 
 

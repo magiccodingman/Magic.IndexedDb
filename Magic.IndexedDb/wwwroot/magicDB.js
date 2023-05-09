@@ -69,7 +69,7 @@ window.magicBlazorDB = {
             });
         });
     },
-    bulkAddItem: function (dotnetReference, transaction, dbName, items) {
+    bulkAddItem: function (dotnetReference, transaction, dbName, storeName, items) {
         window.magicBlazorDB.getTable(dbName, storeName).then(table => {
             table.bulkAdd(items).then(_ => {
                 dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Item(s) bulk added');
