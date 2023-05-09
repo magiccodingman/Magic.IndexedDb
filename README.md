@@ -180,6 +180,7 @@ This documentation explains the various query capabilities available in the `Whe
 | `Skip(int amount)` | Skips the specified number of records in the query result. |
 | `OrderBy(Expression<Func<T, object>> predicate)` | Orders the query result by the specified predicate in ascending order. |
 | `OrderByDescending(Expression<Func<T, object>> predicate)` | Orders the query result by the specified predicate in descending order. |
+| `Count` | Get the number of items in the collection. |
 | `Execute()` | Executes the MagicQuery and returns the results as an `IEnumerable<T>`. |
 
 These MagicQuery methods allow you to build complex queries similar to standard LINQ in C#. Remember to call the `Execute` method at the end of your MagicQuery to execute the query and retrieve the results.
