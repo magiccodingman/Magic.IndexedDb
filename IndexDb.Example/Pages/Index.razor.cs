@@ -72,7 +72,7 @@ namespace IndexDb.Example.Pages
                 }
                 catch (Exception ex)
                 {
-
+                    Console.WriteLine(ex.Message);
                 }
 
             }

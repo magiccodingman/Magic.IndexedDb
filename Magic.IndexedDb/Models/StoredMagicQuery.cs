@@ -20,8 +20,8 @@ namespace Magic.IndexedDb.Models
     }
     public class StoredMagicQuery
     {
-        public string Name { get; set; }
+        public string? Name { get; set; }
         public int IntValue { get; set; } = 0;
-        public string StringValue { get; set; }
+        public string? StringValue { get; set; }
     }
 }

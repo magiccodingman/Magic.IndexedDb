@@ -59,9 +59,16 @@ namespace Magic.IndexedDb.Models
         private Expression ReplaceParameter(LambdaExpression lambda, object value)
         {
             var parameter = lambda.Parameters.FirstOrDefault();
-            var constant = Expression.Constant(value, parameter.Type);
-            var body = new ParameterReplacer(parameter, constant).Visit(lambda.Body);
-            return body;
+            if (parameter != null)
+            {
+                var constant = Expression.Constant(value, parameter.Type);
+                var body = new ParameterReplacer(parameter, constant).Visit(lambda.Body);
+                return body;
+            }
+            else
+            {
+                return Expression.Empty();
+            }
         }
 
         private class ParameterReplacer : ExpressionVisitor

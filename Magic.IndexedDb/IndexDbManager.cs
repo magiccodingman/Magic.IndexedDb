@@ -41,7 +41,9 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="dbStore"></param>
         /// <param name="jsRuntime"></param>
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
         internal IndexedDbManager(DbStore dbStore, IJSRuntime jsRuntime)
+#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
         {
             _objReference = DotNetObjectReference.Create(this);
             _dbStore = dbStore;
@@ -57,7 +59,7 @@ namespace Magic.IndexedDb
         /// and create the stores defined in DbStore.
         /// </summary>
         /// <returns></returns>
-        public async Task<Guid> OpenDb(Action<BlazorDbEvent> action = null)
+        public async Task<Guid> OpenDb(Action<BlazorDbEvent>? action = null)
         {
             var trans = GenerateTransaction(action);
             await CallJavascriptVoid(IndexedDbFunctions.CREATE_DB, trans, _dbStore);
@@ -69,7 +71,7 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="dbName">The name of database to delete</param>
         /// <returns></returns>
-        public async Task<Guid> DeleteDb(string dbName, Action<BlazorDbEvent> action = null)
+        public async Task<Guid> DeleteDb(string dbName, Action<BlazorDbEvent>? action = null)
         {
             if (string.IsNullOrEmpty(dbName))
             {
@@ -104,7 +106,7 @@ namespace Magic.IndexedDb
         /// <typeparam name="T"></typeparam>
         /// <param name="recordToAdd">An instance of StoreRecord that provides the store name and the data to add</param>
         /// <returns></returns>
-        private async Task<Guid> AddRecord<T>(StoreRecord<T> recordToAdd, Action<BlazorDbEvent> action = null)
+        private async Task<Guid> AddRecord<T>(StoreRecord<T> recordToAdd, Action<BlazorDbEvent>? action = null)
         {
             var trans = GenerateTransaction(action);
             try
@@ -119,24 +121,28 @@ namespace Magic.IndexedDb
             return trans;
         }
 
-        public async Task<Guid> Add<T>(T record, Action<BlazorDbEvent> action = null) where T : class
+        public async Task<Guid> Add<T>(T record, Action<BlazorDbEvent>? action = null) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
             T? myClass = null;
-            object processedRecord = await ProcessRecord(record);
+            object? processedRecord = await ProcessRecord(record);
             if (processedRecord is ExpandoObject)
                 myClass = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(processedRecord));
             else
-                myClass = (T)processedRecord;
+                myClass = (T?)processedRecord;
 
             var trans = GenerateTransaction(action);
             try
             {
-                Dictionary<string, object> convertedRecord = null;
+                Dictionary<string, object?>? convertedRecord = null;
                 if (processedRecord is ExpandoObject)
                 {
-                    convertedRecord = ((ExpandoObject)processedRecord).ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+                    var result = ((ExpandoObject)processedRecord)?.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
+                    if (result != null)
+                    {
+                        convertedRecord = result;
+                    }
                 }
                 else
                 {
@@ -145,16 +151,22 @@ namespace Magic.IndexedDb
                 var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
 
                 // Convert the property names in the convertedRecord dictionary
-                var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
-
-                StoreRecord<Dictionary<string, object>> RecordToSend = new StoreRecord<Dictionary<string, object>>()
+                if (convertedRecord != null)
                 {
-                    DbName = this.DbName,
-                    StoreName = schemaName,
-                    Record = updatedRecord
-                };
+                    var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
 
-                await CallJavascriptVoid(IndexedDbFunctions.ADD_ITEM, trans, RecordToSend);
+                    if (updatedRecord != null)
+                    {
+                        StoreRecord<Dictionary<string, object?>> RecordToSend = new StoreRecord<Dictionary<string, object?>>()
+                        {
+                            DbName = this.DbName,
+                            StoreName = schemaName,
+                            Record = updatedRecord
+                        };
+
+                        await CallJavascriptVoid(IndexedDbFunctions.ADD_ITEM, trans, RecordToSend);
+                    }
+                }
             }
             catch (JSException e)
             {
@@ -170,10 +182,10 @@ namespace Magic.IndexedDb
             return decryptedValue;
         }
 
-        private async Task<object> ProcessRecord<T>(T record) where T : class
+        private async Task<object?> ProcessRecord<T>(T record) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            StoreSchema storeSchema = Stores.FirstOrDefault(s => s.Name == schemaName);
+            StoreSchema? storeSchema = Stores.FirstOrDefault(s => s.Name == schemaName);
 
             if (storeSchema == null)
             {
@@ -192,9 +204,16 @@ namespace Magic.IndexedDb
                     throw new InvalidOperationException("EncryptDb attribute can only be used on string properties.");
                 }
 
-                string originalValue = property.GetValue(record) as string;
-                string encryptedValue = await encryptionFactory.Encrypt(originalValue, _dbStore.EncryptionKey);
-                property.SetValue(record, encryptedValue);
+                string? originalValue = property.GetValue(record) as string;
+                if (!string.IsNullOrWhiteSpace(originalValue))
+                {
+                    string encryptedValue = await encryptionFactory.Encrypt(originalValue, _dbStore.EncryptionKey);
+                    property.SetValue(record, encryptedValue);
+                }
+                else
+                {
+                    property.SetValue(record, originalValue);
+                }
             }
 
             // Proceed with adding the record
@@ -223,13 +242,13 @@ namespace Magic.IndexedDb
                     }
 
                     // Create a new ExpandoObject and copy the key-value pairs from the dictionary
-                    var expandoRecord = new ExpandoObject() as IDictionary<string, object>;
+                    var expandoRecord = new ExpandoObject() as IDictionary<string, object?>;
                     foreach (var kvp in recordAsDict)
                     {
                         expandoRecord.Add(kvp);
                     }
 
-                    return (ExpandoObject)expandoRecord;
+                    return expandoRecord as ExpandoObject;
                 }
             }
 
@@ -237,7 +256,7 @@ namespace Magic.IndexedDb
         }
 
         // Returns the default value for the given type
-        private static object GetDefaultValue(Type type)
+        private static object? GetDefaultValue(Type type)
         {
             return type.IsValueType ? Activator.CreateInstance(type) : null;
         }
@@ -248,7 +267,7 @@ namespace Magic.IndexedDb
         /// <typeparam name="T"></typeparam>
         /// <param name="recordsToBulkAdd">The data to add</param>
         /// <returns></returns>
-        private async Task<Guid> BulkAddRecord<T>(string storeName, IEnumerable<T> recordsToBulkAdd, Action<BlazorDbEvent> action = null)
+        private async Task<Guid> BulkAddRecord<T>(string storeName, IEnumerable<T> recordsToBulkAdd, Action<BlazorDbEvent>? action = null)
         {
             var trans = GenerateTransaction(action);
             try
@@ -314,26 +333,28 @@ namespace Magic.IndexedDb
 
             //var trans = GenerateTransaction(null);
             //var TableCount = await CallJavascript<int>(IndexedDbFunctions.COUNT_TABLE, trans, DbName, schemaName);
-            List<Dictionary<string, object>> processedRecords = new List<Dictionary<string, object>>();
+            List<Dictionary<string, object?>> processedRecords = new List<Dictionary<string, object?>>();
             foreach (var record in records)
             {
                 bool IsExpando = false;
                 T? myClass = null;
 
-                object processedRecord = await ProcessRecord(record);
+                object? processedRecord = await ProcessRecord(record);
                 if (processedRecord is ExpandoObject)
                 {
                     myClass = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(processedRecord));
                     IsExpando = true;
                 }
                 else
-                    myClass = (T)processedRecord;
+                    myClass = (T?)processedRecord;
 
 
-                Dictionary<string, object> convertedRecord = null;
+                Dictionary<string, object?>? convertedRecord = null;
                 if (processedRecord is ExpandoObject)
                 {
-                    convertedRecord = ((ExpandoObject)processedRecord).ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+                    var result = ((ExpandoObject)processedRecord)?.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
+                    if (result != null)
+                        convertedRecord = result;
                 }
                 else
                 {
@@ -342,17 +363,23 @@ namespace Magic.IndexedDb
                 var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
 
                 // Convert the property names in the convertedRecord dictionary
-                var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
+                if (convertedRecord != null)
+                {
+                    var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
 
-                if (IsExpando)
-                {
-                    //var test = updatedRecord.Cast<Dictionary<string, object>();
-                    var dictionary = (Dictionary<string, object>)updatedRecord;
-                    processedRecords.Add(dictionary);
-                }
-                else
-                {
-                    processedRecords.Add(updatedRecord);
+                    if (updatedRecord != null)
+                    {
+                        if (IsExpando)
+                        {
+                            //var test = updatedRecord.Cast<Dictionary<string, object>();
+                            var dictionary = updatedRecord as Dictionary<string, object?>;
+                            processedRecords.Add(dictionary);
+                        }
+                        else
+                        {
+                            processedRecords.Add(updatedRecord);
+                        }
+                    }
                 }
             }
 
@@ -361,7 +388,7 @@ namespace Magic.IndexedDb
 
 
 
-        public async Task<Guid> Update<T>(T item, Action<BlazorDbEvent> action = null) where T : class
+        public async Task<Guid> Update<T>(T item, Action<BlazorDbEvent>? action = null) where T : class
         {
             var trans = GenerateTransaction(action);
             try
@@ -370,54 +397,25 @@ namespace Magic.IndexedDb
                 PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
                 if (primaryKeyProperty != null)
                 {
-                    object primaryKeyValue = primaryKeyProperty.GetValue(item);
+                    object? primaryKeyValue = primaryKeyProperty.GetValue(item);
                     var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
-                    UpdateRecord<Dictionary<string, object>> record = new UpdateRecord<Dictionary<string, object>>()
+                    if (primaryKeyValue != null)
                     {
-                        Key = primaryKeyValue,
-                        DbName = this.DbName,
-                        StoreName = schemaName,
-                        Record = convertedRecord
-                    };
-
-                    // Get the primary key value of the item
-                    await CallJavascriptVoid(IndexedDbFunctions.UPDATE_ITEM, trans, record);
-                }
-            }
-            catch (JSException jse)
-            {
-                RaiseEvent(trans, true, jse.Message);
-            }
-            return trans;
-        }
-
-        public async Task<Guid> UpdateRange<T>(IEnumerable<T> items, Action<BlazorDbEvent> action = null) where T : class
-        {
-            var trans = GenerateTransaction(action);
-            try
-            {
-                string schemaName = SchemaHelper.GetSchemaName<T>();
-                PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
-
-                if (primaryKeyProperty != null)
-                {
-                    List<UpdateRecord<Dictionary<string, object>>> recordsToUpdate = new List<UpdateRecord<Dictionary<string, object>>>();
-
-                    foreach (var item in items)
-                    {
-                        object primaryKeyValue = primaryKeyProperty.GetValue(item);
-                        var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
-
-                        recordsToUpdate.Add(new UpdateRecord<Dictionary<string, object>>()
+                        UpdateRecord<Dictionary<string, object?>> record = new UpdateRecord<Dictionary<string, object?>>()
                         {
                             Key = primaryKeyValue,
                             DbName = this.DbName,
                             StoreName = schemaName,
                             Record = convertedRecord
-                        });
-                    }
+                        };
 
-                    await CallJavascriptVoid(IndexedDbFunctions.BULKADD_UPDATE, trans, recordsToUpdate);
+                        // Get the primary key value of the item
+                        await CallJavascriptVoid(IndexedDbFunctions.UPDATE_ITEM, trans, record);
+                    }
+                    else
+                    {
+                        throw new ArgumentException("Item being updated must have a key.");
+                    }
                 }
             }
             catch (JSException jse)
@@ -427,7 +425,50 @@ namespace Magic.IndexedDb
             return trans;
         }
 
-        public async Task<TResult> GetById<TResult>(object key) where TResult : class
+        public async Task<Guid> UpdateRange<T>(IEnumerable<T> items, Action<BlazorDbEvent>? action = null) where T : class
+        {
+            var trans = GenerateTransaction(action);
+            try
+            {
+                string schemaName = SchemaHelper.GetSchemaName<T>();
+                PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
+
+                if (primaryKeyProperty != null)
+                {
+                    List<UpdateRecord<Dictionary<string, object?>>> recordsToUpdate = new List<UpdateRecord<Dictionary<string, object?>>>();
+
+                    foreach (var item in items)
+                    {
+                        object? primaryKeyValue = primaryKeyProperty.GetValue(item);
+                        var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
+
+                        if (primaryKeyValue != null)
+                        {
+                            recordsToUpdate.Add(new UpdateRecord<Dictionary<string, object?>>()
+                            {
+                                Key = primaryKeyValue,
+                                DbName = this.DbName,
+                                StoreName = schemaName,
+                                Record = convertedRecord
+                            });
+                        }
+
+                        await CallJavascriptVoid(IndexedDbFunctions.BULKADD_UPDATE, trans, recordsToUpdate);
+                    }
+                }
+                else
+                {
+                    throw new ArgumentException("Item being update range item must have a key.");
+                }
+            }
+            catch (JSException jse)
+            {
+                RaiseEvent(trans, true, jse.Message);
+            }
+            return trans;
+        }
+
+        public async Task<TResult?> GetById<TResult>(object key) where TResult : class
         {
             string schemaName = SchemaHelper.GetSchemaName<TResult>();
 
@@ -497,13 +538,13 @@ namespace Magic.IndexedDb
             return Expression.Lambda<Func<T, bool>>(newExpression, predicate.Parameters);
         }
 
-        internal async Task<IList<T>> WhereV2<T>(string storeName, List<string> jsonQuery, MagicQuery<T> query) where T : class
+        internal async Task<IList<T>?> WhereV2<T>(string storeName, List<string> jsonQuery, MagicQuery<T> query) where T : class
         {
             var trans = GenerateTransaction(null);
 
             try
             {
-                string jsonQueryAdditions = null;
+                string? jsonQueryAdditions = null;
                 if (query != null && query.storedMagicQueries != null && query.storedMagicQueries.Count > 0)
                 {
                     jsonQueryAdditions = Newtonsoft.Json.JsonConvert.SerializeObject(query.storedMagicQueries.ToArray());
@@ -511,7 +552,7 @@ namespace Magic.IndexedDb
                 var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
                 IList<Dictionary<string, object>>? ListToConvert =
                     await CallJavascript<IList<Dictionary<string, object>>>
-                    (IndexedDbFunctions.WHEREV2, trans, DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions, query?.ResultsUnique);
+                    (IndexedDbFunctions.WHEREV2, trans, DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions!, query?.ResultsUnique!);
 
                 var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
 
@@ -576,7 +617,10 @@ namespace Magic.IndexedDb
                     {
                         var property = recordType.GetProperty(propertyName);
                         var value = ManagerHelper.GetValueFromValueKind(kvp.Value);
-                        property.SetValue(record, ConvertValueToType(value, property.PropertyType));
+                        if (property != null)
+                        {
+                            property.SetValue(record, ConvertValueToType(value!, property.PropertyType));
+                        }
                     }
                 }
 
@@ -597,7 +641,10 @@ namespace Magic.IndexedDb
                 {
                     var property = recordType.GetProperty(propertyName);
                     var value = ManagerHelper.GetValueFromValueKind(kvp.Value);
-                    property.SetValue(record, ConvertValueToType(value, property.PropertyType));
+                    if (property != null)
+                    {
+                        property.SetValue(record, ConvertValueToType(value!, property.PropertyType));
+                    }
                 }
             }
 
@@ -701,52 +748,62 @@ namespace Magic.IndexedDb
                 }
             }
 
-            void AddConditionInternal(MemberExpression left, ConstantExpression right, string operation, bool inOrBranch, bool caseSensitive = false)
+            void AddConditionInternal(MemberExpression? left, ConstantExpression? right, string operation, bool inOrBranch, bool caseSensitive = false)
             {
                 if (left != null && right != null)
                 {
                     var propertyInfo = typeof(T).GetProperty(left.Member.Name);
-
-                    bool index = propertyInfo.GetCustomAttributes(typeof(MagicIndexAttribute), false).Length == 0;
-                    bool unique = propertyInfo.GetCustomAttributes(typeof(MagicUniqueIndexAttribute), false).Length == 0;
-                    bool primary = propertyInfo.GetCustomAttributes(typeof(MagicPrimaryKeyAttribute), false).Length == 0;
-
-                    if (index == true && unique == true && primary == true)
+                    if (propertyInfo != null)
                     {
-                        throw new InvalidOperationException($"Property '{propertyInfo.Name}' does not have the IndexDbAttribute.");
-                    }
+                        bool index = propertyInfo.GetCustomAttributes(typeof(MagicIndexAttribute), false).Length == 0;
+                        bool unique = propertyInfo.GetCustomAttributes(typeof(MagicUniqueIndexAttribute), false).Length == 0;
+                        bool primary = propertyInfo.GetCustomAttributes(typeof(MagicPrimaryKeyAttribute), false).Length == 0;
 
-                    string columnName = null;
+                        if (index == true && unique == true && primary == true)
+                        {
+                            throw new InvalidOperationException($"Property '{propertyInfo.Name}' does not have the IndexDbAttribute.");
+                        }
 
-                    if (index == false)
-                        columnName = propertyInfo.GetPropertyColumnName<MagicIndexAttribute>();
-                    else if (unique == false)
-                        columnName = propertyInfo.GetPropertyColumnName<MagicUniqueIndexAttribute>();
-                    else if (primary == false)
-                        columnName = propertyInfo.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
+                        string? columnName = null;
 
-                    var jsonCondition = new JObject
+                        if (index == false)
+                            columnName = propertyInfo.GetPropertyColumnName<MagicIndexAttribute>();
+                        else if (unique == false)
+                            columnName = propertyInfo.GetPropertyColumnName<MagicUniqueIndexAttribute>();
+                        else if (primary == false)
+                            columnName = propertyInfo.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
+
+                        bool _isString = false;
+                        JToken? valSend = null;
+                        if (right != null && right.Value != null)
+                        {
+                            valSend = JToken.FromObject(right.Value);
+                            _isString = right.Value is string;
+                        }
+
+                        var jsonCondition = new JObject
             {
                 { "property", columnName },
                 { "operation", operation },
-                { "value", JToken.FromObject(right.Value) },
-                { "isString", right.Value is string },
+                { "value", valSend },
+                { "isString", _isString },
                 { "caseSensitive", caseSensitive }
                         };
 
-                    if (inOrBranch)
-                    {
-                        var currentOrConditions = orConditions.LastOrDefault();
-                        if (currentOrConditions == null)
+                        if (inOrBranch)
                         {
-                            currentOrConditions = new List<JObject>();
-                            orConditions.Add(currentOrConditions);
+                            var currentOrConditions = orConditions.LastOrDefault();
+                            if (currentOrConditions == null)
+                            {
+                                currentOrConditions = new List<JObject>();
+                                orConditions.Add(currentOrConditions);
+                            }
+                            currentOrConditions.Add(jsonCondition);
                         }
-                        currentOrConditions.Add(jsonCondition);
-                    }
-                    else
-                    {
-                        conditions.Add(jsonCondition);
+                        else
+                        {
+                            conditions.Add(jsonCondition);
+                        }
                     }
                 }
             }
@@ -805,10 +862,10 @@ namespace Magic.IndexedDb
                 RaiseEvent(trans, true, jse.Message);
             }
 
-            return default;
+            return Enumerable.Empty<T>();
         }
 
-        public async Task<Guid> Delete<T>(T item, Action<BlazorDbEvent> action = null) where T : class
+        public async Task<Guid> Delete<T>(T item, Action<BlazorDbEvent>? action = null) where T : class
         {
             var trans = GenerateTransaction(action);
             try
@@ -817,18 +874,25 @@ namespace Magic.IndexedDb
                 PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
                 if (primaryKeyProperty != null)
                 {
-                    object primaryKeyValue = primaryKeyProperty.GetValue(item);
+                    object? primaryKeyValue = primaryKeyProperty.GetValue(item);
                     var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
-                    UpdateRecord<Dictionary<string, object>> record = new UpdateRecord<Dictionary<string, object>>()
+                    if (primaryKeyValue != null)
                     {
-                        Key = primaryKeyValue,
-                        DbName = this.DbName,
-                        StoreName = schemaName,
-                        Record = convertedRecord
-                    };
+                        UpdateRecord<Dictionary<string, object?>> record = new UpdateRecord<Dictionary<string, object?>>()
+                        {
+                            Key = primaryKeyValue,
+                            DbName = this.DbName,
+                            StoreName = schemaName,
+                            Record = convertedRecord
+                        };
 
-                    // Get the primary key value of the item
-                    await CallJavascriptVoid(IndexedDbFunctions.DELETE_ITEM, trans, record);
+                        // Get the primary key value of the item
+                        await CallJavascriptVoid(IndexedDbFunctions.DELETE_ITEM, trans, record);
+                    }
+                    else
+                    {
+                        throw new ArgumentException("Item being Deleted must have a key.");
+                    }
                 }
             }
             catch (JSException jse)
@@ -849,8 +913,10 @@ namespace Magic.IndexedDb
                 {
                     throw new InvalidOperationException("No primary key property found with PrimaryKeyDbAttribute.");
                 }
-                object primaryKeyValue = primaryKeyProperty.GetValue(item);
-                keys.Add(primaryKeyValue);
+                object? primaryKeyValue = primaryKeyProperty.GetValue(item);
+
+                if (primaryKeyValue != null)
+                    keys.Add(primaryKeyValue);
             }
             string schemaName = SchemaHelper.GetSchemaName<TResult>();
 
@@ -878,7 +944,7 @@ namespace Magic.IndexedDb
         /// <param name="storeName"></param>
         /// <param name="action"></param>
         /// <returns></returns>
-        public async Task<Guid> ClearTable(string storeName, Action<BlazorDbEvent> action = null)
+        public async Task<Guid> ClearTable(string storeName, Action<BlazorDbEvent>? action = null)
         {
             var trans = GenerateTransaction(action);
             try
@@ -892,7 +958,7 @@ namespace Magic.IndexedDb
             return trans;
         }
 
-        public async Task<Guid> ClearTable<T>(Action<BlazorDbEvent> action = null) where T : class
+        public async Task<Guid> ClearTable<T>(Action<BlazorDbEvent>? action = null) where T : class
         {
             var trans = GenerateTransaction(action);
             try
@@ -932,11 +998,11 @@ namespace Magic.IndexedDb
         {
             if (transaction != Guid.Empty)
             {
-                WeakReference<Action<BlazorDbEvent>> r = null;
+                WeakReference<Action<BlazorDbEvent>>? r = null;
                 _transactions.TryGetValue(transaction, out r);
-                TaskCompletionSource<BlazorDbEvent> t = null;
+                TaskCompletionSource<BlazorDbEvent>? t = null;
                 _taskTransactions.TryGetValue(transaction, out t);
-                if (r != null && r.TryGetTarget(out Action<BlazorDbEvent> action))
+                if (r != null && r.TryGetTarget(out Action<BlazorDbEvent>? action))
                 {
                     action?.Invoke(new BlazorDbEvent()
                     {
@@ -1004,7 +1070,7 @@ namespace Magic.IndexedDb
             return (transaction, tcs.Task);
         }
 
-        Guid GenerateTransaction(Action<BlazorDbEvent> action)
+        Guid GenerateTransaction(Action<BlazorDbEvent>? action)
         {
             bool generated = false;
             Guid transaction = Guid.Empty;
@@ -1014,7 +1080,7 @@ namespace Magic.IndexedDb
                 if (!_transactions.ContainsKey(transaction))
                 {
                     generated = true;
-                    _transactions.Add(transaction, new WeakReference<Action<BlazorDbEvent>>(action));
+                    _transactions.Add(transaction, new WeakReference<Action<BlazorDbEvent>>(action!));
                 }
             } while (!generated);
             return transaction;

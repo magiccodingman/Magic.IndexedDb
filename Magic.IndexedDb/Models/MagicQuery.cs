@@ -94,12 +94,14 @@ namespace Magic.IndexedDb.Models
 
         public async Task<IEnumerable<T>> Execute()
         {
-            return await Manager.WhereV2<T>(SchemaName, JsonQueries, this);
+            return await Manager.WhereV2<T>(SchemaName, JsonQueries, this) ?? Enumerable.Empty<T>();
         }
 
         public async Task<int> Count()
         {
-            return (await Manager.WhereV2<T>(SchemaName, JsonQueries, this)).Count();
+            var result = await Manager.WhereV2<T>(SchemaName, JsonQueries, this);
+            int num = result?.Count() ?? 0;
+            return num;
         }
 
 
@@ -123,7 +125,7 @@ namespace Magic.IndexedDb.Models
                 throw new ArgumentException("The selected property must have either MagicIndexAttribute, MagicUniqueIndexAttribute, or MagicPrimaryKeyAttribute.");
             }
 
-            string columnName = null;
+            string? columnName = null;
 
             if (indexDbAttr != null)
                 columnName = propertyInfo.GetPropertyColumnName<MagicIndexAttribute>();
@@ -159,7 +161,7 @@ namespace Magic.IndexedDb.Models
                 throw new ArgumentException("The selected property must have either MagicIndexAttribute, MagicUniqueIndexAttribute, or MagicPrimaryKeyAttribute.");
             }
 
-            string columnName = null;
+            string? columnName = null;
 
             if (indexDbAttr != null)
                 columnName = propertyInfo.GetPropertyColumnName<MagicIndexAttribute>();
@@ -175,7 +177,9 @@ namespace Magic.IndexedDb.Models
             return this;
         }
 
+#pragma warning disable CS0693 // Mark members as static
         private MemberExpression GetMemberExpressionFromLambda<T>(Expression<Func<T, object>> expression)
+#pragma warning restore CS0693 // Mark members as static
         {
             if (expression.Body is MemberExpression)
             {

@@ -11,9 +11,9 @@ namespace Magic.IndexedDb.Helpers
 {
     public static class ManagerHelper
     {
-        public static Dictionary<string, object> ConvertPropertyNamesUsingMappings(Dictionary<string, object> inputRecord, Dictionary<string, string> propertyMappings)
+        public static Dictionary<string, object?> ConvertPropertyNamesUsingMappings(Dictionary<string, object?> inputRecord, Dictionary<string, string> propertyMappings)
         {
-            var updatedRecord = new Dictionary<string, object>();
+            var updatedRecord = new Dictionary<string, object?>();
             foreach (var kvp in inputRecord)
             {
                 var targetKey = propertyMappings.FirstOrDefault(x => x.Value == kvp.Key).Key;
@@ -29,10 +29,10 @@ namespace Magic.IndexedDb.Helpers
             return updatedRecord;
         }
 
-        public static Dictionary<string, object> ConvertRecordToDictionary<TRecord>(TRecord record)
+        public static Dictionary<string, object?> ConvertRecordToDictionary<TRecord>(TRecord record)
         {
             var propertyMappings = GeneratePropertyMapping<TRecord>();
-            var dictionary = new Dictionary<string, object>();
+            var dictionary = new Dictionary<string, object?>();
             var properties = typeof(TRecord).GetProperties();
 
             foreach (var property in properties)
@@ -45,7 +45,7 @@ namespace Magic.IndexedDb.Helpers
                     columnName = propertyMappings.First(kvp => kvp.Value == property.Name).Key;
                 }
 
-                dictionary[columnName] = value;
+                dictionary[columnName] = value!;
             }
 
             return dictionary;
@@ -74,7 +74,7 @@ namespace Magic.IndexedDb.Helpers
             return propertyMappings;
         }
 
-        public static object GetValueFromValueKind(object value)
+        public static object? GetValueFromValueKind(object value)
         {
             if (value is JsonElement jsonElement)
             {
