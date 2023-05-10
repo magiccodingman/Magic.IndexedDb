@@ -18,6 +18,8 @@ This code is still very young. I will be making updates for this code as I come 
 
 [] Handling of Nested OR conditions in where query
 
+[] API like response protocal from JS. This will allow better debugging and make it easier to expand the code.
+
 ## Table of Contents
 
 - [Installation](#installation)
