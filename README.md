@@ -10,7 +10,7 @@ This code is still very young. I will be making updates for this code as I come 
 ## Future Planned Features
 [] Reset Primary Key starting Id
 
-[] Compound Index
+[] Compound Key Indexing
 
 [] Easy table syncing functionality with API
 
