@@ -22,6 +22,12 @@ This code is still very young. I will be making updates for this code as I come 
 
 [] Superior & easy version handling and table altering. Current form handles changes easily but it'd take some work to do serious data migrations. I want data migrations to be built in c#, translated to clients, and automatically handled with extreme ease. I have some really interesting protocals I've brainstormed and would like to experiment with.
 
+[] Deferred execution of table joins. I want c# join abilities to properly join tables together. 
+
+[] Superior reflections. The current version of reflections is fine, but I've not spent much time optimizing. I need to convert more into hash sets, dictionaries, and more. This wrapper is meant to be a very expandable version that will engulf indexedDb with a great deal of capabilities. Fine tuning and perfecting the protocal I'm working on will allow some very cool features in the future. 
+
+[] **Long Term** - NET 8 provides AOT features that I think could be extremely abusive in a good way for this project. I believe with future NET 8 possibilites and AOT, I can move IndexedDB into being a multi thread monster and various other performance improvements. Obviously I'd make this optional. But I believe there's some very interesting possibilities I'd like to experiment with in the future.
+
 ## Table of Contents
 
 - [Installation](#installation)
