@@ -31,7 +31,7 @@ namespace Magic.IndexedDb
         IDictionary<Guid, WeakReference<Action<BlazorDbEvent>>> _transactions = new Dictionary<Guid, WeakReference<Action<BlazorDbEvent>>>();
         IDictionary<Guid, TaskCompletionSource<BlazorDbEvent>> _taskTransactions = new Dictionary<Guid, TaskCompletionSource<BlazorDbEvent>>();
 
-        private IJSObjectReference _module { get; set; }
+        private IJSObjectReference? _module { get; set; }
         /// <summary>
         /// A notification event that is raised when an action is completed
         /// </summary>
@@ -53,7 +53,10 @@ namespace Magic.IndexedDb
 
         public async Task<IJSObjectReference> GetModule(IJSRuntime jsRuntime)
         {
-            _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/Magic.IndexedDb/magicDB.js");
+            if (_module == null)
+            {
+                _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/Magic.IndexedDb/magicDB.js");
+            }
             return _module;
         }
 

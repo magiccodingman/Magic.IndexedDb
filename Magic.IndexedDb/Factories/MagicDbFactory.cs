@@ -33,7 +33,10 @@ namespace Magic.IndexedDb
             if (_dbs.ContainsKey(dbName))
                 return _dbs[dbName];
 
+#pragma warning disable CS8603 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
             return null;
+#pragma warning restore CS8603 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
+
         }
 
         public Task<IndexedDbManager> GetDbManager(DbStore dbStore)
