@@ -12,21 +12,25 @@ namespace Magic.IndexedDb
     public class EncryptionFactory: IEncryptionFactory
     {
         readonly IJSRuntime _jsRuntime;
+        readonly IndexedDbManager _indexDbManager;
 
-        public EncryptionFactory(IJSRuntime jsRuntime)
+        public EncryptionFactory(IJSRuntime jsRuntime, IndexedDbManager indexDbManager)
         {
             _jsRuntime = jsRuntime;
+            _indexDbManager = indexDbManager;
         }
 
         public async Task<string> Encrypt(string data, string key)
         {
-            string encryptedData = await _jsRuntime.InvokeAsync<string>("encryptString", new[] { data, key });
+            var mod = await _indexDbManager.GetModule(_jsRuntime);
+            string encryptedData = await mod.InvokeAsync<string>("encryptString", new[] { data, key });
             return encryptedData;
         }
 
         public async Task<string> Decrypt(string encryptedData, string key)
         {
-            string decryptedData = await _jsRuntime.InvokeAsync<string>("decryptString", new[] { encryptedData, key });
+            var mod = await _indexDbManager.GetModule(_jsRuntime);
+            string decryptedData = await mod.InvokeAsync<string>("decryptString", new[] { encryptedData, key });
             return decryptedData;
         }
     }

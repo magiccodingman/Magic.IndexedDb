@@ -31,6 +31,7 @@ namespace Magic.IndexedDb
         IDictionary<Guid, WeakReference<Action<BlazorDbEvent>>> _transactions = new Dictionary<Guid, WeakReference<Action<BlazorDbEvent>>>();
         IDictionary<Guid, TaskCompletionSource<BlazorDbEvent>> _taskTransactions = new Dictionary<Guid, TaskCompletionSource<BlazorDbEvent>>();
 
+        private IJSObjectReference _module { get; set; }
         /// <summary>
         /// A notification event that is raised when an action is completed
         /// </summary>
@@ -48,6 +49,12 @@ namespace Magic.IndexedDb
             _objReference = DotNetObjectReference.Create(this);
             _dbStore = dbStore;
             _jsRuntime = jsRuntime;
+        }
+
+        public async Task<IJSObjectReference> GetModule(IJSRuntime jsRuntime)
+        {
+            _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/Magic.IndexedDb/magicDB.js");
+            return _module;
         }
 
         public List<StoreSchema> Stores => _dbStore.StoreSchemas;
@@ -177,7 +184,7 @@ namespace Magic.IndexedDb
 
         public async Task<string> Decrypt(string EncryptedValue)
         {
-            EncryptionFactory encryptionFactory = new EncryptionFactory(_jsRuntime);
+            EncryptionFactory encryptionFactory = new EncryptionFactory(_jsRuntime, this);
             string decryptedValue = await encryptionFactory.Decrypt(EncryptedValue, _dbStore.EncryptionKey);
             return decryptedValue;
         }
@@ -196,7 +203,7 @@ namespace Magic.IndexedDb
             var propertiesToEncrypt = typeof(T).GetProperties()
                 .Where(p => p.GetCustomAttributes(typeof(MagicEncryptAttribute), false).Length > 0);
 
-            EncryptionFactory encryptionFactory = new EncryptionFactory(_jsRuntime);
+            EncryptionFactory encryptionFactory = new EncryptionFactory(_jsRuntime, this);
             foreach (var property in propertiesToEncrypt)
             {
                 if (property.PropertyType != typeof(string))
@@ -1027,21 +1034,99 @@ namespace Magic.IndexedDb
             }
         }
 
+        //async Task<TResult> CallJavascriptNoTransaction<TResult>(string functionName, params object[] args)
+        //{
+        //    return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", args);
+        //}
+
         async Task<TResult> CallJavascriptNoTransaction<TResult>(string functionName, params object[] args)
         {
-            return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", args);
+            var mod = await GetModule(_jsRuntime);
+            return await mod.InvokeAsync<TResult>($"{functionName}", args);
         }
+
+
+        private const string dynamicJsCaller = "DynamicJsCaller";
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="functionName"></param>
+        /// <param name="transaction"></param>
+        /// <param name="timeout">in ms</param>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentException"></exception>
+        public async Task<TResult> CallJS<TResult>(string functionName, double Timeout, params object[] args)
+        {
+            List<object> modifiedArgs = new List<object>(args);
+            modifiedArgs.Insert(0, $"{InteropPrefix}.{functionName}");
+
+            Task<JsResponse<TResult>> task = _jsRuntime.InvokeAsync<JsResponse<TResult>>(dynamicJsCaller, modifiedArgs.ToArray()).AsTask();
+            Task delay = Task.Delay(TimeSpan.FromMilliseconds(Timeout));
+
+            if (await Task.WhenAny(task, delay) == task)
+            {
+                JsResponse<TResult> response = await task;
+                if (response.Success)
+                    return response.Data;
+                else
+                    throw new ArgumentException(response.Message);
+            }
+            else
+            {
+                throw new ArgumentException("Timed out after 1 minute");
+            }
+        }
+
+        //public async Task<TResult> CallJS<TResult>(string functionName, JsSettings Settings, params object[] args)
+        //{
+        //    var newArgs = GetNewArgs(Settings.Transaction, args);
+
+        //    Task<JsResponse<TResult>> task = _jsRuntime.InvokeAsync<JsResponse<TResult>>($"{InteropPrefix}.{functionName}", newArgs).AsTask();
+        //    Task delay = Task.Delay(TimeSpan.FromMilliseconds(Settings.Timeout));
+
+        //    if (await Task.WhenAny(task, delay) == task)
+        //    {
+        //        JsResponse<TResult> response = await task;
+        //        if (response.Success)
+        //            return response.Data;
+        //        else
+        //            throw new ArgumentException(response.Message);
+        //    }
+        //    else
+        //    {
+        //        throw new ArgumentException("Timed out after 1 minute");
+        //    }
+        //}
+
+
+
+        //async Task<TResult> CallJavascript<TResult>(string functionName, Guid transaction, params object[] args)
+        //{
+        //    var newArgs = GetNewArgs(transaction, args);
+        //    return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", newArgs);
+        //}
+        //async Task CallJavascriptVoid(string functionName, Guid transaction, params object[] args)
+        //{
+        //    var newArgs = GetNewArgs(transaction, args);
+        //    await _jsRuntime.InvokeVoidAsync($"{InteropPrefix}.{functionName}", newArgs);
+        //}
 
         async Task<TResult> CallJavascript<TResult>(string functionName, Guid transaction, params object[] args)
         {
+            var mod = await GetModule(_jsRuntime);
             var newArgs = GetNewArgs(transaction, args);
-            return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", newArgs);
+            return await mod.InvokeAsync<TResult>($"{functionName}", newArgs);
         }
         async Task CallJavascriptVoid(string functionName, Guid transaction, params object[] args)
         {
+            var mod = await GetModule(_jsRuntime);
             var newArgs = GetNewArgs(transaction, args);
-            await _jsRuntime.InvokeVoidAsync($"{InteropPrefix}.{functionName}", newArgs);
+            await mod.InvokeVoidAsync($"{functionName}", newArgs);
         }
+
+
 
         object[] GetNewArgs(Guid transaction, params object[] args)
         {

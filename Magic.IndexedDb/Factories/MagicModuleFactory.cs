@@ -7,32 +7,25 @@ using Microsoft.JSInterop;
 
 namespace Magic.IndexedDb
 {
-    public class MagicDbFactory : IMagicDbFactory
+    public class MagicModuleFactory : IMagicDbFactory
     {
         readonly IJSRuntime _jsRuntime;
         readonly IServiceProvider _serviceProvider;
         readonly IDictionary<string, IndexedDbManager> _dbs = new Dictionary<string, IndexedDbManager>();
-        //private IJSObjectReference _module;
 
-        public MagicDbFactory(IServiceProvider serviceProvider, IJSRuntime jSRuntime)
+        public MagicModuleFactory(IServiceProvider serviceProvider, IJSRuntime jSRuntime)
         {
             _serviceProvider = serviceProvider;
             _jsRuntime = jSRuntime;
         }
-        //public async Task<IndexedDbManager> CreateAsync(DbStore dbStore)
-        //{
-        //    var manager = new IndexedDbManager(dbStore, _jsRuntime);
-        //    var importedManager = await _jsRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/Magic.IndexedDb/magicDB.js");
-        //    return manager;
-        //}
 
         public async Task<IndexedDbManager> GetDbManager(string dbName)
         {
-            if (!_dbs.Any())
+            if(!_dbs.Any())
                 await BuildFromServices();
-            if (_dbs.ContainsKey(dbName))
+            if(_dbs.ContainsKey(dbName))
                 return _dbs[dbName];
-
+            
             return null;
         }
 
@@ -42,9 +35,9 @@ namespace Magic.IndexedDb
         async Task BuildFromServices()
         {
             var dbStores = _serviceProvider.GetServices<DbStore>();
-            if (dbStores != null)
+            if(dbStores != null)
             {
-                foreach (var dbStore in dbStores)
+                foreach(var dbStore in dbStores)
                 {
                     Console.WriteLine($"{dbStore.Name}{dbStore.Version}{dbStore.StoreSchemas.Count}");
                     var db = new IndexedDbManager(dbStore, _jsRuntime);
