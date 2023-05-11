@@ -95,12 +95,13 @@ builder.Services.AddBlazorDB(options =>
 });
 ```
 
-3. Add the following scripts to the end of the body tag in your `Index.html`:
+~~3. Add the following scripts to the end of the body tag in your `Index.html`:~~
 
-```html
+~~```html
 <script src="_content/Magic.IndexedDb/dexie.min.js"></script>
 <script src="_content/Magic.IndexedDb/magicDB.js"></script>
-```
+```~~
+3. Adding a script is now only required for versions 1.0.3 and lower. Everything above no longer requires the script tags on the index page.
 
 4. Add the following to your _Import.razor:
 
