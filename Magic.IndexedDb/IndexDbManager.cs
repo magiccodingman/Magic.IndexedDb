@@ -608,6 +608,15 @@ namespace Magic.IndexedDb
                 return Guid.Parse(stringValue);
             }
 
+            var nullableType = Nullable.GetUnderlyingType(targetType);
+            if (nullableType != null)
+            {
+                // It's nullable
+                if (value == null) return null;
+
+                return Convert.ChangeType(value, nullableType);
+            }
+
             return Convert.ChangeType(value, targetType);
         }
 
