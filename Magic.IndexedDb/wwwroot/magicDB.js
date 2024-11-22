@@ -3,18 +3,28 @@ import { } from "./dexie.js";
 // Initialize your databases array
 let databases = [];
 
-export function createDb(dbStore) {
+/**
+ * @typedef {Object} dbStore
+ * @property 
+ */
+
+/**
+ * 
+ * @param {any} dotnetReference
+ * @param {any} transaction
+ * @param {any} dbStore
+ */
+export function createDb(dotnetReference, transaction, dbStore) {
     if (databases.find(d => d.name == dbStore.name) !== undefined)
         console.warn("Blazor.IndexedDB.Framework - Database already exists");
 
-    const db = new Dexie(dbStore.name);
+    var db = new Dexie(dbStore.name);
 
-    const stores = {};
-    for (let i = 0; i < dbStore.storeSchemas.length; i++)
-    {
+    var stores = {};
+    for (var i = 0; i < dbStore.storeSchemas.length; i++) {
         // build string
-        const schema = dbStore.storeSchemas[i];
-        let def = "";
+        var schema = dbStore.storeSchemas[i];
+        var def = "";
         if (schema.primaryKeyAuto)
             def = def + "++";
         if (schema.primaryKey !== null && schema.primaryKey !== "")
@@ -44,7 +54,12 @@ export function createDb(dbStore) {
             db: db
         });
     }
-    return db.open();
+    db.open().then(_ => {
+        dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Database opened');
+    }).catch(e => {
+        console.error(e);
+        dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Database could not be opened');
+    });
 }
 
 export function deleteDb(dotnetReference, transaction, dbName) {
