@@ -1,0 +1,3 @@
+﻿dexie.mjs: https://unpkg.com/dexie/dist/dexie.mjs
+dexie.mjs.map: https://unpkg.com/dexie/dist/dexie.mjs.map
+dexie.d.ts: https://unpkg.com/dexie/dist/dexie.d.ts
