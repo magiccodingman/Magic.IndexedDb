@@ -22,14 +22,14 @@ namespace Magic.IndexedDb
 
         public async Task<string> Encrypt(string data, string key)
         {
-            var mod = await _indexDbManager.GetModule(_jsRuntime);
+            var mod = await _indexDbManager.JsModule;
             string encryptedData = await mod.InvokeAsync<string>("encryptString", new[] { data, key });
             return encryptedData;
         }
 
         public async Task<string> Decrypt(string encryptedData, string key)
         {
-            var mod = await _indexDbManager.GetModule(_jsRuntime);
+            var mod = await _indexDbManager.JsModule;
             string decryptedData = await mod.InvokeAsync<string>("decryptString", new[] { encryptedData, key });
             return decryptedData;
         }
