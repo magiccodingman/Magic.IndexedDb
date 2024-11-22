@@ -1,4 +1,4 @@
-import { } from "./dexie.js";
+import Dexie from "./dexie/dexie.mjs";
 
 // Initialize your databases array
 let databases = [];
