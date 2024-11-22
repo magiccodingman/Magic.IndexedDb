@@ -1,4 +1,3 @@
-/// <reference path="./dexie.d.ts" />
 import { } from "./dexie.js";
 
 // Initialize your databases array
