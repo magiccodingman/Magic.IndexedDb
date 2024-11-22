@@ -22,42 +22,41 @@ namespace Magic.IndexedDb
     /// <summary>
     /// Provides functionality for accessing IndexedDB from Blazor application
     /// </summary>
-    public class IndexedDbManager
+    public sealed class IndexedDbManager : IAsyncDisposable
     {
         readonly DbStore _dbStore;
         readonly IJSRuntime _jsRuntime;
-        const string InteropPrefix = "window.magicBlazorDB";
-        DotNetObjectReference<IndexedDbManager> _objReference;
+        readonly DotNetObjectReference<IndexedDbManager> _objReference;
+        public Task<IJSObjectReference> JsModule { get; }
+
         IDictionary<Guid, WeakReference<Action<BlazorDbEvent>>> _transactions = new Dictionary<Guid, WeakReference<Action<BlazorDbEvent>>>();
         IDictionary<Guid, TaskCompletionSource<BlazorDbEvent>> _taskTransactions = new Dictionary<Guid, TaskCompletionSource<BlazorDbEvent>>();
-
-        private IJSObjectReference? _module { get; set; }
         /// <summary>
         /// A notification event that is raised when an action is completed
         /// </summary>
-        public event EventHandler<BlazorDbEvent> ActionCompleted;
+        public event EventHandler<BlazorDbEvent>? ActionCompleted;
+
+        public async ValueTask DisposeAsync()
+        {
+            _objReference.Dispose();
+
+            var module = await JsModule;
+            await module.DisposeAsync();
+        }
 
         /// <summary>
         /// Ctor
         /// </summary>
         /// <param name="dbStore"></param>
         /// <param name="jsRuntime"></param>
-#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
         internal IndexedDbManager(DbStore dbStore, IJSRuntime jsRuntime)
-#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
         {
             _objReference = DotNetObjectReference.Create(this);
             _dbStore = dbStore;
             _jsRuntime = jsRuntime;
-        }
-
-        public async Task<IJSObjectReference> GetModule(IJSRuntime jsRuntime)
-        {
-            if (_module == null)
-            {
-                _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/Magic.IndexedDb/magicDB.js");
-            }
-            return _module;
+            this.JsModule = jsRuntime.InvokeAsync<IJSObjectReference>(
+                "import", 
+                "./_content/Magic.IndexedDb/magicDB.js").AsTask();
         }
 
         public List<StoreSchema> Stores => _dbStore.StoreSchemas;
@@ -1046,99 +1045,24 @@ namespace Magic.IndexedDb
             }
         }
 
-        //async Task<TResult> CallJavascriptNoTransaction<TResult>(string functionName, params object[] args)
-        //{
-        //    return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", args);
-        //}
-
         async Task<TResult> CallJavascriptNoTransaction<TResult>(string functionName, params object[] args)
         {
-            var mod = await GetModule(_jsRuntime);
+            var mod = await this.JsModule;
             return await mod.InvokeAsync<TResult>($"{functionName}", args);
         }
 
-
-        private const string dynamicJsCaller = "DynamicJsCaller";
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <typeparam name="TResult"></typeparam>
-        /// <param name="functionName"></param>
-        /// <param name="transaction"></param>
-        /// <param name="timeout">in ms</param>
-        /// <param name="args"></param>
-        /// <returns></returns>
-        /// <exception cref="ArgumentException"></exception>
-        public async Task<TResult> CallJS<TResult>(string functionName, double Timeout, params object[] args)
-        {
-            List<object> modifiedArgs = new List<object>(args);
-            modifiedArgs.Insert(0, $"{InteropPrefix}.{functionName}");
-
-            Task<JsResponse<TResult>> task = _jsRuntime.InvokeAsync<JsResponse<TResult>>(dynamicJsCaller, modifiedArgs.ToArray()).AsTask();
-            Task delay = Task.Delay(TimeSpan.FromMilliseconds(Timeout));
-
-            if (await Task.WhenAny(task, delay) == task)
-            {
-                JsResponse<TResult> response = await task;
-                if (response.Success)
-                    return response.Data;
-                else
-                    throw new ArgumentException(response.Message);
-            }
-            else
-            {
-                throw new ArgumentException("Timed out after 1 minute");
-            }
-        }
-
-        //public async Task<TResult> CallJS<TResult>(string functionName, JsSettings Settings, params object[] args)
-        //{
-        //    var newArgs = GetNewArgs(Settings.Transaction, args);
-
-        //    Task<JsResponse<TResult>> task = _jsRuntime.InvokeAsync<JsResponse<TResult>>($"{InteropPrefix}.{functionName}", newArgs).AsTask();
-        //    Task delay = Task.Delay(TimeSpan.FromMilliseconds(Settings.Timeout));
-
-        //    if (await Task.WhenAny(task, delay) == task)
-        //    {
-        //        JsResponse<TResult> response = await task;
-        //        if (response.Success)
-        //            return response.Data;
-        //        else
-        //            throw new ArgumentException(response.Message);
-        //    }
-        //    else
-        //    {
-        //        throw new ArgumentException("Timed out after 1 minute");
-        //    }
-        //}
-
-
-
-        //async Task<TResult> CallJavascript<TResult>(string functionName, Guid transaction, params object[] args)
-        //{
-        //    var newArgs = GetNewArgs(transaction, args);
-        //    return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", newArgs);
-        //}
-        //async Task CallJavascriptVoid(string functionName, Guid transaction, params object[] args)
-        //{
-        //    var newArgs = GetNewArgs(transaction, args);
-        //    await _jsRuntime.InvokeVoidAsync($"{InteropPrefix}.{functionName}", newArgs);
-        //}
-
         async Task<TResult> CallJavascript<TResult>(string functionName, Guid transaction, params object[] args)
         {
-            var mod = await GetModule(_jsRuntime);
+            var mod = await this.JsModule;
             var newArgs = GetNewArgs(transaction, args);
             return await mod.InvokeAsync<TResult>($"{functionName}", newArgs);
         }
         async Task CallJavascriptVoid(string functionName, Guid transaction, params object[] args)
         {
-            var mod = await GetModule(_jsRuntime);
+            var mod = await this.JsModule;
             var newArgs = GetNewArgs(transaction, args);
             await mod.InvokeVoidAsync($"{functionName}", newArgs);
         }
-
-
 
         object[] GetNewArgs(Guid transaction, params object[] args)
         {
@@ -1185,6 +1109,5 @@ namespace Magic.IndexedDb
 
         void RaiseEvent(Guid transaction, bool failed, string message)
             => ActionCompleted?.Invoke(this, new BlazorDbEvent { Transaction = transaction, Failed = failed, Message = message });
-
     }
 }
