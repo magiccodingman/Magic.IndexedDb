@@ -68,11 +68,9 @@ namespace Magic.IndexedDb
         /// and create the stores defined in DbStore.
         /// </summary>
         /// <returns></returns>
-        public async Task<Guid> OpenDb(Action<BlazorDbEvent>? action = null)
+        public Task OpenDbAsync()
         {
-            var trans = GenerateTransaction(action);
-            await CallJavascriptVoid(IndexedDbFunctions.CREATE_DB, trans, _dbStore);
-            return trans;
+            return CallJavascriptVoid(IndexedDbFunctions.CREATE_DB, _dbStore);
         }
 
         /// <summary>
@@ -1062,6 +1060,16 @@ namespace Magic.IndexedDb
             var mod = await this.JsModule;
             var newArgs = GetNewArgs(transaction, args);
             await mod.InvokeVoidAsync($"{functionName}", newArgs);
+        }
+        async Task CallJavascriptVoid(string functionName, params object[] args)
+        {
+            var mod = await this.JsModule;
+            await mod.InvokeVoidAsync(functionName, args);
+        }
+        async Task<T> CallJavascript<T>(string functionName, params object[] args)
+        {
+            var mod = await this.JsModule;
+            return await mod.InvokeAsync<T>(functionName, args);
         }
 
         object[] GetNewArgs(Guid transaction, params object[] args)
