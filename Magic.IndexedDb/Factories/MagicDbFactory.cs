@@ -51,7 +51,7 @@ namespace Magic.IndexedDb
                 {
                     Console.WriteLine($"{dbStore.Name}{dbStore.Version}{dbStore.StoreSchemas.Count}");
                     var db = new IndexedDbManager(dbStore, _jsRuntime);
-                    await db.OpenDbAsync();
+                    await db.OpenDb();
                     _dbs.Add(dbStore.Name, db);
                 }
             }

@@ -22,41 +22,42 @@ namespace Magic.IndexedDb
     /// <summary>
     /// Provides functionality for accessing IndexedDB from Blazor application
     /// </summary>
-    public sealed class IndexedDbManager : IAsyncDisposable
+    public class IndexedDbManager
     {
         readonly DbStore _dbStore;
         readonly IJSRuntime _jsRuntime;
-        readonly DotNetObjectReference<IndexedDbManager> _objReference;
-        public Task<IJSObjectReference> JsModule { get; }
-
+        const string InteropPrefix = "window.magicBlazorDB";
+        DotNetObjectReference<IndexedDbManager> _objReference;
         IDictionary<Guid, WeakReference<Action<BlazorDbEvent>>> _transactions = new Dictionary<Guid, WeakReference<Action<BlazorDbEvent>>>();
         IDictionary<Guid, TaskCompletionSource<BlazorDbEvent>> _taskTransactions = new Dictionary<Guid, TaskCompletionSource<BlazorDbEvent>>();
+
+        private IJSObjectReference? _module { get; set; }
         /// <summary>
         /// A notification event that is raised when an action is completed
         /// </summary>
-        public event EventHandler<BlazorDbEvent>? ActionCompleted;
-
-        public async ValueTask DisposeAsync()
-        {
-            _objReference.Dispose();
-
-            var module = await JsModule;
-            await module.DisposeAsync();
-        }
+        public event EventHandler<BlazorDbEvent> ActionCompleted;
 
         /// <summary>
         /// Ctor
         /// </summary>
         /// <param name="dbStore"></param>
         /// <param name="jsRuntime"></param>
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
         internal IndexedDbManager(DbStore dbStore, IJSRuntime jsRuntime)
+#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
         {
             _objReference = DotNetObjectReference.Create(this);
             _dbStore = dbStore;
             _jsRuntime = jsRuntime;
-            this.JsModule = jsRuntime.InvokeAsync<IJSObjectReference>(
-                "import", 
-                "./_content/Magic.IndexedDb/magicDB.js").AsTask();
+        }
+
+        public async Task<IJSObjectReference> GetModule(IJSRuntime jsRuntime)
+        {
+            if (_module == null)
+            {
+                _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./_content/Magic.IndexedDb/magicDB.js");
+            }
+            return _module;
         }
 
         public List<StoreSchema> Stores => _dbStore.StoreSchemas;
@@ -68,9 +69,11 @@ namespace Magic.IndexedDb
         /// and create the stores defined in DbStore.
         /// </summary>
         /// <returns></returns>
-        public Task OpenDbAsync()
+        public async Task<Guid> OpenDb(Action<BlazorDbEvent>? action = null)
         {
-            return CallJavascriptVoid(IndexedDbFunctions.CREATE_DB, _dbStore);
+            var trans = GenerateTransaction(action);
+            await CallJavascriptVoid(IndexedDbFunctions.CREATE_DB, trans, _dbStore);
+            return trans;
         }
 
         /// <summary>
@@ -1043,34 +1046,99 @@ namespace Magic.IndexedDb
             }
         }
 
+        //async Task<TResult> CallJavascriptNoTransaction<TResult>(string functionName, params object[] args)
+        //{
+        //    return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", args);
+        //}
+
         async Task<TResult> CallJavascriptNoTransaction<TResult>(string functionName, params object[] args)
         {
-            var mod = await this.JsModule;
+            var mod = await GetModule(_jsRuntime);
             return await mod.InvokeAsync<TResult>($"{functionName}", args);
         }
 
+
+        private const string dynamicJsCaller = "DynamicJsCaller";
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="functionName"></param>
+        /// <param name="transaction"></param>
+        /// <param name="timeout">in ms</param>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentException"></exception>
+        public async Task<TResult> CallJS<TResult>(string functionName, double Timeout, params object[] args)
+        {
+            List<object> modifiedArgs = new List<object>(args);
+            modifiedArgs.Insert(0, $"{InteropPrefix}.{functionName}");
+
+            Task<JsResponse<TResult>> task = _jsRuntime.InvokeAsync<JsResponse<TResult>>(dynamicJsCaller, modifiedArgs.ToArray()).AsTask();
+            Task delay = Task.Delay(TimeSpan.FromMilliseconds(Timeout));
+
+            if (await Task.WhenAny(task, delay) == task)
+            {
+                JsResponse<TResult> response = await task;
+                if (response.Success)
+                    return response.Data;
+                else
+                    throw new ArgumentException(response.Message);
+            }
+            else
+            {
+                throw new ArgumentException("Timed out after 1 minute");
+            }
+        }
+
+        //public async Task<TResult> CallJS<TResult>(string functionName, JsSettings Settings, params object[] args)
+        //{
+        //    var newArgs = GetNewArgs(Settings.Transaction, args);
+
+        //    Task<JsResponse<TResult>> task = _jsRuntime.InvokeAsync<JsResponse<TResult>>($"{InteropPrefix}.{functionName}", newArgs).AsTask();
+        //    Task delay = Task.Delay(TimeSpan.FromMilliseconds(Settings.Timeout));
+
+        //    if (await Task.WhenAny(task, delay) == task)
+        //    {
+        //        JsResponse<TResult> response = await task;
+        //        if (response.Success)
+        //            return response.Data;
+        //        else
+        //            throw new ArgumentException(response.Message);
+        //    }
+        //    else
+        //    {
+        //        throw new ArgumentException("Timed out after 1 minute");
+        //    }
+        //}
+
+
+
+        //async Task<TResult> CallJavascript<TResult>(string functionName, Guid transaction, params object[] args)
+        //{
+        //    var newArgs = GetNewArgs(transaction, args);
+        //    return await _jsRuntime.InvokeAsync<TResult>($"{InteropPrefix}.{functionName}", newArgs);
+        //}
+        //async Task CallJavascriptVoid(string functionName, Guid transaction, params object[] args)
+        //{
+        //    var newArgs = GetNewArgs(transaction, args);
+        //    await _jsRuntime.InvokeVoidAsync($"{InteropPrefix}.{functionName}", newArgs);
+        //}
+
         async Task<TResult> CallJavascript<TResult>(string functionName, Guid transaction, params object[] args)
         {
-            var mod = await this.JsModule;
+            var mod = await GetModule(_jsRuntime);
             var newArgs = GetNewArgs(transaction, args);
             return await mod.InvokeAsync<TResult>($"{functionName}", newArgs);
         }
         async Task CallJavascriptVoid(string functionName, Guid transaction, params object[] args)
         {
-            var mod = await this.JsModule;
+            var mod = await GetModule(_jsRuntime);
             var newArgs = GetNewArgs(transaction, args);
             await mod.InvokeVoidAsync($"{functionName}", newArgs);
         }
-        async Task CallJavascriptVoid(string functionName, params object[] args)
-        {
-            var mod = await this.JsModule;
-            await mod.InvokeVoidAsync(functionName, args);
-        }
-        async Task<T> CallJavascript<T>(string functionName, params object[] args)
-        {
-            var mod = await this.JsModule;
-            return await mod.InvokeAsync<T>(functionName, args);
-        }
+
+
 
         object[] GetNewArgs(Guid transaction, params object[] args)
         {
@@ -1117,5 +1185,6 @@ namespace Magic.IndexedDb
 
         void RaiseEvent(Guid transaction, bool failed, string message)
             => ActionCompleted?.Invoke(this, new BlazorDbEvent { Transaction = transaction, Failed = failed, Message = message });
+
     }
 }
