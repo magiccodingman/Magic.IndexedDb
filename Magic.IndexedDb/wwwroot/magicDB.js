@@ -3,17 +3,6 @@ import { } from "./dexie.js";
 // Initialize your databases array
 let databases = [];
 
-/**
- * @typedef {Object} dbStore
- * @property 
- */
-
-/**
- * 
- * @param {any} dotnetReference
- * @param {any} transaction
- * @param {any} dbStore
- */
 export function createDb(dotnetReference, transaction, dbStore) {
     if (databases.find(d => d.name == dbStore.name) !== undefined)
         console.warn("Blazor.IndexedDB.Framework - Database already exists");
