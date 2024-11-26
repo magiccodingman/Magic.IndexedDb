@@ -105,29 +105,10 @@ namespace Magic.IndexedDb
             return await trans.task;
         }
 
-        /// <summary>
-        /// Adds a new record/object to the specified store
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="recordToAdd">An instance of StoreRecord that provides the store name and the data to add</param>
-        /// <returns></returns>
-        private async Task<Guid> AddRecord<T>(StoreRecord<T> recordToAdd, Action<BlazorDbEvent>? action = null)
+        public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
         {
-            var trans = GenerateTransaction(action);
-            try
-            {
-                recordToAdd.DbName = DbName;
-                await CallJavascriptVoid(IndexedDbFunctions.ADD_ITEM, trans, recordToAdd);
-            }
-            catch (JSException e)
-            {
-                RaiseEvent(trans, true, e.Message);
-            }
-            return trans;
-        }
+            // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
-        public async Task<Guid> Add<T>(T record, Action<BlazorDbEvent>? action = null) where T : class
-        {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
             T? myClass = null;
@@ -137,47 +118,38 @@ namespace Magic.IndexedDb
             else
                 myClass = (T?)processedRecord;
 
-            var trans = GenerateTransaction(action);
-            try
+            Dictionary<string, object?>? convertedRecord = null;
+            if (processedRecord is ExpandoObject)
             {
-                Dictionary<string, object?>? convertedRecord = null;
-                if (processedRecord is ExpandoObject)
+                var result = ((ExpandoObject)processedRecord)?.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
+                if (result != null)
                 {
-                    var result = ((ExpandoObject)processedRecord)?.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
-                    if (result != null)
-                    {
-                        convertedRecord = result;
-                    }
-                }
-                else
-                {
-                    convertedRecord = ManagerHelper.ConvertRecordToDictionary(myClass);
-                }
-                var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-
-                // Convert the property names in the convertedRecord dictionary
-                if (convertedRecord != null)
-                {
-                    var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
-
-                    if (updatedRecord != null)
-                    {
-                        StoreRecord<Dictionary<string, object?>> RecordToSend = new StoreRecord<Dictionary<string, object?>>()
-                        {
-                            DbName = this.DbName,
-                            StoreName = schemaName,
-                            Record = updatedRecord
-                        };
-
-                        await CallJavascriptVoid(IndexedDbFunctions.ADD_ITEM, trans, RecordToSend);
-                    }
+                    convertedRecord = result;
                 }
             }
-            catch (JSException e)
+            else
             {
-                RaiseEvent(trans, true, e.Message);
+                convertedRecord = ManagerHelper.ConvertRecordToDictionary(myClass);
             }
-            return trans;
+            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
+
+            // Convert the property names in the convertedRecord dictionary
+            if (convertedRecord != null)
+            {
+                var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
+
+                if (updatedRecord != null)
+                {
+                    StoreRecord<Dictionary<string, object?>> RecordToSend = new StoreRecord<Dictionary<string, object?>>()
+                    {
+                        DbName = this.DbName,
+                        StoreName = schemaName,
+                        Record = updatedRecord
+                    };
+
+                    await CallJs(IndexedDbFunctions.ADD_ITEM, cancellationToken, [RecordToSend]);
+                }
+            }
         }
 
         public async Task<string> Decrypt(string EncryptedValue)

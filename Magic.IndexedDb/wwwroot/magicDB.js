@@ -72,19 +72,10 @@ export async function deleteDb(dbName)
     db.delete();
 }
 
-export function addItem(dotnetReference, transaction, item)
+export async function addItem(item)
 {
-    getTable(item.dbName, item.storeName).then(table =>
-    {
-        table.add(item.record).then(_ =>
-        {
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Item added');
-        }).catch(e =>
-        {
-            console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Item could not be added');
-        });
-    });
+    let table = await getTable(item.dbName, item.storeName);
+    return await table.add(item.record);
 }
 
 export function bulkAddItem(dotnetReference, transaction, dbName, storeName, items)
@@ -355,16 +346,11 @@ async function getDb(dbName)
     }
 }
 
-export function getTable(dbName, storeName)
+async function getTable(dbName, storeName)
 {
-    return new Promise((resolve, reject) =>
-    {
-        getDb(dbName).then(db =>
-        {
-            var table = db.table(storeName);
-            resolve(table);
-        });
-    });
+    let db = await getDb(dbName);
+    let table = db.table(storeName);
+    return table;
 }
 
 export function createFilterObject(filters)
