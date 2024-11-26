@@ -830,25 +830,15 @@ namespace Magic.IndexedDb
         }
 
 
-        public async Task<IEnumerable<T>> GetAll<T>() where T : class
+        public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
-            var trans = GenerateTransaction(null);
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
+            var ListToConvert = await CallJs<IList<Dictionary<string, object>>>(
+                IndexedDbFunctions.TOARRAY, cancellationToken, [DbName, schemaName]);
 
-            try
-            {
-                string schemaName = SchemaHelper.GetSchemaName<T>();
-                var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-                IList<Dictionary<string, object>>? ListToConvert = await CallJavascript<IList<Dictionary<string, object>>>(IndexedDbFunctions.TOARRAY, trans, DbName, schemaName);
-
-                var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
-                return resultList;
-            }
-            catch (JSException jse)
-            {
-                RaiseEvent(trans, true, jse.Message);
-            }
-
-            return Enumerable.Empty<T>();
+            var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
+            return resultList;
         }
 
         public async Task<Guid> Delete<T>(T item, Action<BlazorDbEvent>? action = null) where T : class

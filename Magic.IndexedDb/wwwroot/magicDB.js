@@ -294,24 +294,10 @@ export function findItemv2(dotnetReference, transaction, dbName, storeName, keyV
     return promise;
 }
 
-export function toArray(dotnetReference, transaction, dbName, storeName)
+export async function toArray(dbName, storeName)
 {
-    return new Promise((resolve, reject) =>
-    {
-        getTable(dbName, storeName).then(table =>
-        {
-            table.toArray(items =>
-            {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'toArray succeeded');
-                resolve(items);
-            }).catch(e =>
-            {
-                console.error(e);
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'toArray failed');
-                reject(e);
-            });
-        });
-    });
+    let table = await getTable(dbName, storeName);
+    return await table.toArray();
 }
 
 async function getDb(dbName)

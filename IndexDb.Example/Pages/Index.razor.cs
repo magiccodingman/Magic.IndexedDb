@@ -22,7 +22,7 @@ namespace IndexDb.Example.Pages
 
                     await manager.ClearTableAsync<Person>();
 
-                    var AllThePeeps = await manager.GetAll<Person>();
+                    var AllThePeeps = await manager.GetAllAsync<Person>();
                     if (AllThePeeps.Count() < 1)
                     {
                         Person[] persons = new Person[] {
@@ -45,7 +45,7 @@ namespace IndexDb.Example.Pages
                     storageQuota = storageInfo.quota;
                     storageUsage = storageInfo.usage;
 
-                    var allPeopleDecrypted = await manager.GetAll<Person>();
+                    var allPeopleDecrypted = await manager.GetAllAsync<Person>();
 
                     foreach (Person person in allPeopleDecrypted)
                     {
