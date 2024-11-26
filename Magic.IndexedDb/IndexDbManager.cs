@@ -804,30 +804,28 @@ namespace Magic.IndexedDb
             return JsonConvert.SerializeObject(orConditions, serializerSettings);
         }
 
-        public class QuotaUsage
+        public sealed record QuotaUsage(long Quota, long Usage)
         {
-            public long quota { get; set; }
-            public long usage { get; set; }
+            private static double ConvertBytesToMegabytes(long bytes)
+            {
+                return (double)bytes / (1024 * 1024);
+            }
+
+            public double QuotaInMegabytes => ConvertBytesToMegabytes(Quota);
+            public double UsageInMegabytes => ConvertBytesToMegabytes(Usage);
+
+            public (double quota, double usage) InMegabytes => (QuotaInMegabytes, UsageInMegabytes);
         }
 
         /// <summary>
         /// Returns Mb
         /// </summary>
         /// <returns></returns>
-        public async Task<(double quota, double usage)> GetStorageEstimateAsync()
+        public Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default)
         {
-            var storageInfo = await CallJavascriptNoTransaction<QuotaUsage>(IndexedDbFunctions.GET_STORAGE_ESTIMATE);
-
-            double quotaInMB = ConvertBytesToMegabytes(storageInfo.quota);
-            double usageInMB = ConvertBytesToMegabytes(storageInfo.usage);
-            return (quotaInMB, usageInMB);
+            return CallJs<QuotaUsage>(IndexedDbFunctions.GET_STORAGE_ESTIMATE, cancellationToken, []);
         }
 
-
-        private static double ConvertBytesToMegabytes(long bytes)
-        {
-            return (double)bytes / (1024 * 1024);
-        }
 
 
         public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class

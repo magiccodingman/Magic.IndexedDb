@@ -692,20 +692,7 @@ export function getAll(dotnetReference, transaction, dbName, storeName)
 
 export async function getStorageEstimate()
 {
-    if (navigator.storage && navigator.storage.estimate)
-    {
-        const estimate = await navigator.storage.estimate();
-        return {
-            quota: estimate.quota,
-            usage: estimate.usage
-        };
-    } else
-    {
-        return {
-            quota: -1,
-            usage: -1
-        };
-    }
+    return navigator.storage.estimate();
 }
 
 export function encryptString(data, key)

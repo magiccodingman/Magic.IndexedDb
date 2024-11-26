@@ -42,8 +42,8 @@ namespace IndexDb.Example.Pages
 
                     //var StorageLimit = await manager.GetStorageEstimateAsync();
                     var storageInfo = await manager.GetStorageEstimateAsync();
-                    storageQuota = storageInfo.quota;
-                    storageUsage = storageInfo.usage;
+                    storageQuota = storageInfo.QuotaInMegabytes;
+                    storageUsage = storageInfo.UsageInMegabytes;
 
                     var allPeopleDecrypted = await manager.GetAllAsync<Person>();
 
