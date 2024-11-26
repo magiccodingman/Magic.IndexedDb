@@ -78,6 +78,8 @@ export async function addItem(item)
     return await table.add(item.record);
 }
 
+// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
+
 export function bulkAddItem(dotnetReference, transaction, dbName, storeName, items)
 {
     getTable(dbName, storeName).then(table =>
@@ -244,19 +246,10 @@ export function deleteItem(dotnetReference, transaction, item)
     });
 }
 
-export function clear(dotnetReference, transaction, dbName, storeName)
+export async function clear(dbName, storeName)
 {
-    getTable(dbName, storeName).then(table =>
-    {
-        table.clear().then(_ =>
-        {
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Table cleared');
-        }).catch(e =>
-        {
-            console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Table could not be cleared');
-        });
-    });
+    let table = await getTable(dbName, storeName);
+    await table.clear();
 }
 
 export function findItem(dotnetReference, transaction, item)

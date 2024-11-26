@@ -923,60 +923,25 @@ namespace Magic.IndexedDb
             return 0;
         }
 
-
-        /// <summary>
-        /// Clears all data from a Table but keeps the table
-        /// </summary>
-        /// <param name="storeName"></param>
-        /// <param name="action"></param>
-        /// <returns></returns>
-        public async Task<Guid> ClearTable(string storeName, Action<BlazorDbEvent>? action = null)
-        {
-            var trans = GenerateTransaction(action);
-            try
-            {
-                await CallJavascriptVoid(IndexedDbFunctions.CLEAR_TABLE, trans, DbName, storeName);
-            }
-            catch (JSException jse)
-            {
-                RaiseEvent(trans, true, jse.Message);
-            }
-            return trans;
-        }
-
-        public async Task<Guid> ClearTable<T>(Action<BlazorDbEvent>? action = null) where T : class
-        {
-            var trans = GenerateTransaction(action);
-            try
-            {
-                string schemaName = SchemaHelper.GetSchemaName<T>();
-                await CallJavascriptVoid(IndexedDbFunctions.CLEAR_TABLE, trans, DbName, schemaName);
-            }
-            catch (JSException jse)
-            {
-                RaiseEvent(trans, true, jse.Message);
-            }
-            return trans;
-        }
-
         /// <summary>
         /// Clears all data from a Table but keeps the table
         /// Wait for response
         /// </summary>
         /// <param name="storeName"></param>
         /// <returns></returns>
-        public async Task<BlazorDbEvent> ClearTableAsync(string storeName)
+        public Task ClearTableAsync(string storeName, CancellationToken cancellationToken = default)
         {
-            var trans = GenerateTransaction();
-            try
-            {
-                await CallJavascriptVoid(IndexedDbFunctions.CLEAR_TABLE, trans.trans, DbName, storeName);
-            }
-            catch (JSException jse)
-            {
-                RaiseEvent(trans.trans, true, jse.Message);
-            }
-            return await trans.task;
+            return CallJs(IndexedDbFunctions.CLEAR_TABLE, cancellationToken, [DbName, storeName]);
+        }
+
+        /// <summary>
+        /// Clears all data from a Table but keeps the table
+        /// Wait for response
+        /// </summary>
+        /// <returns></returns>
+        public Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
+        {
+            return ClearTableAsync(SchemaHelper.GetSchemaName<T>(), cancellationToken);
         }
 
         [JSInvokable("BlazorDBCallback")]
