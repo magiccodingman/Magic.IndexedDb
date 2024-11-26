@@ -78,15 +78,13 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="dbName">The name of database to delete</param>
         /// <returns></returns>
-        public async Task<Guid> DeleteDb(string dbName, Action<BlazorDbEvent>? action = null)
+        public Task DeleteDbAsync(string dbName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(dbName))
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            var trans = GenerateTransaction(action);
-            await CallJavascriptVoid(IndexedDbFunctions.DELETE_DB, trans, dbName);
-            return trans;
+            return CallJs(IndexedDbFunctions.DELETE_DB, cancellationToken, [dbName]);
         }
 
 
