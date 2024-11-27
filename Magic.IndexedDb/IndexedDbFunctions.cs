@@ -8,6 +8,7 @@ namespace Magic.IndexedDb
         public const string BULKADD_ITEM = "bulkAddItem";
         // TODO: COUNT_TABLE is not referenced?
         public const string COUNT_TABLE = "countTable";
+        // TODO: not referenced?
         public const string PUT_ITEM = "putItem";
         public const string UPDATE_ITEM = "updateItem";
         public const string BULKADD_UPDATE = "bulkUpdateItem";

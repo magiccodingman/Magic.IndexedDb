@@ -90,22 +90,13 @@ export async function countTable(dbName, storeName)
     return await table.count();
 }
 
-// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
-
-export function putItem(dotnetReference, transaction, item)
+export async function putItem(item)
 {
-    getTable(item.dbName, item.storeName).then(table =>
-    {
-        table.put(item.record).then(_ =>
-        {
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Item put successful');
-        }).catch(e =>
-        {
-            console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Item put failed');
-        });
-    });
+    let table = await getTable(item.dbName, item.storeName);
+    return await table.put(item.record);
 }
+
+// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 
 export function updateItem(dotnetReference, transaction, item)
 {
