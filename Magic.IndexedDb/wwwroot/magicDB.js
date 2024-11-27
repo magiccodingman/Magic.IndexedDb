@@ -80,19 +80,10 @@ export async function addItem(item)
 
 // TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 
-export function bulkAddItem(dotnetReference, transaction, dbName, storeName, items)
+export async function bulkAddItem(dbName, storeName, items)
 {
-    getTable(dbName, storeName).then(table =>
-    {
-        table.bulkAdd(items).then(_ =>
-        {
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Item(s) bulk added');
-        }).catch(e =>
-        {
-            console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Item(s) could not be bulk added');
-        });
-    });
+    let table = await getTable(dbName, storeName);
+    return await table.bulkAdd(items);
 }
 
 export function countTable(dotnetReference, transaction, dbName, storeName)

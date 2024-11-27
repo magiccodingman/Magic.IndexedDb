@@ -238,26 +238,6 @@ namespace Magic.IndexedDb
             return type.IsValueType ? Activator.CreateInstance(type) : null;
         }
 
-        /// <summary>
-        /// Adds records/objects to the specified store in bulk
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="recordsToBulkAdd">The data to add</param>
-        /// <returns></returns>
-        private async Task<Guid> BulkAddRecord<T>(string storeName, IEnumerable<T> recordsToBulkAdd, Action<BlazorDbEvent>? action = null)
-        {
-            var trans = GenerateTransaction(action);
-            try
-            {
-                await CallJavascriptVoid(IndexedDbFunctions.BULKADD_ITEM, trans, DbName, storeName, recordsToBulkAdd);
-            }
-            catch (JSException e)
-            {
-                RaiseEvent(trans, true, e.Message);
-            }
-            return trans;
-        }
-
         //public async Task<Guid> AddRange<T>(IEnumerable<T> records, Action<BlazorDbEvent> action = null) where T : class
         //{
         //    string schemaName = SchemaHelper.GetSchemaName<T>();
@@ -290,18 +270,14 @@ namespace Magic.IndexedDb
         /// <typeparam name="T"></typeparam>
         /// <param name="recordsToBulkAdd">An instance of StoreRecord that provides the store name and the data to add</param>
         /// <returns></returns>
-        private async Task<BlazorDbEvent> BulkAddRecordAsync<T>(string storeName, IEnumerable<T> recordsToBulkAdd)
+        private Task BulkAddRecordAsync<T>(
+            string storeName, 
+            IEnumerable<T> recordsToBulkAdd, 
+            CancellationToken cancellationToken = default)
         {
-            var trans = GenerateTransaction();
-            try
-            {
-                await CallJavascriptVoid(IndexedDbFunctions.BULKADD_ITEM, trans.trans, DbName, storeName, recordsToBulkAdd);
-            }
-            catch (JSException e)
-            {
-                RaiseEvent(trans.trans, true, e.Message);
-            }
-            return await trans.task;
+            // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
+
+            return CallJs(IndexedDbFunctions.BULKADD_ITEM, cancellationToken, [DbName, storeName, recordsToBulkAdd]);
         }
 
         public async Task AddRange<T>(IEnumerable<T> records) where T : class
