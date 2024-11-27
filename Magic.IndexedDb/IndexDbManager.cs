@@ -362,47 +362,36 @@ namespace Magic.IndexedDb
             return await CallJs<int>(IndexedDbFunctions.UPDATE_ITEM, cancellationToken, [record]);
         }
 
-        public async Task<Guid> UpdateRange<T>(IEnumerable<T> items, Action<BlazorDbEvent>? action = null) where T : class
+        public async Task<int> UpdateRangeAsync<T>(
+            IEnumerable<T> items,
+            CancellationToken cancellationToken = default) where T : class
         {
-            var trans = GenerateTransaction(action);
-            try
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
+
+            if (primaryKeyProperty is null)
+                throw new ArgumentException("Item being update range item must have a key.");
+
+            List<UpdateRecord<Dictionary<string, object?>>> recordsToUpdate = new List<UpdateRecord<Dictionary<string, object?>>>();
+
+            foreach (var item in items)
             {
-                string schemaName = SchemaHelper.GetSchemaName<T>();
-                PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
+                object? primaryKeyValue = primaryKeyProperty.GetValue(item);
+                var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
 
-                if (primaryKeyProperty != null)
-                {
-                    List<UpdateRecord<Dictionary<string, object?>>> recordsToUpdate = new List<UpdateRecord<Dictionary<string, object?>>>();
-
-                    foreach (var item in items)
-                    {
-                        object? primaryKeyValue = primaryKeyProperty.GetValue(item);
-                        var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
-
-                        if (primaryKeyValue != null)
-                        {
-                            recordsToUpdate.Add(new UpdateRecord<Dictionary<string, object?>>()
-                            {
-                                Key = primaryKeyValue,
-                                DbName = this.DbName,
-                                StoreName = schemaName,
-                                Record = convertedRecord
-                            });
-                        }
-
-                        await CallJavascriptVoid(IndexedDbFunctions.BULKADD_UPDATE, trans, recordsToUpdate);
-                    }
-                }
-                else
-                {
+                if (primaryKeyValue is null)
                     throw new ArgumentException("Item being update range item must have a key.");
-                }
+
+                recordsToUpdate.Add(new UpdateRecord<Dictionary<string, object?>>()
+                {
+                    Key = primaryKeyValue,
+                    DbName = this.DbName,
+                    StoreName = schemaName,
+                    Record = convertedRecord
+                });
             }
-            catch (JSException jse)
-            {
-                RaiseEvent(trans, true, jse.Message);
-            }
-            return trans;
+            return await CallJs<int>(
+                IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, [recordsToUpdate]);
         }
 
         public async Task<TResult?> GetById<TResult>(object key) where TResult : class

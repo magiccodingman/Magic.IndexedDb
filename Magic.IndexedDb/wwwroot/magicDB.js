@@ -102,49 +102,33 @@ export async function updateItem(item)
     return await table.update(item.key, item.record);
 }
 
-// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
-
-export function bulkUpdateItem(dotnetReference, transaction, items)
+export async function bulkUpdateItem(items)
 {
-    return new Promise(async (resolve, reject) =>
+    const table = await getTable(items[0].dbName, items[0].storeName);
+    let updatedCount = 0;
+    let errors = false;
+
+    for (const item of items)
     {
         try
         {
-            const table = await getTable(items[0].dbName, items[0].storeName);
-            let updatedCount = 0;
-            let errors = false;
-
-            for (const item of items)
-            {
-                try
-                {
-                    await table.update(item.key, item.record);
-                    updatedCount++;
-                } catch (e)
-                {
-                    console.error(e);
-                    errors = true;
-                }
-            }
-
-            if (errors)
-            {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Some items could not be updated');
-                reject(new Error('Some items could not be updated'));
-            } else
-            {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, `${updatedCount} items updated`);
-                resolve(updatedCount);
-            }
-        } catch (e)
+            await table.update(item.key, item.record);
+            updatedCount++;
+        }
+        catch (e)
         {
             console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Items could not be updated');
-            reject(e);
+            errors = true;
         }
-    });
+    }
+
+    if (errors)
+        throw new Error('Some items could not be updated');
+    else
+        return updatedCount;
 }
 
+// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 export function bulkDelete(dotnetReference, transaction, dbName, storeName, keys)
 {
     return new Promise(async (resolve, reject) =>
