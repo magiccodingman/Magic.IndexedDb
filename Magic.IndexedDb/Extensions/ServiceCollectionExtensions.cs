@@ -21,11 +21,14 @@ namespace Magic.IndexedDb.Extensions
             return services;
         }
 
+        // The registered service is not used in IndexDbManager at all
+        /*
         public static IServiceCollection AddEncryptionFactory(this IServiceCollection services)
         {
             services.TryAddSingleton<IEncryptionFactory, EncryptionFactory>();
 
             return services;
         }
+        */
     }
 }

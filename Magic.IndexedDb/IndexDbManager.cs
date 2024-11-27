@@ -1,12 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Dynamic;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Security.Cryptography.X509Certificates;
-using System.Text.Json;
-using System.Threading.Tasks;
+using System.Threading;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Models;
 using Magic.IndexedDb.SchemaAnnotations;
@@ -14,8 +9,6 @@ using Microsoft.JSInterop;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
-using static System.Collections.Specialized.BitVector32;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Magic.IndexedDb
 {
@@ -25,15 +18,11 @@ namespace Magic.IndexedDb
     public sealed class IndexedDbManager : IAsyncDisposable
     {
         readonly DbStore _dbStore;
-        readonly IJSRuntime _jsRuntime;
-        readonly DotNetObjectReference<IndexedDbManager> _objReference;
-        public Task<IJSObjectReference> JsModule { get; }
+        readonly Task<IJSObjectReference> _jsModule;
 
         public async ValueTask DisposeAsync()
         {
-            _objReference.Dispose();
-
-            var module = await JsModule;
+            var module = await _jsModule;
             await module.DisposeAsync();
         }
 
@@ -44,15 +33,13 @@ namespace Magic.IndexedDb
         /// <param name="jsRuntime"></param>
         internal IndexedDbManager(DbStore dbStore, IJSRuntime jsRuntime)
         {
-            _objReference = DotNetObjectReference.Create(this);
-            _dbStore = dbStore;
-            _jsRuntime = jsRuntime;
-            this.JsModule = jsRuntime.InvokeAsync<IJSObjectReference>(
+            this._dbStore = dbStore;
+            this._jsModule = jsRuntime.InvokeAsync<IJSObjectReference>(
                 "import", 
                 "./_content/Magic.IndexedDb/magicDB.js").AsTask();
         }
 
-        public List<StoreSchema> Stores => _dbStore.StoreSchemas;
+        public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
         public string CurrentVersion => _dbStore.Version;
         public string DbName => _dbStore.Name;
 
@@ -87,7 +74,7 @@ namespace Magic.IndexedDb
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
             T? myClass = null;
-            object? processedRecord = await ProcessRecord(record);
+            object? processedRecord = await ProcessRecord(record, cancellationToken);
             if (processedRecord is ExpandoObject)
                 myClass = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(processedRecord));
             else
@@ -127,14 +114,14 @@ namespace Magic.IndexedDb
             }
         }
 
-        public async Task<string> Decrypt(string EncryptedValue)
+        public async Task<string> DecryptAsync(string EncryptedValue, CancellationToken cancellationToken = default)
         {
-            EncryptionFactory encryptionFactory = new EncryptionFactory(_jsRuntime, this);
-            string decryptedValue = await encryptionFactory.Decrypt(EncryptedValue, _dbStore.EncryptionKey);
+            EncryptionFactory encryptionFactory = new EncryptionFactory(this);
+            string decryptedValue = await encryptionFactory.DecryptAsync(EncryptedValue, _dbStore.EncryptionKey, cancellationToken);
             return decryptedValue;
         }
 
-        private async Task<object?> ProcessRecord<T>(T record) where T : class
+        private async Task<object?> ProcessRecord<T>(T record, CancellationToken cancellationToken) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
             StoreSchema? storeSchema = Stores.FirstOrDefault(s => s.Name == schemaName);
@@ -148,7 +135,7 @@ namespace Magic.IndexedDb
             var propertiesToEncrypt = typeof(T).GetProperties()
                 .Where(p => p.GetCustomAttributes(typeof(MagicEncryptAttribute), false).Length > 0);
 
-            EncryptionFactory encryptionFactory = new EncryptionFactory(_jsRuntime, this);
+            EncryptionFactory encryptionFactory = new EncryptionFactory(this);
             foreach (var property in propertiesToEncrypt)
             {
                 if (property.PropertyType != typeof(string))
@@ -159,7 +146,8 @@ namespace Magic.IndexedDb
                 string? originalValue = property.GetValue(record) as string;
                 if (!string.IsNullOrWhiteSpace(originalValue))
                 {
-                    string encryptedValue = await encryptionFactory.Encrypt(originalValue, _dbStore.EncryptionKey);
+                    string encryptedValue = await encryptionFactory.EncryptAsync(
+                        originalValue, _dbStore.EncryptionKey, cancellationToken);
                     property.SetValue(record, encryptedValue);
                 }
                 else
@@ -255,7 +243,8 @@ namespace Magic.IndexedDb
             return CallJs(IndexedDbFunctions.BULKADD_ITEM, cancellationToken, [DbName, storeName, recordsToBulkAdd]);
         }
 
-        public async Task AddRange<T>(IEnumerable<T> records) where T : class
+        public async Task AddRangeAsync<T>(
+            IEnumerable<T> records, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
@@ -267,7 +256,7 @@ namespace Magic.IndexedDb
                 bool IsExpando = false;
                 T? myClass = null;
 
-                object? processedRecord = await ProcessRecord(record);
+                object? processedRecord = await ProcessRecord(record, cancellationToken);
                 if (processedRecord is ExpandoObject)
                 {
                     myClass = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(processedRecord));
@@ -311,7 +300,7 @@ namespace Magic.IndexedDb
                 }
             }
 
-            await BulkAddRecordAsync(schemaName, processedRecords);
+            await BulkAddRecordAsync(schemaName, processedRecords, cancellationToken);
         }
 
         public async Task<int> UpdateAsync<T>(T item, CancellationToken cancellationToken = default) where T : class
@@ -807,31 +796,15 @@ namespace Magic.IndexedDb
             return ClearTableAsync(SchemaHelper.GetSchemaName<T>(), cancellationToken);
         }
 
-        async Task CallJavascriptVoid(string functionName, Guid transaction, params object[] args)
+        internal async Task CallJs(string functionName, CancellationToken token, object[] args)
         {
-            var mod = await this.JsModule;
-            var newArgs = GetNewArgs(transaction, args);
-            await mod.InvokeVoidAsync($"{functionName}", newArgs);
-        }
-        async Task CallJs(string functionName, CancellationToken token, object[] args)
-        {
-            var mod = await this.JsModule;
+            var mod = await this._jsModule;
             await mod.InvokeVoidAsync(functionName, token, args);
         }
-        async Task<T> CallJs<T>(string functionName, CancellationToken token, object[] args)
+        internal async Task<T> CallJs<T>(string functionName, CancellationToken token, object[] args)
         {
-            var mod = await this.JsModule;
+            var mod = await this._jsModule;
             return await mod.InvokeAsync<T>(functionName, token, args);
-        }
-
-        object[] GetNewArgs(Guid transaction, params object[] args)
-        {
-            var newArgs = new object[args.Length + 2];
-            newArgs[0] = _objReference;
-            newArgs[1] = transaction;
-            for (var i = 0; i < args.Length; i++)
-                newArgs[i + 2] = args[i];
-            return newArgs;
         }
     }
 }
