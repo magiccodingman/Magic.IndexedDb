@@ -162,34 +162,13 @@ export async function deleteItem(item)
     await table.delete(item.key)
 }
 
-// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 export async function clear(dbName, storeName)
 {
     let table = await getTable(dbName, storeName);
     await table.clear();
 }
 
-export function findItem(dotnetReference, transaction, item)
-{
-    var promise = new Promise((resolve, reject) =>
-    {
-        getTable(item.dbName, item.storeName).then(table =>
-        {
-            table.get(item.key).then(i =>
-            {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Found item');
-                resolve(i);
-            }).catch(e =>
-            {
-                console.error(e);
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Could not find item');
-                reject(e);
-            });
-        });
-    });
-    return promise;
-}
-
+// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 export function findItemv2(dotnetReference, transaction, dbName, storeName, keyValue)
 {
     var promise = new Promise((resolve, reject) =>

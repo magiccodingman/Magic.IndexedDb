@@ -15,7 +15,6 @@ namespace Magic.IndexedDb
         public const string BULK_DELETE = "bulkDelete";
         public const string DELETE_ITEM = "deleteItem";
         public const string CLEAR_TABLE = "clear";
-        public const string FIND_ITEM = "findItem";
         public const string FIND_ITEMV2 = "findItemv2";
         public const string TOARRAY = "toArray";
         public const string WHERE = "where";
