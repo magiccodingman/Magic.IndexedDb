@@ -15,7 +15,7 @@ namespace Magic.IndexedDb
             string data, string key, 
             CancellationToken cancellationToken = default)
         {
-            return indexDbManager.CallJs<string>(
+            return indexDbManager.CallJsAsync<string>(
                 "encryptString", cancellationToken,
                 [data, key]);
         }
@@ -24,7 +24,7 @@ namespace Magic.IndexedDb
             string encryptedData, string key, 
             CancellationToken cancellationToken = default)
         {
-            return indexDbManager.CallJs<string>(
+            return indexDbManager.CallJsAsync<string>(
                 "decryptString", cancellationToken,
                 [encryptedData, key]);
         }

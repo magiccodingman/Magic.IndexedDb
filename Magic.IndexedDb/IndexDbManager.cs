@@ -50,7 +50,7 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         public Task OpenDbAsync(CancellationToken cancellationToken = default)
         {
-            return CallJs(IndexedDbFunctions.CREATE_DB, cancellationToken, [_dbStore]);
+            return CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, [_dbStore]);
         }
 
         /// <summary>
@@ -64,7 +64,7 @@ namespace Magic.IndexedDb
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return CallJs(IndexedDbFunctions.DELETE_DB, cancellationToken, [dbName]);
+            return CallJsAsync(IndexedDbFunctions.DELETE_DB, cancellationToken, [dbName]);
         }
 
         public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
@@ -74,7 +74,7 @@ namespace Magic.IndexedDb
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
             T? myClass = null;
-            object? processedRecord = await ProcessRecord(record, cancellationToken);
+            object? processedRecord = await ProcessRecordAsync(record, cancellationToken);
             if (processedRecord is ExpandoObject)
                 myClass = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(processedRecord));
             else
@@ -109,19 +109,22 @@ namespace Magic.IndexedDb
                         Record = updatedRecord
                     };
 
-                    await CallJs(IndexedDbFunctions.ADD_ITEM, cancellationToken, [RecordToSend]);
+                    await CallJsAsync(IndexedDbFunctions.ADD_ITEM, cancellationToken, [RecordToSend]);
                 }
             }
         }
 
-        public async Task<string> DecryptAsync(string EncryptedValue, CancellationToken cancellationToken = default)
+        public async Task<string> DecryptAsync(
+            string EncryptedValue, CancellationToken cancellationToken = default)
         {
             EncryptionFactory encryptionFactory = new EncryptionFactory(this);
-            string decryptedValue = await encryptionFactory.DecryptAsync(EncryptedValue, _dbStore.EncryptionKey, cancellationToken);
+            string decryptedValue = await encryptionFactory.DecryptAsync(
+                EncryptedValue, _dbStore.EncryptionKey, cancellationToken);
             return decryptedValue;
         }
 
-        private async Task<object?> ProcessRecord<T>(T record, CancellationToken cancellationToken) where T : class
+        private async Task<object?> ProcessRecordAsync<T>(
+            T record, CancellationToken cancellationToken) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
             StoreSchema? storeSchema = Stores.FirstOrDefault(s => s.Name == schemaName);
@@ -240,7 +243,7 @@ namespace Magic.IndexedDb
         {
             // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
-            return CallJs(IndexedDbFunctions.BULKADD_ITEM, cancellationToken, [DbName, storeName, recordsToBulkAdd]);
+            return CallJsAsync(IndexedDbFunctions.BULKADD_ITEM, cancellationToken, [DbName, storeName, recordsToBulkAdd]);
         }
 
         public async Task AddRangeAsync<T>(
@@ -256,7 +259,7 @@ namespace Magic.IndexedDb
                 bool IsExpando = false;
                 T? myClass = null;
 
-                object? processedRecord = await ProcessRecord(record, cancellationToken);
+                object? processedRecord = await ProcessRecordAsync(record, cancellationToken);
                 if (processedRecord is ExpandoObject)
                 {
                     myClass = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(processedRecord));
@@ -323,7 +326,7 @@ namespace Magic.IndexedDb
                 Record = convertedRecord
             };
 
-            return await CallJs<int>(IndexedDbFunctions.UPDATE_ITEM, cancellationToken, [record]);
+            return await CallJsAsync<int>(IndexedDbFunctions.UPDATE_ITEM, cancellationToken, [record]);
         }
 
         public async Task<int> UpdateRangeAsync<T>(
@@ -354,7 +357,7 @@ namespace Magic.IndexedDb
                     Record = convertedRecord
                 });
             }
-            return await CallJs<int>(
+            return await CallJsAsync<int>(
                 IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, [recordsToUpdate]);
         }
 
@@ -385,7 +388,7 @@ namespace Magic.IndexedDb
             var data = new { DbName = DbName, StoreName = schemaName, Key = columnName, KeyValue = key };
 
             var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-            var RecordToConvert = await CallJs<Dictionary<string, object>>(
+            var RecordToConvert = await CallJsAsync<Dictionary<string, object>>(
                 IndexedDbFunctions.FIND_ITEM, cancellationToken, [data.DbName, data.StoreName, data.KeyValue]);
             if (RecordToConvert is not null)
                 return ConvertIndexedDbRecordToCRecord<T>(RecordToConvert, propertyMappings);
@@ -414,7 +417,7 @@ namespace Magic.IndexedDb
             return Expression.Lambda<Func<T, bool>>(newExpression, predicate.Parameters);
         }
 
-        internal async Task<IList<T>?> WhereV2<T>(
+        internal async Task<IList<T>?> WhereV2Async<T>(
             string storeName, List<string> jsonQuery, MagicQuery<T> query, 
             CancellationToken cancellationToken) where T : class
         {
@@ -425,7 +428,7 @@ namespace Magic.IndexedDb
             }
             var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
             IList<Dictionary<string, object>>? ListToConvert =
-                await CallJs<IList<Dictionary<string, object>>>
+                await CallJsAsync<IList<Dictionary<string, object>>>
                 (IndexedDbFunctions.WHERE, cancellationToken, 
                 [DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions!, query?.ResultsUnique!]);
 
@@ -695,35 +698,20 @@ namespace Magic.IndexedDb
             return JsonConvert.SerializeObject(orConditions, serializerSettings);
         }
 
-        public sealed record QuotaUsage(long Quota, long Usage)
-        {
-            private static double ConvertBytesToMegabytes(long bytes)
-            {
-                return (double)bytes / (1024 * 1024);
-            }
-
-            public double QuotaInMegabytes => ConvertBytesToMegabytes(Quota);
-            public double UsageInMegabytes => ConvertBytesToMegabytes(Usage);
-
-            public (double quota, double usage) InMegabytes => (QuotaInMegabytes, UsageInMegabytes);
-        }
-
         /// <summary>
         /// Returns Mb
         /// </summary>
         /// <returns></returns>
         public Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default)
         {
-            return CallJs<QuotaUsage>(IndexedDbFunctions.GET_STORAGE_ESTIMATE, cancellationToken, []);
+            return CallJsAsync<QuotaUsage>(IndexedDbFunctions.GET_STORAGE_ESTIMATE, cancellationToken, []);
         }
-
-
 
         public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
             var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-            var ListToConvert = await CallJs<IList<Dictionary<string, object>>>(
+            var ListToConvert = await CallJsAsync<IList<Dictionary<string, object>>>(
                 IndexedDbFunctions.TOARRAY, cancellationToken, [DbName, schemaName]);
 
             var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
@@ -750,7 +738,7 @@ namespace Magic.IndexedDb
                 Record = convertedRecord
             };
 
-            await CallJs(IndexedDbFunctions.DELETE_ITEM, cancellationToken, [record]);
+            await CallJsAsync(IndexedDbFunctions.DELETE_ITEM, cancellationToken, [record]);
         }
 
         public async Task<int> DeleteRangeAsync<T>(
@@ -770,7 +758,7 @@ namespace Magic.IndexedDb
             }
 
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            return await CallJs<int>(
+            return await CallJsAsync<int>(
                 IndexedDbFunctions.BULK_DELETE, cancellationToken,
                 [DbName, schemaName, keys]);
         }
@@ -783,7 +771,7 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         public Task ClearTableAsync(string storeName, CancellationToken cancellationToken = default)
         {
-            return CallJs(IndexedDbFunctions.CLEAR_TABLE, cancellationToken, [DbName, storeName]);
+            return CallJsAsync(IndexedDbFunctions.CLEAR_TABLE, cancellationToken, [DbName, storeName]);
         }
 
         /// <summary>
@@ -796,12 +784,13 @@ namespace Magic.IndexedDb
             return ClearTableAsync(SchemaHelper.GetSchemaName<T>(), cancellationToken);
         }
 
-        internal async Task CallJs(string functionName, CancellationToken token, object[] args)
+        internal async Task CallJsAsync(string functionName, CancellationToken token, object[] args)
         {
             var mod = await this._jsModule;
             await mod.InvokeVoidAsync(functionName, token, args);
         }
-        internal async Task<T> CallJs<T>(string functionName, CancellationToken token, object[] args)
+
+        internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, object[] args)
         {
             var mod = await this._jsModule;
             return await mod.InvokeAsync<T>(functionName, token, args);

@@ -18,7 +18,7 @@ namespace IndexDb.Example.Pages
 
                 try
                 {
-                    var manager = await _MagicDb.GetDbManager(DbNames.Client);
+                    var manager = await _MagicDb.GetDbManagerAsync(DbNames.Client);
 
                     await manager.ClearTableAsync<Person>();
 
