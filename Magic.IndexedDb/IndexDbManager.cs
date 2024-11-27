@@ -394,12 +394,14 @@ namespace Magic.IndexedDb
                 IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, [recordsToUpdate]);
         }
 
-        public async Task<TResult?> GetById<TResult>(object key) where TResult : class
+        public async Task<T?> GetByIdAsync<T>(
+            object key, 
+            CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<TResult>();
+            string schemaName = SchemaHelper.GetSchemaName<T>();
 
             // Find the primary key property
-            var primaryKeyProperty = typeof(TResult)
+            var primaryKeyProperty = typeof(T)
                 .GetProperties()
                 .FirstOrDefault(p => p.GetCustomAttributes(typeof(MagicPrimaryKeyAttribute), false).Length > 0);
 
@@ -420,27 +422,13 @@ namespace Magic.IndexedDb
 
             var data = new { DbName = DbName, StoreName = schemaName, Key = columnName, KeyValue = key };
 
-            try
-            {
-                var propertyMappings = ManagerHelper.GeneratePropertyMapping<TResult>();
-                var RecordToConvert = await CallJavascript<Dictionary<string, object>>(IndexedDbFunctions.FIND_ITEMV2, trans, data.DbName, data.StoreName, data.KeyValue);
-                if (RecordToConvert != null)
-                {
-                    var ConvertedResult = ConvertIndexedDbRecordToCRecord<TResult>(RecordToConvert, propertyMappings);
-                    return ConvertedResult;
-                }
-                else
-                {
-                    return default(TResult);
-                }
-
-            }
-            catch (JSException jse)
-            {
-                RaiseEvent(trans, true, jse.Message);
-            }
-
-            return default(TResult);
+            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
+            var RecordToConvert = await CallJs<Dictionary<string, object>>(
+                IndexedDbFunctions.FIND_ITEM, cancellationToken, [data.DbName, data.StoreName, data.KeyValue]);
+            if (RecordToConvert is not null)
+                return ConvertIndexedDbRecordToCRecord<T>(RecordToConvert, propertyMappings);
+            else
+                return default;
         }
 
         public MagicQuery<T> Where<T>(Expression<Func<T, bool>> predicate) where T : class
