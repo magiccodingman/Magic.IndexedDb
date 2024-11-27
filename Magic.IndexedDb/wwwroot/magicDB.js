@@ -156,22 +156,13 @@ export async function bulkDelete(dbName, storeName, keys)
         return deletedCount;
 }
 
-// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
-export function deleteItem(dotnetReference, transaction, item)
+export async function deleteItem(item)
 {
-    getTable(item.dbName, item.storeName).then(table =>
-    {
-        table.delete(item.key).then(_ =>
-        {
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Item deleted');
-        }).catch(e =>
-        {
-            console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Item could not be deleted');
-        });
-    });
+    const table = await getTable(item.dbName, item.storeName);
+    await table.delete(item.key)
 }
 
+// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 export async function clear(dbName, storeName)
 {
     let table = await getTable(dbName, storeName);
