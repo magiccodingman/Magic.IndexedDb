@@ -825,39 +825,26 @@ namespace Magic.IndexedDb
             return trans;
         }
 
-        public async Task<int> DeleteRange<TResult>(IEnumerable<TResult> items) where TResult : class
+        public async Task<int> DeleteRangeAsync<T>(
+            IEnumerable<T> items, CancellationToken cancellationToken = default) where T : class
         {
-            List<object> keys = new List<object>();
+            PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
+            if (primaryKeyProperty is null)
+                throw new ArgumentException("No primary key property found with PrimaryKeyDbAttribute.");
 
+            List<object> keys = new List<object>();
             foreach (var item in items)
             {
-                PropertyInfo? primaryKeyProperty = typeof(TResult).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
-                if (primaryKeyProperty == null)
-                {
-                    throw new InvalidOperationException("No primary key property found with PrimaryKeyDbAttribute.");
-                }
                 object? primaryKeyValue = primaryKeyProperty.GetValue(item);
-
-                if (primaryKeyValue != null)
-                    keys.Add(primaryKeyValue);
-            }
-            string schemaName = SchemaHelper.GetSchemaName<TResult>();
-
-            var trans = GenerateTransaction(null);
-
-            var data = new { DbName = DbName, StoreName = schemaName, Keys = keys };
-
-            try
-            {
-                var deletedCount = await CallJavascript<int>(IndexedDbFunctions.BULK_DELETE, trans, data.DbName, data.StoreName, data.Keys);
-                return deletedCount;
-            }
-            catch (JSException jse)
-            {
-                RaiseEvent(trans, true, jse.Message);
+                if (primaryKeyValue is null)
+                    throw new ArgumentException("Item being Deleted must have a key.");
+                keys.Add(primaryKeyValue);
             }
 
-            return 0;
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            return await CallJs<int>(
+                IndexedDbFunctions.BULK_DELETE, cancellationToken,
+                [DbName, schemaName, keys]);
         }
 
         /// <summary>

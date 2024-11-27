@@ -1,3 +1,5 @@
+"use strict";
+
 /// <reference types="./dexie/dexie.d.ts" />
 import Dexie from "./dexie/dexie.js";
 
@@ -128,48 +130,33 @@ export async function bulkUpdateItem(items)
         return updatedCount;
 }
 
-// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
-export function bulkDelete(dotnetReference, transaction, dbName, storeName, keys)
+export async function bulkDelete(dbName, storeName, keys)
 {
-    return new Promise(async (resolve, reject) =>
+    const table = await getTable(dbName, storeName);
+    let deletedCount = 0;
+    let errors = false;
+
+    for (const key of keys)
     {
         try
         {
-            const table = await getTable(dbName, storeName);
-            let deletedCount = 0;
-            let errors = false;
-
-            for (const key of keys)
-            {
-                try
-                {
-                    await table.delete(key);
-                    deletedCount++;
-                } catch (e)
-                {
-                    console.error(e);
-                    errors = true;
-                }
-            }
-
-            if (errors)
-            {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Some items could not be deleted');
-                reject(new Error('Some items could not be deleted'));
-            } else
-            {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, `${deletedCount} items deleted`);
-                resolve(deletedCount);
-            }
-        } catch (e)
+            await table.delete(key);
+            deletedCount++;
+        }
+        catch (e)
         {
             console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Items could not be deleted');
-            reject(e);
+            errors = true;
         }
-    });
+    }
+
+    if (errors)
+        throw new Error('Some items could not be deleted');
+    else
+        return deletedCount;
 }
 
+// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 export function deleteItem(dotnetReference, transaction, item)
 {
     getTable(item.dbName, item.storeName).then(table =>
