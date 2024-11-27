@@ -66,39 +66,39 @@ export function createDb(dbStore)
 
 export async function deleteDb(dbName)
 {
-    let db = await getDb(dbName);
-    let index = databases.findIndex(d => d.name == dbName);
+    const db = await getDb(dbName);
+    const index = databases.findIndex(d => d.name == dbName);
     databases.splice(index, 1);
     db.delete();
 }
 
 export async function addItem(item)
 {
-    let table = await getTable(item.dbName, item.storeName);
+    const table = await getTable(item.dbName, item.storeName);
     return await table.add(item.record);
 }
 
 export async function bulkAddItem(dbName, storeName, items)
 {
-    let table = await getTable(dbName, storeName);
+    const table = await getTable(dbName, storeName);
     return await table.bulkAdd(items);
 }
 
 export async function countTable(dbName, storeName)
 {
-    let table = await getTable(dbName, storeName);
+    const table = await getTable(dbName, storeName);
     return await table.count();
 }
 
 export async function putItem(item)
 {
-    let table = await getTable(item.dbName, item.storeName);
+    const table = await getTable(item.dbName, item.storeName);
     return await table.put(item.record);
 }
 
-export function updateItem(item)
+export async function updateItem(item)
 {
-    let table = await getTable(item.dbName, item.storeName);
+    const table = await getTable(item.dbName, item.storeName);
     return await table.update(item.key, item.record);
 }
 
