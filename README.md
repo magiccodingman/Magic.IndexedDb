@@ -8,7 +8,7 @@ This open source library provides an IndexedDb wrapper for C# and Blazor WebAsse
 This code is still very young. I will be making updates for this code as I come across it. I will try my best to not depreciate or break syntax already in use. But please take note of any version updates before you use my code if you're updating it in the future. As I will not guarentee right now that I won't break your stuff if you download this version and then come back in a year and get the latest version.
 
 ## Future Planned Features
-[] Updating soon to NET 8
+[X] Updating soon to NET 8
 
 [] Reset Primary Key starting Id
 
