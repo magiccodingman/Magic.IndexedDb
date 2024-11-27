@@ -36,7 +36,7 @@ namespace IndexDb.Example.Pages
                     new Person { Name = "Alex", TestInt = 3 , _Age = 80, GUIY = Guid.NewGuid(), Secret = "I'm naked! But nobody can know!" }
                     };
 
-                        await manager.AddRange(persons);
+                        await manager.AddRangeAsync(persons);
                     }
 
 
@@ -49,7 +49,7 @@ namespace IndexDb.Example.Pages
 
                     foreach (Person person in allPeopleDecrypted)
                     {
-                        person.SecretDecrypted = await manager.Decrypt(person.Secret);
+                        person.SecretDecrypted = await manager.DecryptAsync(person.Secret);
                         allPeople.Add(person);
                     }
 
