@@ -29,13 +29,6 @@ namespace Magic.IndexedDb
         readonly DotNetObjectReference<IndexedDbManager> _objReference;
         public Task<IJSObjectReference> JsModule { get; }
 
-        IDictionary<Guid, WeakReference<Action<BlazorDbEvent>>> _transactions = new Dictionary<Guid, WeakReference<Action<BlazorDbEvent>>>();
-        IDictionary<Guid, TaskCompletionSource<BlazorDbEvent>> _taskTransactions = new Dictionary<Guid, TaskCompletionSource<BlazorDbEvent>>();
-        /// <summary>
-        /// A notification event that is raised when an action is completed
-        /// </summary>
-        public event EventHandler<BlazorDbEvent>? ActionCompleted;
-
         public async ValueTask DisposeAsync()
         {
             _objReference.Dispose();
@@ -85,24 +78,6 @@ namespace Magic.IndexedDb
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
             return CallJs(IndexedDbFunctions.DELETE_DB, cancellationToken, [dbName]);
-        }
-
-
-        /// <summary>
-        /// Deletes the database corresponding to the dbName passed in
-        /// Waits for response
-        /// </summary>
-        /// <param name="dbName">The name of database to delete</param>
-        /// <returns></returns>
-        public async Task<BlazorDbEvent> DeleteDbAsync(string dbName)
-        {
-            if (string.IsNullOrEmpty(dbName))
-            {
-                throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
-            }
-            var trans = GenerateTransaction();
-            await CallJavascriptVoid(IndexedDbFunctions.DELETE_DB, trans.trans, dbName);
-            return await trans.task;
         }
 
         public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
@@ -416,8 +391,6 @@ namespace Magic.IndexedDb
                 throw new ArgumentException($"Invalid key type. Expected: {primaryKeyProperty.PropertyType}, received: {key.GetType()}");
             }
 
-            var trans = GenerateTransaction(null);
-
             string columnName = primaryKeyProperty.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
 
             var data = new { DbName = DbName, StoreName = schemaName, Key = columnName, KeyValue = key };
@@ -452,32 +425,24 @@ namespace Magic.IndexedDb
             return Expression.Lambda<Func<T, bool>>(newExpression, predicate.Parameters);
         }
 
-        internal async Task<IList<T>?> WhereV2<T>(string storeName, List<string> jsonQuery, MagicQuery<T> query) where T : class
+        internal async Task<IList<T>?> WhereV2<T>(
+            string storeName, List<string> jsonQuery, MagicQuery<T> query, 
+            CancellationToken cancellationToken) where T : class
         {
-            var trans = GenerateTransaction(null);
-
-            try
+            string? jsonQueryAdditions = null;
+            if (query != null && query.storedMagicQueries != null && query.storedMagicQueries.Count > 0)
             {
-                string? jsonQueryAdditions = null;
-                if (query != null && query.storedMagicQueries != null && query.storedMagicQueries.Count > 0)
-                {
-                    jsonQueryAdditions = Newtonsoft.Json.JsonConvert.SerializeObject(query.storedMagicQueries.ToArray());
-                }
-                var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-                IList<Dictionary<string, object>>? ListToConvert =
-                    await CallJavascript<IList<Dictionary<string, object>>>
-                    (IndexedDbFunctions.WHERE, trans, DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions!, query?.ResultsUnique!);
-
-                var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
-
-                return resultList;
+                jsonQueryAdditions = Newtonsoft.Json.JsonConvert.SerializeObject(query.storedMagicQueries.ToArray());
             }
-            catch (Exception jse)
-            {
-                RaiseEvent(trans, true, jse.Message);
-            }
+            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
+            IList<Dictionary<string, object>>? ListToConvert =
+                await CallJs<IList<Dictionary<string, object>>>
+                (IndexedDbFunctions.WHERE, cancellationToken, 
+                [DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions!, query?.ResultsUnique!]);
 
-            return default;
+            var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
+
+            return resultList;
         }
 
         private void CollectBinaryExpressions<T>(Expression expression, Expression<Func<T, bool>> predicate, List<string> jsonQueries) where T : class
@@ -842,52 +807,6 @@ namespace Magic.IndexedDb
             return ClearTableAsync(SchemaHelper.GetSchemaName<T>(), cancellationToken);
         }
 
-        [JSInvokable("BlazorDBCallback")]
-        public void CalledFromJS(Guid transaction, bool failed, string message)
-        {
-            if (transaction != Guid.Empty)
-            {
-                WeakReference<Action<BlazorDbEvent>>? r = null;
-                _transactions.TryGetValue(transaction, out r);
-                TaskCompletionSource<BlazorDbEvent>? t = null;
-                _taskTransactions.TryGetValue(transaction, out t);
-                if (r != null && r.TryGetTarget(out Action<BlazorDbEvent>? action))
-                {
-                    action?.Invoke(new BlazorDbEvent()
-                    {
-                        Transaction = transaction,
-                        Message = message,
-                        Failed = failed
-                    });
-                    _transactions.Remove(transaction);
-                }
-                else if (t != null)
-                {
-                    t.TrySetResult(new BlazorDbEvent()
-                    {
-                        Transaction = transaction,
-                        Message = message,
-                        Failed = failed
-                    });
-                    _taskTransactions.Remove(transaction);
-                }
-                else
-                    RaiseEvent(transaction, failed, message);
-            }
-        }
-
-        async Task<TResult> CallJavascriptNoTransaction<TResult>(string functionName, params object[] args)
-        {
-            var mod = await this.JsModule;
-            return await mod.InvokeAsync<TResult>($"{functionName}", args);
-        }
-
-        async Task<TResult> CallJavascript<TResult>(string functionName, Guid transaction, params object[] args)
-        {
-            var mod = await this.JsModule;
-            var newArgs = GetNewArgs(transaction, args);
-            return await mod.InvokeAsync<TResult>($"{functionName}", newArgs);
-        }
         async Task CallJavascriptVoid(string functionName, Guid transaction, params object[] args)
         {
             var mod = await this.JsModule;
@@ -914,41 +833,5 @@ namespace Magic.IndexedDb
                 newArgs[i + 2] = args[i];
             return newArgs;
         }
-
-        (Guid trans, Task<BlazorDbEvent> task) GenerateTransaction()
-        {
-            bool generated = false;
-            var transaction = Guid.Empty;
-            TaskCompletionSource<BlazorDbEvent> tcs = new TaskCompletionSource<BlazorDbEvent>();
-            do
-            {
-                transaction = Guid.NewGuid();
-                if (!_taskTransactions.ContainsKey(transaction))
-                {
-                    generated = true;
-                    _taskTransactions.Add(transaction, tcs);
-                }
-            } while (!generated);
-            return (transaction, tcs.Task);
-        }
-
-        Guid GenerateTransaction(Action<BlazorDbEvent>? action)
-        {
-            bool generated = false;
-            Guid transaction = Guid.Empty;
-            do
-            {
-                transaction = Guid.NewGuid();
-                if (!_transactions.ContainsKey(transaction))
-                {
-                    generated = true;
-                    _transactions.Add(transaction, new WeakReference<Action<BlazorDbEvent>>(action!));
-                }
-            } while (!generated);
-            return transaction;
-        }
-
-        void RaiseEvent(Guid transaction, bool failed, string message)
-            => ActionCompleted?.Invoke(this, new BlazorDbEvent { Transaction = transaction, Failed = failed, Message = message });
     }
 }

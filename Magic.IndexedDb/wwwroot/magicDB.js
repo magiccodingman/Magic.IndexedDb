@@ -184,310 +184,282 @@ export function getStorageEstimate()
     return navigator.storage.estimate();
 }
 
-export function where(dotnetReference, transaction, dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true)
+export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true)
 {
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
 
-    return new Promise((resolve, reject) =>
+    const table = await getTable(dbName, storeName);
+
+    let combinedQuery;
+
+    function applyConditions(conditions)
     {
-        getTable(dbName, storeName).then(table =>
+        let dexieQuery;
+        for (let i = 0; i < conditions.length; i++)
         {
-            let combinedQuery;
+            const condition = conditions[i];
+            const parsedValue = condition.isString ? condition.value : parseInt(condition.value);
 
-            function applyConditions(conditions)
+            switch (condition.operation)
             {
-
-                let dexieQuery;
-
-                for (let i = 0; i < conditions.length; i++)
-                {
-                    const condition = conditions[i];
-                    const parsedValue = condition.isString ? condition.value : parseInt(condition.value);
-
-                    switch (condition.operation)
+                case 'GreaterThan':
+                    if (!dexieQuery)
                     {
-                        case 'GreaterThan':
-                            if (!dexieQuery)
-                            {
-                                dexieQuery = table.where(condition.property).above(parsedValue);
-                            } else
-                            {
-                                dexieQuery = dexieQuery.and(item => item[condition.property] > parsedValue);
-                            }
-                            break;
-                        case 'GreaterThanOrEqual':
-                            if (!dexieQuery)
-                            {
-                                dexieQuery = table.where(condition.property).aboveOrEqual(parsedValue);
-                            } else
-                            {
-                                dexieQuery = dexieQuery.and(item => item[condition.property] >= parsedValue);
-                            }
-                            break;
-                        case 'LessThan':
-                            if (!dexieQuery)
-                            {
-                                dexieQuery = table.where(condition.property).below(parsedValue);
-                            } else
-                            {
-                                dexieQuery = dexieQuery.and(item => item[condition.property] < parsedValue);
-                            }
-                            break;
-                        case 'LessThanOrEqual':
-                            if (!dexieQuery)
-                            {
-                                dexieQuery = table.where(condition.property).belowOrEqual(parsedValue);
-                            } else
-                            {
-                                dexieQuery = dexieQuery.and(item => item[condition.property] <= parsedValue);
-                            }
-                            break;
-                        case 'Equal':
-                            if (!dexieQuery)
-                            {
-                                if (condition.isString)
-                                {
-                                    if (condition.caseSensitive)
-                                    {
-                                        dexieQuery = table.where(condition.property).equals(condition.value);
-                                    } else
-                                    {
-                                        dexieQuery = table.where(condition.property).equalsIgnoreCase(condition.value);
-                                    }
-                                } else
-                                {
-                                    dexieQuery = table.where(condition.property).equals(parsedValue);
-                                }
-                            } else
-                            {
-                                if (condition.isString)
-                                {
-                                    if (condition.caseSensitive)
-                                    {
-                                        dexieQuery = dexieQuery.and(item => item[condition.property] === condition.value);
-                                    } else
-                                    {
-                                        dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() === condition.value.toLowerCase());
-                                    }
-                                } else
-                                {
-                                    dexieQuery = dexieQuery.and(item => item[condition.property] === parsedValue);
-                                }
-                            }
-                            break;
-                        case 'NotEqual':
-                            if (!dexieQuery)
-                            {
-                                if (condition.isString)
-                                {
-                                    if (condition.caseSensitive)
-                                    {
-                                        dexieQuery = table.where(condition.property).notEqual(condition.value);
-                                    } else
-                                    {
-                                        dexieQuery = table.where(condition.property).notEqualIgnoreCase(condition.value);
-                                    }
-                                } else
-                                {
-                                    dexieQuery = table.where(condition.property).notEqual(parsedValue);
-                                }
-                            } else
-                            {
-                                if (condition.isString)
-                                {
-                                    if (condition.caseSensitive)
-                                    {
-                                        dexieQuery = dexieQuery.and(item => item[condition.property] !== condition.value);
-                                    } else
-                                    {
-                                        dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() !== condition.value.toLowerCase());
-                                    }
-                                } else
-                                {
-                                    dexieQuery = dexieQuery.and(item => item[condition.property] !== parsedValue);
-                                }
-                            }
-                            break;
-                        case 'Contains':
-                            if (!dexieQuery)
-                            {
-                                if (condition.caseSensitive)
-                                {
-                                    dexieQuery = table.where(condition.property).filter(item => item[condition.property].includes(condition.value));
-                                } else
-                                {
-                                    dexieQuery = table.where(condition.property).filter(item => item[condition.property].toLowerCase().includes(condition.value.toLowerCase()));
-                                }
-                            } else
-                            {
-                                if (condition.caseSensitive)
-                                {
-                                    dexieQuery = dexieQuery.and(item => item[condition.property].includes(condition.value));
-                                } else
-                                {
-                                    dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase().includes(condition.value.toLowerCase()));
-                                }
-                            }
-                            break;
-                        case 'StartsWith':
-                            if (!dexieQuery)
-                            {
-                                if (condition.caseSensitive)
-                                {
-                                    dexieQuery = table.where(condition.property).startsWith(condition.value);
-                                } else
-                                {
-                                    dexieQuery = table.where(condition.property).startsWithIgnoreCase(condition.value);
-                                }
-                            } else
-                            {
-                                if (condition.caseSensitive)
-                                {
-                                    dexieQuery = dexieQuery.and(item => item[condition.property].startsWith(condition.value));
-                                } else
-                                {
-                                    dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase().startsWith(condition.value.toLowerCase()));
-                                }
-                            }
-                            break;
-                        case 'StringEquals':
-                            if (!dexieQuery)
-                            {
-                                if (condition.caseSensitive)
-                                {
-                                    dexieQuery = table.where(condition.property).equals(condition.value);
-                                } else
-                                {
-                                    dexieQuery = table.where(condition.property).equalsIgnoreCase(condition.value);
-                                }
-                            } else
-                            {
-                                if (condition.caseSensitive)
-                                {
-                                    dexieQuery = dexieQuery.and(item => item[condition.property] === condition.value);
-                                } else
-                                {
-                                    dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() === condition.value.toLowerCase());
-                                }
-                            }
-                            break;
-
-                        default:
-                            console.error('Unsupported operation:', condition.operation);
-                            reject(new Error('Unsupported operation: ' + condition.operation));
-                            return;
+                        dexieQuery = table.where(condition.property).above(parsedValue);
+                    } else
+                    {
+                        dexieQuery = dexieQuery.and(item => item[condition.property] > parsedValue);
                     }
-                }
-
-                return dexieQuery;
-
-            }
-
-            function applyArrayQueryAdditions(results, queryAdditions)
-            {
-                if (queryAdditions != null)
-                {
-                    for (let i = 0; i < queryAdditions.length; i++)
+                    break;
+                case 'GreaterThanOrEqual':
+                    if (!dexieQuery)
                     {
-                        const queryAddition = queryAdditions[i];
-
-                        switch (queryAddition.Name)
+                        dexieQuery = table.where(condition.property).aboveOrEqual(parsedValue);
+                    } else
+                    {
+                        dexieQuery = dexieQuery.and(item => item[condition.property] >= parsedValue);
+                    }
+                    break;
+                case 'LessThan':
+                    if (!dexieQuery)
+                    {
+                        dexieQuery = table.where(condition.property).below(parsedValue);
+                    } else
+                    {
+                        dexieQuery = dexieQuery.and(item => item[condition.property] < parsedValue);
+                    }
+                    break;
+                case 'LessThanOrEqual':
+                    if (!dexieQuery)
+                    {
+                        dexieQuery = table.where(condition.property).belowOrEqual(parsedValue);
+                    } else
+                    {
+                        dexieQuery = dexieQuery.and(item => item[condition.property] <= parsedValue);
+                    }
+                    break;
+                case 'Equal':
+                    if (!dexieQuery)
+                    {
+                        if (condition.isString)
                         {
-                            case 'skip':
-                                results = results.slice(queryAddition.IntValue);
-                                break;
-                            case 'take':
-                                results = results.slice(0, queryAddition.IntValue);
-                                break;
-                            case 'takeLast':
-                                results = results.slice(-queryAddition.IntValue).reverse();
-                                break;
-                            case 'orderBy':
-                                results = results.sort((a, b) => a[queryAddition.StringValue] - b[queryAddition.StringValue]);
-                                break;
-                            case 'orderByDescending':
-                                results = results.sort((a, b) => b[queryAddition.StringValue] - a[queryAddition.StringValue]);
-                                break;
-                            default:
-                                console.error('Unsupported query addition for array:', queryAddition.Name);
-                                break;
+                            if (condition.caseSensitive)
+                            {
+                                dexieQuery = table.where(condition.property).equals(condition.value);
+                            } else
+                            {
+                                dexieQuery = table.where(condition.property).equalsIgnoreCase(condition.value);
+                            }
+                        } else
+                        {
+                            dexieQuery = table.where(condition.property).equals(parsedValue);
+                        }
+                    } else
+                    {
+                        if (condition.isString)
+                        {
+                            if (condition.caseSensitive)
+                            {
+                                dexieQuery = dexieQuery.and(item => item[condition.property] === condition.value);
+                            } else
+                            {
+                                dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() === condition.value.toLowerCase());
+                            }
+                        } else
+                        {
+                            dexieQuery = dexieQuery.and(item => item[condition.property] === parsedValue);
                         }
                     }
-                }
-                return results;
+                    break;
+                case 'NotEqual':
+                    if (!dexieQuery)
+                    {
+                        if (condition.isString)
+                        {
+                            if (condition.caseSensitive)
+                            {
+                                dexieQuery = table.where(condition.property).notEqual(condition.value);
+                            } else
+                            {
+                                dexieQuery = table.where(condition.property).notEqualIgnoreCase(condition.value);
+                            }
+                        } else
+                        {
+                            dexieQuery = table.where(condition.property).notEqual(parsedValue);
+                        }
+                    } else
+                    {
+                        if (condition.isString)
+                        {
+                            if (condition.caseSensitive)
+                            {
+                                dexieQuery = dexieQuery.and(item => item[condition.property] !== condition.value);
+                            } else
+                            {
+                                dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() !== condition.value.toLowerCase());
+                            }
+                        } else
+                        {
+                            dexieQuery = dexieQuery.and(item => item[condition.property] !== parsedValue);
+                        }
+                    }
+                    break;
+                case 'Contains':
+                    if (!dexieQuery)
+                    {
+                        if (condition.caseSensitive)
+                        {
+                            dexieQuery = table.where(condition.property).filter(item => item[condition.property].includes(condition.value));
+                        } else
+                        {
+                            dexieQuery = table.where(condition.property).filter(item => item[condition.property].toLowerCase().includes(condition.value.toLowerCase()));
+                        }
+                    } else
+                    {
+                        if (condition.caseSensitive)
+                        {
+                            dexieQuery = dexieQuery.and(item => item[condition.property].includes(condition.value));
+                        } else
+                        {
+                            dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase().includes(condition.value.toLowerCase()));
+                        }
+                    }
+                    break;
+                case 'StartsWith':
+                    if (!dexieQuery)
+                    {
+                        if (condition.caseSensitive)
+                        {
+                            dexieQuery = table.where(condition.property).startsWith(condition.value);
+                        } else
+                        {
+                            dexieQuery = table.where(condition.property).startsWithIgnoreCase(condition.value);
+                        }
+                    } else
+                    {
+                        if (condition.caseSensitive)
+                        {
+                            dexieQuery = dexieQuery.and(item => item[condition.property].startsWith(condition.value));
+                        } else
+                        {
+                            dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase().startsWith(condition.value.toLowerCase()));
+                        }
+                    }
+                    break;
+                case 'StringEquals':
+                    if (!dexieQuery)
+                    {
+                        if (condition.caseSensitive)
+                        {
+                            dexieQuery = table.where(condition.property).equals(condition.value);
+                        } else
+                        {
+                            dexieQuery = table.where(condition.property).equalsIgnoreCase(condition.value);
+                        }
+                    } else
+                    {
+                        if (condition.caseSensitive)
+                        {
+                            dexieQuery = dexieQuery.and(item => item[condition.property] === condition.value);
+                        } else
+                        {
+                            dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() === condition.value.toLowerCase());
+                        }
+                    }
+                    break;
+
+                default:
+                    throw new Error('Unsupported operation: ' + condition.operation);
             }
+        }
 
-            async function combineQueries()
-            {
-                const allQueries = [];
+        return dexieQuery;
+    }
 
-                for (const conditions of orConditionsArray)
-                {
-                    const andQuery = applyConditions(conditions[0]);
-                    if (andQuery)
-                    {
-                        allQueries.push(andQuery);
-                    }
-                }
-
-                if (allQueries.length > 0)
-                {
-                    // Use Dexie.Promise.all to resolve all toArray promises
-                    const allResults = await Dexie.Promise.all(allQueries.map(query => query.toArray()));
-
-                    // Combine all the results into one array
-                    let combinedResults = [].concat(...allResults);
-
-                    // Apply query additions to the combined results
-                    combinedResults = applyArrayQueryAdditions(combinedResults, QueryAdditions);
-
-                    if (uniqueResults)
-                    {
-                        // Make sure the objects in the array are unique
-                        let uniqueResults = combinedResults.filter((result, index, self) =>
-                            index === self.findIndex((r) => (
-                                r.id === result.id && r.Name === result.Name && r.Age === result.Age
-                            ))
-                        );
-                        dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
-                        resolve(uniqueResults);
-                    }
-                    else
-                    {
-                        dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
-                        resolve(combinedResults);
-                    }
-                } else
-                {
-                    dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
-                    resolve([]);
-                }
-            }
-
-            (async () =>
-            { // Add an async IIFE to handle the promise
-                if (orConditionsArray.length > 0)
-                {
-                    await combineQueries(); // Add 'await' here
-                } else
-                {
-                    dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
-                    resolve([]);
-                }
-            })().catch(e =>
-            { // Add error handling for the async IIFE
-                console.error(e);
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'where failed');
-                reject(e);
-            });
-        }).catch(e =>
+    function applyArrayQueryAdditions(results, queryAdditions)
+    {
+        if (queryAdditions != null)
         {
-            console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'where failed');
-            reject(e);
-        });
-    });
+            for (let i = 0; i < queryAdditions.length; i++)
+            {
+                const queryAddition = queryAdditions[i];
+
+                switch (queryAddition.Name)
+                {
+                    case 'skip':
+                        results = results.slice(queryAddition.IntValue);
+                        break;
+                    case 'take':
+                        results = results.slice(0, queryAddition.IntValue);
+                        break;
+                    case 'takeLast':
+                        results = results.slice(-queryAddition.IntValue).reverse();
+                        break;
+                    case 'orderBy':
+                        results = results.sort((a, b) => a[queryAddition.StringValue] - b[queryAddition.StringValue]);
+                        break;
+                    case 'orderByDescending':
+                        results = results.sort((a, b) => b[queryAddition.StringValue] - a[queryAddition.StringValue]);
+                        break;
+                    default:
+                        console.error('Unsupported query addition for array:', queryAddition.Name);
+                        break;
+                }
+            }
+        }
+        return results;
+    }
+
+    async function combineQueries()
+    {
+        const allQueries = [];
+
+        for (const conditions of orConditionsArray)
+        {
+            const andQuery = applyConditions(conditions[0]);
+            if (andQuery)
+            {
+                allQueries.push(andQuery);
+            }
+        }
+
+        if (allQueries.length > 0)
+        {
+            // Use Dexie.Promise.all to resolve all toArray promises
+            const allResults = await Dexie.Promise.all(allQueries.map(query => query.toArray()));
+
+            // Combine all the results into one array
+            let combinedResults = [].concat(...allResults);
+
+            // Apply query additions to the combined results
+            combinedResults = applyArrayQueryAdditions(combinedResults, QueryAdditions);
+
+            if (uniqueResults)
+            {
+                // Make sure the objects in the array are unique
+                let uniqueResults = combinedResults.filter((result, index, self) =>
+                    index === self.findIndex((r) => (
+                        r.id === result.id && r.Name === result.Name && r.Age === result.Age
+                    ))
+                );
+                return uniqueResults;
+            }
+            else
+            {
+                return combinedResults;
+            }
+        }
+        else
+        {
+            return [];
+        }
+    }
+
+    if (orConditionsArray.length > 0)
+        return await combineQueries();
+    else
+        return [];
 }
 
 async function getDb(dbName)
