@@ -179,72 +179,12 @@ export async function toArray(dbName, storeName)
     const table = await getTable(dbName, storeName);
     return await table.toArray();
 }
-
-async function getDb(dbName)
+export function getStorageEstimate()
 {
-    if (databases.find(d => d.name == dbName) === undefined)
-    {
-        console.warn("Blazor.IndexedDB.Framework - Database doesn't exist");
-        var db1 = new Dexie(dbName);
-        await db1.open();
-        if (databases.find(d => d.name == dbName) !== undefined)
-        {
-            databases.find(d => d.name == dbName).db = db1;
-        } else
-        {
-            databases.push({
-                name: dbName,
-                db: db1
-            });
-        }
-        return db1;
-    }
-    else
-    {
-        return databases.find(d => d.name == dbName).db;
-    }
+    return navigator.storage.estimate();
 }
 
-async function getTable(dbName, storeName)
-{
-    let db = await getDb(dbName);
-    let table = db.table(storeName);
-    return table;
-}
-
-export function createFilterObject(filters)
-{
-    const jsonFilter = {};
-    for (const filter in filters)
-    {
-        if (filters.hasOwnProperty(filter))
-            jsonFilter[filters[filter].indexName] = filters[filter].filterValue;
-    }
-    return jsonFilter;
-}
-
-export function where(dotnetReference, transaction, dbName, storeName, filters)
-{
-    const filterObject = this.createFilterObject(filters);
-    return new Promise((resolve, reject) =>
-    {
-        getTable(dbName, storeName).then(table =>
-        {
-            table.where(filterObject).toArray(items =>
-            {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'where succeeded');
-                resolve(items);
-            })
-        }).catch(e =>
-        {
-            console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'where failed');
-            reject(e);
-        });
-    });
-}
-
-export function wherev2(dotnetReference, transaction, dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true)
+export function where(dotnetReference, transaction, dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true)
 {
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
@@ -550,7 +490,50 @@ export function wherev2(dotnetReference, transaction, dbName, storeName, jsonQue
     });
 }
 
-export function getAll(dotnetReference, transaction, dbName, storeName)
+async function getDb(dbName)
+{
+    if (databases.find(d => d.name == dbName) === undefined)
+    {
+        console.warn("Blazor.IndexedDB.Framework - Database doesn't exist");
+        var db1 = new Dexie(dbName);
+        await db1.open();
+        if (databases.find(d => d.name == dbName) !== undefined)
+        {
+            databases.find(d => d.name == dbName).db = db1;
+        } else
+        {
+            databases.push({
+                name: dbName,
+                db: db1
+            });
+        }
+        return db1;
+    }
+    else
+    {
+        return databases.find(d => d.name == dbName).db;
+    }
+}
+
+async function getTable(dbName, storeName)
+{
+    let db = await getDb(dbName);
+    let table = db.table(storeName);
+    return table;
+}
+
+function createFilterObject(filters)
+{
+    const jsonFilter = {};
+    for (const filter in filters)
+    {
+        if (filters.hasOwnProperty(filter))
+            jsonFilter[filters[filter].indexName] = filters[filter].filterValue;
+    }
+    return jsonFilter;
+}
+
+function getAll(dotnetReference, transaction, dbName, storeName)
 {
     return new Promise((resolve, reject) =>
     {
@@ -568,11 +551,6 @@ export function getAll(dotnetReference, transaction, dbName, storeName)
             });
         });
     });
-}
-
-export async function getStorageEstimate()
-{
-    return navigator.storage.estimate();
 }
 
 export function encryptString(data, key)
@@ -605,57 +583,6 @@ export function encryptString(data, key)
             return btoa(String.fromCharCode.apply(null, encryptedDataWithIV));
         });
 }
-
-export function DynamicJsCaller(functionName, ...args)
-{
-    // Get the function referenced by functionName
-    let func = window[functionName];
-
-    // Check if the function exists
-    if (typeof func === "function")
-    {
-        // Call the function and get the result
-        let result = func(...args);
-
-        // Check if the result is an object and has the required properties
-        if (typeof result === "object" && result !== null && 'Data' in result && 'Success' in result && 'Message' in result)
-        {
-            if (result.Success === false && (!result.Message || result.Message.trim() === ''))
-            {
-                // If Success is false and there is no Message, create an error object
-                return {
-                    Data: null,
-                    Success: false,
-                    Message: "There was an error but no message associated with the error"
-                };
-            }
-            else
-            {
-                // If everything is OK, return the result as is
-                return result;
-            }
-        }
-        else
-        {
-            // If the result is not in the correct format, create an error object
-            return {
-                Data: null,
-                Success: false,
-                Message: "The function called did not return data in the correct format"
-            };
-        }
-    }
-    else
-    {
-        // If the function does not exist, create an error object
-        return {
-            Data: null,
-            Success: false,
-            Message: "The function " + functionName + " does not exist"
-        };
-    }
-}
-
 
 export function decryptString(encryptedData, key)
 {
