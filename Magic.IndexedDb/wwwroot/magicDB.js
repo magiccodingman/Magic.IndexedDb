@@ -96,22 +96,13 @@ export async function putItem(item)
     return await table.put(item.record);
 }
 
-// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
-
-export function updateItem(dotnetReference, transaction, item)
+export function updateItem(item)
 {
-    getTable(item.dbName, item.storeName).then(table =>
-    {
-        table.update(item.key, item.record).then(_ =>
-        {
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Item updated');
-        }).catch(e =>
-        {
-            console.error(e);
-            dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Item could not be updated');
-        });
-    });
+    let table = await getTable(item.dbName, item.storeName);
+    return await table.update(item.key, item.record);
 }
+
+// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 
 export function bulkUpdateItem(dotnetReference, transaction, items)
 {

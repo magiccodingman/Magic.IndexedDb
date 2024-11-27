@@ -339,43 +339,27 @@ namespace Magic.IndexedDb
             await BulkAddRecordAsync(schemaName, processedRecords);
         }
 
-
-
-        public async Task<Guid> Update<T>(T item, Action<BlazorDbEvent>? action = null) where T : class
+        public async Task<int> UpdateAsync<T>(T item, CancellationToken cancellationToken = default) where T : class
         {
-            var trans = GenerateTransaction(action);
-            try
-            {
-                string schemaName = SchemaHelper.GetSchemaName<T>();
-                PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
-                if (primaryKeyProperty != null)
-                {
-                    object? primaryKeyValue = primaryKeyProperty.GetValue(item);
-                    var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
-                    if (primaryKeyValue != null)
-                    {
-                        UpdateRecord<Dictionary<string, object?>> record = new UpdateRecord<Dictionary<string, object?>>()
-                        {
-                            Key = primaryKeyValue,
-                            DbName = this.DbName,
-                            StoreName = schemaName,
-                            Record = convertedRecord
-                        };
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
+            if (primaryKeyProperty is null)
+                throw new ArgumentException("Item being updated must have a key.");
 
-                        // Get the primary key value of the item
-                        await CallJavascriptVoid(IndexedDbFunctions.UPDATE_ITEM, trans, record);
-                    }
-                    else
-                    {
-                        throw new ArgumentException("Item being updated must have a key.");
-                    }
-                }
-            }
-            catch (JSException jse)
+            object? primaryKeyValue = primaryKeyProperty.GetValue(item);
+            var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
+            if (primaryKeyValue is null)
+                throw new ArgumentException("Item being updated must have a key.");
+
+            UpdateRecord<Dictionary<string, object?>> record = new UpdateRecord<Dictionary<string, object?>>()
             {
-                RaiseEvent(trans, true, jse.Message);
-            }
-            return trans;
+                Key = primaryKeyValue,
+                DbName = this.DbName,
+                StoreName = schemaName,
+                Record = convertedRecord
+            };
+
+            return await CallJs<int>(IndexedDbFunctions.UPDATE_ITEM, cancellationToken, [record]);
         }
 
         public async Task<Guid> UpdateRange<T>(IEnumerable<T> items, Action<BlazorDbEvent>? action = null) where T : class
