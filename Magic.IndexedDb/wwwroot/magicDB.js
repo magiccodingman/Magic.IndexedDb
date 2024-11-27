@@ -78,37 +78,19 @@ export async function addItem(item)
     return await table.add(item.record);
 }
 
-// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
-
 export async function bulkAddItem(dbName, storeName, items)
 {
     let table = await getTable(dbName, storeName);
     return await table.bulkAdd(items);
 }
 
-export function countTable(dotnetReference, transaction, dbName, storeName)
+export async function countTable(dbName, storeName)
 {
-    var promise = new Promise((resolve, reject) =>
-    {
-        getTable(dbName, storeName).then(table =>
-        {
-            table.count().then(count =>
-            {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'Table count: ' + count);
-                resolve(count);
-            }).catch(e =>
-            {
-                console.error(e);
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'Could not get table count');
-                reject(e);
-            });
-        });
-    });
-    return promise.then(count =>
-    {
-        return count;
-    });
+    let table = await getTable(dbName, storeName);
+    return await table.count();
 }
+
+// TODO: https://github.com/magiccodingman/Magic.IndexedDb/pull/17
 
 export function putItem(dotnetReference, transaction, item)
 {
