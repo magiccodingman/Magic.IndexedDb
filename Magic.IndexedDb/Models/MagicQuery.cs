@@ -94,12 +94,12 @@ namespace Magic.IndexedDb.Models
 
         public async Task<IEnumerable<T>> Execute()
         {
-            return await Manager.WhereV2<T>(SchemaName, JsonQueries, this) ?? Enumerable.Empty<T>();
+            return await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default) ?? Enumerable.Empty<T>();
         }
 
         public async Task<int> Count()
         {
-            var result = await Manager.WhereV2<T>(SchemaName, JsonQueries, this);
+            var result = await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default);
             int num = result?.Count() ?? 0;
             return num;
         }

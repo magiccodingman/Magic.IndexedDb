@@ -18,11 +18,11 @@ namespace IndexDb.Example.Pages
 
                 try
                 {
-                    var manager = await _MagicDb.GetDbManager(DbNames.Client);
+                    var manager = await _MagicDb.GetDbManagerAsync(DbNames.Client);
 
-                    await manager.ClearTable<Person>();
+                    await manager.ClearTableAsync<Person>();
 
-                    var AllThePeeps = await manager.GetAll<Person>();
+                    var AllThePeeps = await manager.GetAllAsync<Person>();
                     if (AllThePeeps.Count() < 1)
                     {
                         Person[] persons = new Person[] {
@@ -36,20 +36,20 @@ namespace IndexDb.Example.Pages
                     new Person { Name = "Alex", TestInt = 3 , _Age = 80, GUIY = Guid.NewGuid(), Secret = "I'm naked! But nobody can know!" }
                     };
 
-                        await manager.AddRange(persons);
+                        await manager.AddRangeAsync(persons);
                     }
 
 
                     //var StorageLimit = await manager.GetStorageEstimateAsync();
                     var storageInfo = await manager.GetStorageEstimateAsync();
-                    storageQuota = storageInfo.quota;
-                    storageUsage = storageInfo.usage;
+                    storageQuota = storageInfo.QuotaInMegabytes;
+                    storageUsage = storageInfo.UsageInMegabytes;
 
-                    var allPeopleDecrypted = await manager.GetAll<Person>();
+                    var allPeopleDecrypted = await manager.GetAllAsync<Person>();
 
                     foreach (Person person in allPeopleDecrypted)
                     {
-                        person.SecretDecrypted = await manager.Decrypt(person.Secret);
+                        person.SecretDecrypted = await manager.DecryptAsync(person.Secret);
                         allPeople.Add(person);
                     }
 

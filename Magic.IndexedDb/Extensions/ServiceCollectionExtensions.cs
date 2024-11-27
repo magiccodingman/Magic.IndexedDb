@@ -20,12 +20,5 @@ namespace Magic.IndexedDb.Extensions
 
             return services;
         }
-
-        public static IServiceCollection AddEncryptionFactory(this IServiceCollection services)
-        {
-            services.TryAddSingleton<IEncryptionFactory, EncryptionFactory>();
-
-            return services;
-        }
     }
 }

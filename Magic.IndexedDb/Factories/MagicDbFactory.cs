@@ -26,10 +26,10 @@ namespace Magic.IndexedDb
         //    return manager;
         //}
 
-        public async Task<IndexedDbManager> GetDbManager(string dbName)
+        public async Task<IndexedDbManager> GetDbManagerAsync(string dbName)
         {
             if (!_dbs.Any())
-                await BuildFromServices();
+                await BuildFromServicesAsync();
             if (_dbs.ContainsKey(dbName))
                 return _dbs[dbName];
 
@@ -39,10 +39,10 @@ namespace Magic.IndexedDb
 
         }
 
-        public Task<IndexedDbManager> GetDbManager(DbStore dbStore)
-            => GetDbManager(dbStore.Name);
+        public Task<IndexedDbManager> GetDbManagerAsync(DbStore dbStore)
+            => GetDbManagerAsync(dbStore.Name);
 
-        async Task BuildFromServices()
+        async Task BuildFromServicesAsync()
         {
             var dbStores = _serviceProvider.GetServices<DbStore>();
             if (dbStores != null)

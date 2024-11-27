@@ -9,29 +9,24 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Magic.IndexedDb
 {
-    public class EncryptionFactory: IEncryptionFactory
+    public sealed class EncryptionFactory(IndexedDbManager indexDbManager) : IEncryptionFactory
     {
-        readonly IJSRuntime _jsRuntime;
-        readonly IndexedDbManager _indexDbManager;
-
-        public EncryptionFactory(IJSRuntime jsRuntime, IndexedDbManager indexDbManager)
+        public Task<string> EncryptAsync(
+            string data, string key, 
+            CancellationToken cancellationToken = default)
         {
-            _jsRuntime = jsRuntime;
-            _indexDbManager = indexDbManager;
+            return indexDbManager.CallJsAsync<string>(
+                "encryptString", cancellationToken,
+                [data, key]);
         }
 
-        public async Task<string> Encrypt(string data, string key)
+        public Task<string> DecryptAsync(
+            string encryptedData, string key, 
+            CancellationToken cancellationToken = default)
         {
-            var mod = await _indexDbManager.JsModule;
-            string encryptedData = await mod.InvokeAsync<string>("encryptString", new[] { data, key });
-            return encryptedData;
-        }
-
-        public async Task<string> Decrypt(string encryptedData, string key)
-        {
-            var mod = await _indexDbManager.JsModule;
-            string decryptedData = await mod.InvokeAsync<string>("decryptString", new[] { encryptedData, key });
-            return decryptedData;
+            return indexDbManager.CallJsAsync<string>(
+                "decryptString", cancellationToken,
+                [encryptedData, key]);
         }
     }
 }

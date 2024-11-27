@@ -5,8 +5,12 @@ namespace Magic.IndexedDb
 {
     public interface IEncryptionFactory
     {
-        Task<string> Encrypt(string data, string key);
+        Task<string> EncryptAsync(
+            string data, string key, 
+            CancellationToken cancellationToken = default);
 
-        Task<string> Decrypt(string data, string key);
+        Task<string> DecryptAsync(
+            string data, string key, 
+            CancellationToken cancellationToken = default);
     }
 }
