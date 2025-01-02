@@ -259,6 +259,17 @@ Example usage:
 var filteredStrings = strings.Where(s => s.StartsWith("prefix", StringComparison.OrdinalIgnoreCase));
 ```
 
+## Additional Supported Functions
+### Array Compare
+
+Filters the sequence based on whether the element is in the specified array.
+
+Example usage:
+
+```csharp
+var filteredRecords = manager.Where(r => new string[] { "example1", "example2" }.Contains(r.Name));
+```
+
 ## Examples
 
 To start using MagicIndexedDb, you need to create a `DbManager` instance for your specific database.
