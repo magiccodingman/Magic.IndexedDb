@@ -567,41 +567,51 @@ namespace Magic.IndexedDb
                 }
             }
 
+            bool IsParameterMember(Expression expression) => expression is MemberExpression { Expression: ParameterExpression };
+
+            ConstantExpression ToConstantExpression(Expression expression) =>
+                expression switch
+                {
+                    ConstantExpression constantExpression => constantExpression,
+                    MemberExpression memberExpression => Expression.Constant(Expression.Lambda(memberExpression).Compile().DynamicInvoke()),
+                    _ => throw new InvalidOperationException($"Unsupported expression type. Expression: {expression}")
+                };
+
             void AddCondition(Expression expression, bool inOrBranch)
             {
                 if (expression is BinaryExpression binaryExpression)
                 {
-                    var leftMember = binaryExpression.Left as MemberExpression;
-                    var rightMember = binaryExpression.Right as MemberExpression;
-                    var leftConstant = binaryExpression.Left as ConstantExpression;
-                    var rightConstant = binaryExpression.Right as ConstantExpression;
                     var operation = binaryExpression.NodeType.ToString();
 
-                    if (leftMember != null && rightConstant != null)
+                    if (IsParameterMember(binaryExpression.Left) && !IsParameterMember(binaryExpression.Right))
                     {
-                        AddConditionInternal(leftMember, rightConstant, operation, inOrBranch);
+                        AddConditionInternal(
+                            binaryExpression.Left as MemberExpression,
+                            ToConstantExpression(binaryExpression.Right),
+                            operation,
+                            inOrBranch);
                     }
-                    else if (leftConstant != null && rightMember != null)
+                    else if (!IsParameterMember(binaryExpression.Left) && IsParameterMember(binaryExpression.Right))
                     {
                         // Swap the order of the left and right expressions and the operation
-                        if (operation == "GreaterThan")
+                        operation = operation switch
                         {
-                            operation = "LessThan";
-                        }
-                        else if (operation == "LessThan")
-                        {
-                            operation = "GreaterThan";
-                        }
-                        else if (operation == "GreaterThanOrEqual")
-                        {
-                            operation = "LessThanOrEqual";
-                        }
-                        else if (operation == "LessThanOrEqual")
-                        {
-                            operation = "GreaterThanOrEqual";
-                        }
+                            "GreaterThan" => "LessThan",
+                            "LessThan" => "GreaterThan",
+                            "GreaterThanOrEqual" => "LessThanOrEqual",
+                            "LessThanOrEqual" => "GreaterThanOrEqual",
+                            _ => operation
+                        };
 
-                        AddConditionInternal(rightMember, leftConstant, operation, inOrBranch);
+                        AddConditionInternal(
+                            binaryExpression.Right as MemberExpression,
+                            ToConstantExpression(binaryExpression.Left),
+                            operation,
+                            inOrBranch);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unsupported binary expression. Expression: {expression}");
                     }
                 }
                 else if (expression is MethodCallExpression methodCallExpression)
@@ -610,7 +620,7 @@ namespace Magic.IndexedDb
                         (methodCallExpression.Method.Name == "Equals" || methodCallExpression.Method.Name == "Contains" || methodCallExpression.Method.Name == "StartsWith"))
                     {
                         var left = methodCallExpression.Object as MemberExpression;
-                        var right = methodCallExpression.Arguments[0] as ConstantExpression;
+                        var right = ToConstantExpression(methodCallExpression.Arguments[0]);
                         var operation = methodCallExpression.Method.Name;
                         var caseSensitive = true;
 
