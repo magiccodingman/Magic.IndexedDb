@@ -635,6 +635,21 @@ namespace Magic.IndexedDb
 
                         AddConditionInternal(left, right, operation == "Equals" ? "StringEquals" : operation, inOrBranch, caseSensitive);
                     }
+                    else if (methodCallExpression.Method.DeclaringType == typeof(List<string>) &&
+                        methodCallExpression.Method.Name == "Contains")
+                    {
+                        var collection = ToConstantExpression(methodCallExpression.Object!);
+                        var property = methodCallExpression.Arguments[0] as MemberExpression;
+                        AddConditionInternal(property, collection, "In", inOrBranch);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unsupported method call expression. Expression: {expression}");
+                    }
+                }
+                else
+                {
+                    throw new InvalidOperationException($"Unsupported expression type. Expression: {expression}");
                 }
             }
 

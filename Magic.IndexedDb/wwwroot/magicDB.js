@@ -368,7 +368,16 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
                         }
                     }
                     break;
-
+                case 'In':
+                    if (!dexieQuery)
+                    {
+                        dexieQuery = table.where(condition.property).anyOf(condition.value);
+                    }
+                    else
+                    {
+                        dexieQuery = dexieQuery.and(item => condition.value.includes(item[condition.property]));
+                    }
+                    break;
                 default:
                     throw new Error('Unsupported operation: ' + condition.operation);
             }
