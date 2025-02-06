@@ -444,15 +444,11 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
             // Apply query additions to the combined results
             combinedResults = applyArrayQueryAdditions(combinedResults, QueryAdditions);
 
-            if (uniqueResults)
+            if (allQueries.length > 1 && uniqueResults)
             {
                 // Make sure the objects in the array are unique
-                let uniqueResults = combinedResults.filter((result, index, self) =>
-                    index === self.findIndex((r) => (
-                        r.id === result.id && r.Name === result.Name && r.Age === result.Age
-                    ))
-                );
-                return uniqueResults;
+                const uniqueObjects = new Set(combinedResults.map(obj => JSON.stringify(obj)));
+                return Array.from(uniqueObjects).map(str => JSON.parse(str));
             }
             else
             {
