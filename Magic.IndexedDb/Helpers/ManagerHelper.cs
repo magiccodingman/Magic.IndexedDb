@@ -1,11 +1,6 @@
 ﻿using Magic.IndexedDb.SchemaAnnotations;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Helpers
 {
@@ -74,7 +69,7 @@ namespace Magic.IndexedDb.Helpers
             return propertyMappings;
         }
 
-        public static object? GetValueFromValueKind(object value)
+        public static object? GetValueFromValueKind(object value, Type type)
         {
             if (value is JsonElement jsonElement)
             {
@@ -84,7 +79,7 @@ namespace Magic.IndexedDb.Helpers
                     JsonValueKind.String => jsonElement.GetString(),
                     JsonValueKind.True => true,
                     JsonValueKind.False => false,
-                    _ => null
+                    _ => jsonElement.Deserialize(type)
                 };
             }
 

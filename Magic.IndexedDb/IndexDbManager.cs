@@ -496,9 +496,9 @@ namespace Magic.IndexedDb
                     if (propertyMappings.TryGetValue(kvp.Key, out var propertyName))
                     {
                         var property = recordType.GetProperty(propertyName);
-                        var value = ManagerHelper.GetValueFromValueKind(kvp.Value);
                         if (property != null)
                         {
+                            var value = ManagerHelper.GetValueFromValueKind(kvp.Value, property.PropertyType);
                             property.SetValue(record, ConvertValueToType(value!, property.PropertyType));
                         }
                     }
@@ -520,9 +520,9 @@ namespace Magic.IndexedDb
                 if (propertyMappings.TryGetValue(kvp.Key, out var propertyName))
                 {
                     var property = recordType.GetProperty(propertyName);
-                    var value = ManagerHelper.GetValueFromValueKind(kvp.Value);
                     if (property != null)
                     {
+                        var value = ManagerHelper.GetValueFromValueKind(kvp.Value, property.PropertyType);
                         property.SetValue(record, ConvertValueToType(value!, property.PropertyType));
                     }
                 }
