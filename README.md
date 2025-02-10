@@ -377,6 +377,9 @@ In this example, the query returns `Person` records where the `Name` property st
 
 These examples demonstrate the basics of using MagicIndexedDb in a Blazor WebAssembly application. You can also perform other operations, such as updating and deleting records, by using the appropriate methods provided by the `DbManager`.
 
+## Encryptions
+Please keep in mind the current implementation of encryptions is not incredibly secure without your own flavor added. It's more to make data not easily available, but it's not HIPAA compliant nor that secure if anyone who know what they were doing tried to breach the encryption. Be sure to understand the security of front end based encryptions. I am considering a future feature for a truly secure encryption system.
+
 
 ## Acknowledgements
 
