@@ -6,7 +6,9 @@ namespace Magic.IndexedDb.Helpers
 {
     public static class ManagerHelper
     {
-        public static Dictionary<string, object?> ConvertPropertyNamesUsingMappings(Dictionary<string, object?> inputRecord, Dictionary<string, string> propertyMappings)
+        public static Dictionary<string, object?> ConvertPropertyNamesUsingMappings(
+            Dictionary<string, object?> inputRecord, 
+            Dictionary<string, string> propertyMappings)
         {
             var updatedRecord = new Dictionary<string, object?>();
             foreach (var kvp in inputRecord)
