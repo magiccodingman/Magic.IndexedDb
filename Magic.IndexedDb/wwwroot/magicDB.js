@@ -310,10 +310,10 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
                     {
                         if (condition.caseSensitive)
                         {
-                            dexieQuery = table.where(condition.property).filter(item => item[condition.property].includes(condition.value));
+                            dexieQuery = table.filter(item => item[condition.property].includes(condition.value));
                         } else
                         {
-                            dexieQuery = table.where(condition.property).filter(item => item[condition.property].toLowerCase().includes(condition.value.toLowerCase()));
+                            dexieQuery = table.filter(item => item[condition.property].toLowerCase().includes(condition.value.toLowerCase()));
                         }
                     } else
                     {
