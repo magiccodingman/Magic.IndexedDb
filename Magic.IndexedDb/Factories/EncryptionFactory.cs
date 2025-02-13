@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
-namespace Magic.IndexedDb
+namespace Magic.IndexedDb.Factories
 {
     public sealed class EncryptionFactory(IndexedDbManager indexDbManager) : IEncryptionFactory
     {

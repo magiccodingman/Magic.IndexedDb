@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using Magic.IndexedDb.Models;
 
-namespace Magic.IndexedDb
+namespace Magic.IndexedDb.Factories
 {
     public class MagicDbFactory : IMagicDbFactory
     {
@@ -15,7 +15,6 @@ namespace Magic.IndexedDb
             _serviceProvider = serviceProvider;
             _jsRuntime = jSRuntime;
         }
-
 
         public async ValueTask<IndexedDbManager> OpenAsync(
             DbStore dbStore, bool force = false, 
@@ -30,17 +29,31 @@ namespace Magic.IndexedDb
             return _databases[dbStore.Name];
         }
 
-        public async Task<IndexedDbManager> GetDbManagerAsync(string dbName)
+        public IndexedDbManager Get(string dbName)
+        {
+            if (_databases.TryGetValue(dbName, out var db))
+                return db;
+            throw new MagicException(
+                $"Failed to find a opened database called {dbName}. " +
+                $"If you want to open or create a new database, " +
+                $"please use {nameof(OpenAsync)} or {nameof(GetRegisteredAsync)} instead.");
+        }
+
+        public async ValueTask<IndexedDbManager> GetRegisteredAsync(string dbName, CancellationToken cancellationToken = default)
         {
             var registeredStores = _serviceProvider.GetServices<DbStore>();
             foreach (var db in registeredStores)
-                _ = await this.OpenAsync(db);
-
-            if (this._databases.ContainsKey(dbName))
-                return this._databases[dbName];
-            else
-                throw new MagicException(
-                    $"Failed to find a database called {dbName}. If you want to open or create a new database, please use OpenAsync instead.");
+            {
+                if (db.Name == dbName)
+                    return await this.OpenAsync(db, false, cancellationToken);
+            }
+            throw new MagicException(
+                $"Failed to find a registered database called {dbName}. " +
+                $"If you want to dynamically open a new database, " +
+                $"please use {nameof(OpenAsync)} instead.");
         }
+
+        public async Task<IndexedDbManager> GetDbManagerAsync(string dbName) => await GetRegisteredAsync(dbName);
+        public Task<IndexedDbManager> GetDbManagerAsync(DbStore dbStore) => GetDbManagerAsync(dbStore.Name);
     }
 }
