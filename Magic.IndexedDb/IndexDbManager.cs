@@ -1,6 +1,7 @@
 using System.Dynamic;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
 using System.Threading;
 using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
@@ -79,49 +80,29 @@ namespace Magic.IndexedDb
 
         public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
         {
-            // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
+            _ = await AddAsync<T, JsonElement>(record, cancellationToken);
+        }
 
+        public async Task<TKey> AddAsync<T, TKey>(T record, CancellationToken cancellationToken = default) where T : class
+        {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-
-            T? myClass = null;
             object? processedRecord = await ProcessRecordAsync(record, cancellationToken);
-            if (processedRecord is ExpandoObject)
-                myClass = JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(processedRecord));
-            else
-                myClass = (T?)processedRecord;
-
             Dictionary<string, object?>? convertedRecord = null;
-            if (processedRecord is ExpandoObject)
-            {
-                var result = ((ExpandoObject)processedRecord)?.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
-                if (result != null)
-                {
-                    convertedRecord = result;
-                }
-            }
+            if (processedRecord is ExpandoObject expando)
+                convertedRecord = expando.ToDictionary(kv => kv.Key, kv => kv.Value);
             else
-            {
-                convertedRecord = ManagerHelper.ConvertRecordToDictionary(myClass);
-            }
+                convertedRecord = ManagerHelper.ConvertRecordToDictionary((T)processedRecord);
+
             var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
+            var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
 
-            // Convert the property names in the convertedRecord dictionary
-            if (convertedRecord != null)
+            StoreRecord<Dictionary<string, object?>> RecordToSend = new StoreRecord<Dictionary<string, object?>>()
             {
-                var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
-
-                if (updatedRecord != null)
-                {
-                    StoreRecord<Dictionary<string, object?>> RecordToSend = new StoreRecord<Dictionary<string, object?>>()
-                    {
-                        DbName = this.DbName,
-                        StoreName = schemaName,
-                        Record = updatedRecord
-                    };
-
-                    await CallJsAsync(IndexedDbFunctions.ADD_ITEM, cancellationToken, [RecordToSend]);
-                }
-            }
+                DbName = this.DbName,
+                StoreName = schemaName,
+                Record = updatedRecord
+            };
+            return await CallJsAsync<TKey>(IndexedDbFunctions.ADD_ITEM, cancellationToken, [RecordToSend]);
         }
 
         public async Task<string> DecryptAsync(
@@ -133,7 +114,7 @@ namespace Magic.IndexedDb
             return decryptedValue;
         }
 
-        private async Task<object?> ProcessRecordAsync<T>(
+        private async Task<object> ProcessRecordAsync<T>(
             T record, CancellationToken cancellationToken) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
@@ -201,7 +182,7 @@ namespace Magic.IndexedDb
                         expandoRecord.Add(kvp);
                     }
 
-                    return expandoRecord as ExpandoObject;
+                    return expandoRecord;
                 }
             }
 
