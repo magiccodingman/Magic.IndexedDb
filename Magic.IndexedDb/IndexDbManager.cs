@@ -462,8 +462,20 @@ namespace Magic.IndexedDb
             }
         }
 
-        private object ConvertValueToType(object value, Type targetType)
-        {
+    private object ConvertValueToType(object value, Type targetType)
+      {
+     // return targetType switch
+     //   {
+     //   Guid && value is string stringValue => Guid.Parse(stringValue),
+     //   Nullable nullableType => Nullable.GetUnderlyingType(targetType) switch
+     //   {
+     //     null => null,
+     //     Enum => Enum.Parse(nullableType, value as string),
+     //     default => Convert.ChangeType(value, nullableType)
+     //   },
+     //   Enum => Enum.Parse(targetType, value as string),
+     //   default => Convert.ChangeType(value, targetType)
+					//};
             if (targetType == typeof(Guid) && value is string stringValue)
             {
                 return Guid.Parse(stringValue);
@@ -477,7 +489,10 @@ namespace Magic.IndexedDb
 
                 return Convert.ChangeType(value, nullableType);
             }
-
+            if(targetType.BaseType == typeof(Enum))
+              {
+				      return value is null ? 0 :int.Parse(value.ToString());
+              }
             return Convert.ChangeType(value, targetType);
         }
 
