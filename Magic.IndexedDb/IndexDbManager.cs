@@ -2,6 +2,7 @@ using System.Dynamic;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading;
+using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Models;
 using Magic.IndexedDb.SchemaAnnotations;
