@@ -17,6 +17,24 @@ namespace Magic.IndexedDb
     /// </summary>
     public sealed class IndexedDbManager : IAsyncDisposable
     {
+        internal static async ValueTask<IndexedDbManager> CreateAndOpenAsync(
+            DbStore dbStore, IJSRuntime jsRuntime,
+            CancellationToken cancellationToken = default)
+        {
+            var result = new IndexedDbManager(dbStore, jsRuntime);
+            try
+            {
+                await result.CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, [dbStore]);
+                return result;
+            }
+            catch
+            {
+                await result.DisposeAsync();
+                throw;
+            }
+        }
+
+
         readonly DbStore _dbStore;
         readonly Task<IJSObjectReference> _jsModule;
 
@@ -31,7 +49,7 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="dbStore"></param>
         /// <param name="jsRuntime"></param>
-        internal IndexedDbManager(DbStore dbStore, IJSRuntime jsRuntime)
+        private IndexedDbManager(DbStore dbStore, IJSRuntime jsRuntime)
         {
             this._dbStore = dbStore;
             this._jsModule = jsRuntime.InvokeAsync<IJSObjectReference>(
@@ -39,19 +57,10 @@ namespace Magic.IndexedDb
                 "./_content/Magic.IndexedDb/magicDB.js").AsTask();
         }
 
+        // TODO: make it readonly
         public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
         public string CurrentVersion => _dbStore.Version;
         public string DbName => _dbStore.Name;
-
-        /// <summary>
-        /// Opens the IndexedDB defined in the DbStore. Under the covers will create the database if it does not exist
-        /// and create the stores defined in DbStore.
-        /// </summary>
-        /// <returns></returns>
-        public Task OpenDbAsync(CancellationToken cancellationToken = default)
-        {
-            return CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, [_dbStore]);
-        }
 
         /// <summary>
         /// Deletes the database corresponding to the dbName passed in
