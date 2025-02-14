@@ -37,7 +37,16 @@ namespace IndexDb.Example
             return true;
         }
 
-    }
+        [Flags]
+        public enum Permissions
+        { 
+            None = 0, 
+            CanRead = 1, 
+            CanWrite = 1 << 1, 
+            CanDelete = 1 << 2, 
+            CanCreate = 1 << 3 
+        }
 
-    
+        public Permissions Access { get; set; }
+    }
 }

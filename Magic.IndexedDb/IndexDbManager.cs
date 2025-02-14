@@ -55,7 +55,7 @@ namespace Magic.IndexedDb
         {
             this._dbStore = dbStore;
             this._jsModule = jsRuntime.InvokeAsync<IJSObjectReference>(
-                "import", 
+                "import",
                 "./_content/Magic.IndexedDb/magicDB.js").AsTask();
         }
 
@@ -228,8 +228,8 @@ namespace Magic.IndexedDb
         /// <param name="recordsToBulkAdd">An instance of StoreRecord that provides the store name and the data to add</param>
         /// <returns></returns>
         private Task BulkAddRecordAsync<T>(
-            string storeName, 
-            IEnumerable<T> recordsToBulkAdd, 
+            string storeName,
+            IEnumerable<T> recordsToBulkAdd,
             CancellationToken cancellationToken = default)
         {
             // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
@@ -353,7 +353,7 @@ namespace Magic.IndexedDb
         }
 
         public async Task<T?> GetByIdAsync<T>(
-            object key, 
+            object key,
             CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
@@ -409,7 +409,7 @@ namespace Magic.IndexedDb
         }
 
         internal async Task<IList<T>?> WhereV2Async<T>(
-            string storeName, List<string> jsonQuery, MagicQuery<T> query, 
+            string storeName, List<string> jsonQuery, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
             string? jsonQueryAdditions = null;
@@ -420,7 +420,7 @@ namespace Magic.IndexedDb
             var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
             IList<Dictionary<string, object>>? ListToConvert =
                 await CallJsAsync<IList<Dictionary<string, object>>>
-                (IndexedDbFunctions.WHERE, cancellationToken, 
+                (IndexedDbFunctions.WHERE, cancellationToken,
                 [DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions!, query?.ResultsUnique!]);
 
             var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
@@ -459,16 +459,20 @@ namespace Magic.IndexedDb
             {
                 return Guid.Parse(stringValue);
             }
+            if (targetType.IsEnum)
+            {
+                return Enum.ToObject(targetType, Convert.ToInt64(value));
+            }
 
             var nullableType = Nullable.GetUnderlyingType(targetType);
             if (nullableType != null)
             {
                 // It's nullable
-                if (value == null) return null;
+                if (value == null)
+                    return null;
 
                 return Convert.ChangeType(value, nullableType);
             }
-
             return Convert.ChangeType(value, targetType);
         }
 
