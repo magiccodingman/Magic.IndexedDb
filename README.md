@@ -8,16 +8,16 @@ This open source library provides an IndexedDb wrapper for C# and Blazor WebAsse
 This code is still very young. I will be making updates for this code as I come across it. I will try my best to not depreciate or break syntax already in use. But please take note of any version updates before you use my code if you're updating it in the future. As I will not guarentee right now that I won't break your stuff if you download this version and then come back in a year and get the latest version.
 
 ## Future Planned Features
-- [] Reset Primary Key starting Id
-- [] Compound Key Indexing
-- [] Easy table syncing functionality with API
+- [ ] Reset Primary Key starting Id
+- [ ] Compound Key Indexing
+- [ ] Easy table syncing functionality with API
 - [X] Allow Any and/or All Linq statements inside the WHERE query
-- [] Handling of Nested OR conditions in where query
-- [] API like response protocal from JS. This will allow better debugging and make it easier to expand the code. I left the original weak reference system build by nwestfall, but I will be removing that code for a system I believe is easier to tame and more appropriate for the project goals.
-- [] Superior & easy version handling and table altering. Current form handles changes easily but it'd take some work to do serious data migrations. I want data migrations to be built in c#, translated to clients, and automatically handled with extreme ease. I have some really interesting protocals I've brainstormed and would like to experiment with.
-- [] Deferred execution of table joins. I want c# join abilities to properly join tables together. 
-- [] Superior reflections. The current version of reflections is fine, but I've not spent much time optimizing. I need to convert more into hash sets, dictionaries, and more. This wrapper is meant to be a very expandable version that will engulf indexedDb with a great deal of capabilities. Fine tuning and perfecting the protocal I'm working on will allow some very cool features in the future. 
-- [] **Long Term** - NET 8 provides AOT features that I think could be extremely abusive in a good way for this project. I believe with future NET 8 possibilites and AOT, I can move IndexedDB into being a multi thread monster and various other performance improvements. Obviously I'd make this optional. But I believe there's some very interesting possibilities I'd like to experiment with in the future.
+- [ ] Handling of Nested OR conditions in where query
+- [ ] API like response protocal from JS. This will allow better debugging and make it easier to expand the code. I left the original weak reference system build by nwestfall, but I will be removing that code for a system I believe is easier to tame and more appropriate for the project goals.
+- [ ] Superior & easy version handling and table altering. Current form handles changes easily but it'd take some work to do serious data migrations. I want data migrations to be built in c#, translated to clients, and automatically handled with extreme ease. I have some really interesting protocals I've brainstormed and would like to experiment with.
+- [ ] Deferred execution of table joins. I want c# join abilities to properly join tables together. 
+- [ ] Superior reflections. The current version of reflections is fine, but I've not spent much time optimizing. I need to convert more into hash sets, dictionaries, and more. This wrapper is meant to be a very expandable version that will engulf indexedDb with a great deal of capabilities. Fine tuning and perfecting the protocal I'm working on will allow some very cool features in the future. 
+- [ ] **Long Term** - NET 8 provides AOT features that I think could be extremely abusive in a good way for this project. I believe with future NET 8 possibilites and AOT, I can move IndexedDB into being a multi thread monster and various other performance improvements. Obviously I'd make this optional. But I believe there's some very interesting possibilities I'd like to experiment with in the future.
 
 ## Table of Contents
 
