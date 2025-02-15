@@ -13,11 +13,11 @@ namespace Magic.IndexedDb.Extensions
     {
         public static IServiceCollection AddBlazorDB(this IServiceCollection services, Action<DbStore> options)
         {
+            services.TryAddScoped<IMagicDbFactory, MagicDbFactory>();
+
             var dbStore = new DbStore();
             options(dbStore);
-
-            services.AddTransient<DbStore>((_) => dbStore);
-            services.TryAddSingleton<IMagicDbFactory, MagicDbFactory>();
+            _ = services.AddSingleton(dbStore);
 
             return services;
         }
