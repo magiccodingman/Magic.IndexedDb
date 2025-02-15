@@ -4,16 +4,32 @@ using Magic.IndexedDb.Models;
 
 namespace Magic.IndexedDb.Factories
 {
-    public class MagicDbFactory : IMagicDbFactory
+    public class MagicDbFactory : IMagicDbFactory, IAsyncDisposable
     {
-        readonly IJSRuntime _jsRuntime;
+        readonly Task<IJSObjectReference> _jsRuntime;
         readonly IServiceProvider _serviceProvider;
         readonly IDictionary<string, IndexedDbManager> _databases = new Dictionary<string, IndexedDbManager>();
 
         public MagicDbFactory(IServiceProvider serviceProvider, IJSRuntime jSRuntime)
         {
             _serviceProvider = serviceProvider;
-            _jsRuntime = jSRuntime;
+            this._jsRuntime = jSRuntime.InvokeAsync<IJSObjectReference>(
+                "import",
+                "./_content/Magic.IndexedDb/magicDB.js").AsTask();
+        }
+        public async ValueTask DisposeAsync()
+        {
+            var js = await _jsRuntime;
+            try
+            {
+                var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await js.InvokeVoidAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token);
+            }
+            catch
+            {
+                // do nothing here
+            }
+            await js.DisposeAsync();
         }
 
         public async ValueTask<IndexedDbManager> OpenAsync(
@@ -23,7 +39,7 @@ namespace Magic.IndexedDb.Factories
             if (force || !_databases.ContainsKey(dbStore.Name))
             {
                 var db = await IndexedDbManager.CreateAndOpenAsync(
-                    dbStore, _jsRuntime, cancellationToken);
+                    dbStore, await _jsRuntime, cancellationToken);
                 _databases[dbStore.Name] = db;
             }
             return _databases[dbStore.Name];

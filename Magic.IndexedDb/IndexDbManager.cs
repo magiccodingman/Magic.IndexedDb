@@ -16,55 +16,29 @@ namespace Magic.IndexedDb
     /// <summary>
     /// Provides functionality for accessing IndexedDB from Blazor application
     /// </summary>
-    public sealed class IndexedDbManager : IAsyncDisposable
+    public sealed class IndexedDbManager
     {
         internal static async ValueTask<IndexedDbManager> CreateAndOpenAsync(
-            DbStore dbStore, IJSRuntime jsRuntime,
+            DbStore dbStore, IJSObjectReference jsRuntime,
             CancellationToken cancellationToken = default)
         {
             var result = new IndexedDbManager(dbStore, jsRuntime);
-            try
-            {
-                await result.CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, [dbStore]);
-                return result;
-            }
-            catch
-            {
-                await result.DisposeAsync();
-                throw;
-            }
+            await result.CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, [dbStore]);
+            return result;
         }
-
 
         readonly DbStore _dbStore;
-        readonly Task<IJSObjectReference> _jsModule;
-
-        public async ValueTask DisposeAsync()
-        {
-            try
-            {
-                var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                await this.CallJsAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token, []);
-            }
-            catch
-            {
-                // do nothing here
-            }
-            var module = await _jsModule;
-            await module.DisposeAsync();
-        }
+        readonly IJSObjectReference _jsModule;
 
         /// <summary>
         /// Ctor
         /// </summary>
         /// <param name="dbStore"></param>
         /// <param name="jsRuntime"></param>
-        private IndexedDbManager(DbStore dbStore, IJSRuntime jsRuntime)
+        private IndexedDbManager(DbStore dbStore, IJSObjectReference jsRuntime)
         {
             this._dbStore = dbStore;
-            this._jsModule = jsRuntime.InvokeAsync<IJSObjectReference>(
-                "import",
-                "./_content/Magic.IndexedDb/magicDB.js").AsTask();
+            this._jsModule = jsRuntime;
         }
 
         // TODO: make it readonly
@@ -814,14 +788,12 @@ namespace Magic.IndexedDb
 
         internal async Task CallJsAsync(string functionName, CancellationToken token, object[] args)
         {
-            var mod = await this._jsModule;
-            await mod.InvokeVoidAsync(functionName, token, args);
+            await this._jsModule.InvokeVoidAsync(functionName, token, args);
         }
 
         internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, object[] args)
         {
-            var mod = await this._jsModule;
-            return await mod.InvokeAsync<T>(functionName, token, args);
+            return await this._jsModule.InvokeAsync<T>(functionName, token, args);
         }
     }
 }
