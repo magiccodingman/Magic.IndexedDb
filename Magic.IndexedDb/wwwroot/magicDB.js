@@ -66,6 +66,14 @@ export function createDb(dbStore)
     db.open();
 }
 
+export function closeAll()
+{
+    const dbs = databases;
+    databases = [];
+    for (db of dbs)
+        db.db.close();
+}
+
 export async function deleteDb(dbName)
 {
     const db = await getDb(dbName);

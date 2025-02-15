@@ -17,7 +17,7 @@ namespace Magic.IndexedDb.Extensions
             options(dbStore);
 
             services.AddTransient<DbStore>((_) => dbStore);
-            services.TryAddSingleton<IMagicDbFactory, MagicDbFactory>();
+            services.TryAddScoped<IMagicDbFactory, MagicDbFactory>();
 
             return services;
         }

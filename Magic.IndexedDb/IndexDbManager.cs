@@ -2,7 +2,6 @@ using System.Dynamic;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
-using System.Threading;
 using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Models;
@@ -42,6 +41,15 @@ namespace Magic.IndexedDb
 
         public async ValueTask DisposeAsync()
         {
+            try
+            {
+                var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await this.CallJsAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token, []);
+            }
+            catch
+            {
+                // do nothing here
+            }
             var module = await _jsModule;
             await module.DisposeAsync();
         }
