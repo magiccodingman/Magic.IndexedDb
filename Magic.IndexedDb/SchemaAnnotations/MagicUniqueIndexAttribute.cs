@@ -8,21 +8,5 @@ using System.Threading.Tasks;
 namespace Magic.IndexedDb
 {
     [AttributeUsage(AttributeTargets.Property)]
-    public class MagicUniqueIndexAttribute : Attribute
-    {
-        [MagicColumnNameDesignator]
-        public string ColumnName { get; }
-
-        public MagicUniqueIndexAttribute(string columnName = null)
-        {
-            if (!String.IsNullOrWhiteSpace(columnName))
-            {
-                ColumnName = columnName;
-            }
-            else
-            {
-                ColumnName = null;
-            }
-        }
-    }
+    public class MagicUniqueIndexAttribute : Attribute { }
 }

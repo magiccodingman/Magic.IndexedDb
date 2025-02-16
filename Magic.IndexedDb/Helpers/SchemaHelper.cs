@@ -158,41 +158,9 @@ namespace Magic.IndexedDb.Helpers
             return schema;
         }
 
-        public static string GetPropertyColumnName(this PropertyInfo prop, Type attributeType)
-        {
-            Attribute? attribute = Attribute.GetCustomAttribute(prop, attributeType);
-
-            string columnName = prop.Name;
-
-            if (attribute != null)
-            {
-                PropertyInfo[] properties = attributeType.GetProperties();
-                foreach (PropertyInfo property in properties)
-                {
-                    if (Attribute.IsDefined(property, typeof(MagicColumnNameDesignatorAttribute)))
-                    {
-                        object? designatedColumnNameObject = property.GetValue(attribute);
-                        if (designatedColumnNameObject != null)
-                        {
-                            string designatedColumnName = designatedColumnNameObject as string ?? designatedColumnNameObject.ToString();
-                            if (!string.IsNullOrWhiteSpace(designatedColumnName))
-                            {
-                                columnName = designatedColumnName;
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-
-            return columnName;
-        }
         public static string GetPropertyColumnName<T>(this PropertyInfo prop) where T : Attribute
         {
-            T? attribute = (T?)Attribute.GetCustomAttribute(prop, typeof(T));
-
-            return prop.GetPropertyColumnName(typeof(T));
-
+            return prop.Name;
         }
 
 

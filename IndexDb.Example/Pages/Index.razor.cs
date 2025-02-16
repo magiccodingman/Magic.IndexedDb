@@ -12,7 +12,7 @@ public partial class Index
         {
             try
             {
-                var manager = await _MagicDb.GetDbManagerAsync(DbNames.Client);
+                var manager = await _MagicDb.GetRegisteredAsync(DbNames.Client);
 
                 await manager.ClearTableAsync<Person>();
 

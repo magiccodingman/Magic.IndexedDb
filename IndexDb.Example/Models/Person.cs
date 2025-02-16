@@ -1,33 +1,35 @@
 ﻿using Magic.IndexedDb;
 using Magic.IndexedDb.SchemaAnnotations;
+using System.Text.Json.Serialization;
 
 namespace IndexDb.Example
 {
     [MagicTable("Person", DbNames.Client)]
     public class Person
     {
-        [MagicPrimaryKey("id")]
+        [MagicPrimaryKey]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int _Id { get; set; }
 
         [MagicIndex]
         public string Name { get; set; }
 
-        [MagicIndex("Age")]
+        [MagicIndex]
         public int _Age { get; set; }
 
         [MagicIndex]
         public int TestInt { get; set; }
 
-        [MagicUniqueIndex("guid")]
+        [MagicUniqueIndex]
         public Guid GUIY { get; set; } = Guid.NewGuid();
 
         [MagicEncrypt]
         public string Secret { get; set; }
 
-        [MagicNotMapped]
+        [JsonIgnore]
         public string DoNotMapTest { get; set; }
 
-        [MagicNotMapped]
+        [JsonIgnore]
         public string SecretDecrypted { get; set; }
 
         private bool testPrivate { get; set; } = false;
