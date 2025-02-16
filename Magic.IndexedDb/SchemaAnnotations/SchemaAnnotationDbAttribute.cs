@@ -12,14 +12,10 @@ namespace Magic.IndexedDb
         public string SchemaName { get; }
         public string DatabaseName { get; }
 
-        public MagicTableAttribute(string schemaName, string databaseName = null)
+        public MagicTableAttribute(string schemaName, string databaseName)
         {
             SchemaName = schemaName;
-
-            if (!String.IsNullOrWhiteSpace(databaseName))
-                DatabaseName = databaseName;
-            else
-                DatabaseName = SchemaHelper.defaultNone;
+            DatabaseName = databaseName;
         }
     }
 }

@@ -86,13 +86,7 @@ builder.Services.AddBlazorDB(options =>
 });
 ```
 
-~~3. Add the following scripts to the end of the body tag in your `Index.html`:~~
-~~\<script src="_content/Magic.IndexedDb/dexie.min.js">\</script>~~
-~~\<script src="_content/Magic.IndexedDb/magicDB.js">\</script>~~
-
-3. Adding a script is now only required for versions 1.0.3 and lower. Everything above no longer requires the script tags on the index page.
-
-4. Add the following to your _Import.razor:
+3. Add the following to your _Import.razor:
 
 ```csharp
 @using Magic.IndexedDb
@@ -101,38 +95,38 @@ builder.Services.AddBlazorDB(options =>
 
 ### Creating a class with Magic attributes
 
-Define your class with the `MagicTable` attribute and the appropriate magic attributes for each property. For example:
+Define your class with the `MagicTable` attribute and the appropriate magic attributes for each property. We also respect `System.Text.Json` attributes when passing to JavaScript layer. For example:
 
 ```csharp
 [MagicTable("Person", "DatabaseName")]
 public class Person
 {
-    [MagicPrimaryKey("id")]
-    public int _Id { get; set; }
+    [MagicPrimaryKey]
+    // If you'd like it to be auto generated, the primary key must be ignroed when writing default. Otherwise it will use the exact value.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int Id { get; set; }
 
     [MagicIndex]
     public string Name { get; set; }
 
-    [MagicIndex("Age")]
+    [JsonPropertyName("Age")]
     public int _Age { get; set; }
 
     [MagicEncrypt]
     public string Secret { get; set; }
 
-    [MagicNotMapped]
+    [JsonIgnored]
     public string SecretDecrypted { get; set; }
 }
 ```
-I highly suggest you always add the string parameters as that sets the IndexedDb column name. By default it'll use the C# class property name. But You should always have some very unique and static set string for the attribute. That way if/when you change the c# property names, class names, or anything, the schema will not care because the code has smart logic to differentiate the C# class property names and the IndexedDb column names that was set in your attribute. This way you can freely change any C# class properties without ever caring about needing to create migration code. You can additionally add or remove columns freely without issue.
 
 ## Attributes
 
 - `MagicTable(string, string)`: Associates the class with a table in IndexedDb. The first parameter is the table name, and the second parameter is the database name.
-- `MagicPrimaryKey(string)`: Marks the property as the primary key. The parameter is the column name in IndexedDb.
-- `MagicIndex(string)`: Creates a searchable index for the property. The parameter is the column name in IndexedDb.
-- `MagicUniqueIndex(string)`: Creates a unique index for the property. The parameter is the column name in IndexedDb.
-- `MagicEncrypt`: Encrypts the string property when it's stored in IndexedDb.
-- `MagicNotMapped`: Excludes the property from being mapped to IndexedDb.
+- `MagicPrimaryKey`: Marks the property as the primary key.
+- `MagicIndex`: Creates a searchable index for the property.
+- `MagicUniqueIndex`: Creates a unique index for the property.
+- `MagicEncrypt`: Encrypts the string property when it's stored in IndexedDb, but won't be automatically decrypted when reading.
 
 ### Using the DbManager
 

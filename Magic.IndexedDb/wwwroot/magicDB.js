@@ -91,7 +91,7 @@ export async function addItem(item)
 export async function bulkAddItem(dbName, storeName, items)
 {
     const table = await getTable(dbName, storeName);
-    return await table.bulkAdd(items);
+    return await table.bulkAdd(items, { allKeys: true });
 }
 
 export async function countTable(dbName, storeName)

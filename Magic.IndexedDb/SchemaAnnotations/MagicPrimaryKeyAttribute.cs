@@ -8,21 +8,5 @@ using Magic.IndexedDb.SchemaAnnotations;
 namespace Magic.IndexedDb
 {
     [AttributeUsage(AttributeTargets.Property)]
-    public class MagicPrimaryKeyAttribute : Attribute
-    {
-        [MagicColumnNameDesignator]
-        public string ColumnName { get; }
-
-        public MagicPrimaryKeyAttribute(string columnName = null)
-        {
-            if (!String.IsNullOrWhiteSpace(columnName))
-            {
-                ColumnName = columnName;
-            }
-            else
-            {
-                ColumnName = null;
-            }
-        }
-    }
+    public class MagicPrimaryKeyAttribute : Attribute { }
 }
