@@ -15,12 +15,14 @@ namespace IndexDb.Example
         public string Name { get; set; }
 
         [MagicIndex]
+        [JsonPropertyName("Age")]
         public int _Age { get; set; }
 
         [MagicIndex]
         public int TestInt { get; set; }
 
         [MagicUniqueIndex]
+        [JsonPropertyName("Guid")]
         public Guid GUIY { get; set; } = Guid.NewGuid();
 
         [MagicEncrypt]
