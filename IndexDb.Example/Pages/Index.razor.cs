@@ -12,7 +12,7 @@ public partial class Index
         {
             try
             {
-                var manager = await _MagicDb.GetRegisteredAsync(DbNames.Client);
+                var manager = await this._MagicDb.GetRegisteredAsync(DbNames.Client);
 
                 await manager.ClearTableAsync<Person>();
 
@@ -32,17 +32,17 @@ public partial class Index
                 }
 
                 var storageInfo = await manager.GetStorageEstimateAsync();
-                storageQuota = storageInfo.QuotaInMegabytes;
-                storageUsage = storageInfo.UsageInMegabytes;
-                    
+                this.storageQuota = storageInfo.QuotaInMegabytes;
+                this.storageUsage = storageInfo.UsageInMegabytes;
+
                 var allPeopleDecrypted = await manager.GetAllAsync<Person>();
                 foreach (Person person in allPeopleDecrypted)
                 {
                     person.SecretDecrypted = await manager.DecryptAsync(person.Secret);
-                    allPeople.Add(person);
+                    this.allPeople.Add(person);
                 }
 
-                WhereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                this.WhereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
                 ).OrderBy(x => x._Id).Skip(1).Execute();
@@ -55,7 +55,7 @@ public partial class Index
 
                 //// should return "Luna", "Jerry" and "Jon"
                 //var NonNestedResult = await manager.Where<Person>(p => p.TestInt == 9 && p._Age >= 35 && p._Age <= 45).Execute();
-                StateHasChanged();
+                this.StateHasChanged();
             }
             catch (Exception ex)
             {

@@ -1,12 +1,7 @@
 ﻿using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.SchemaAnnotations;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Models
 {
@@ -18,9 +13,9 @@ namespace Magic.IndexedDb.Models
 
         public MagicQuery(string schemaName, IndexedDbManager manager)
         {
-            Manager = manager;
-            SchemaName = schemaName;
-            JsonQueries = new List<string>();
+            this.Manager = manager;
+            this.SchemaName = schemaName;
+            this.JsonQueries = new List<string>();
         }
 
         public List<StoredMagicQuery> storedMagicQueries { get; set; } = new List<StoredMagicQuery>();
@@ -35,7 +30,7 @@ namespace Magic.IndexedDb.Models
         /// <returns></returns>
         public MagicQuery<T> ResultsNotUnique()
         {
-            ResultsUnique = false;
+            this.ResultsUnique = false;
             return this;
         }
 
@@ -44,7 +39,7 @@ namespace Magic.IndexedDb.Models
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.Take;
             smq.IntValue = amount;
-            storedMagicQueries.Add(smq);
+            this.storedMagicQueries.Add(smq);
             return this;
         }
 
@@ -53,7 +48,7 @@ namespace Magic.IndexedDb.Models
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.Take_Last;
             smq.IntValue = amount;
-            storedMagicQueries.Add(smq);
+            this.storedMagicQueries.Add(smq);
             return this;
         }
 
@@ -62,7 +57,7 @@ namespace Magic.IndexedDb.Models
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.Skip;
             smq.IntValue = amount;
-            storedMagicQueries.Add(smq);
+            this.storedMagicQueries.Add(smq);
             return this;
         }
 
@@ -79,7 +74,7 @@ namespace Magic.IndexedDb.Models
         {
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.First;
-            storedMagicQueries.Add(smq);
+            this.storedMagicQueries.Add(smq);
             return this;
         }
 
@@ -88,18 +83,18 @@ namespace Magic.IndexedDb.Models
         {
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.Last;
-            storedMagicQueries.Add(smq);
+            this.storedMagicQueries.Add(smq);
             return this;
         }
 
         public async Task<IEnumerable<T>> Execute()
         {
-            return await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default) ?? Enumerable.Empty<T>();
+            return await this.Manager.WhereV2Async<T>(this.SchemaName, this.JsonQueries, this, default) ?? Enumerable.Empty<T>();
         }
 
         public async Task<int> Count()
         {
-            var result = await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default);
+            var result = await this.Manager.WhereV2Async<T>(this.SchemaName, this.JsonQueries, this, default);
             int num = result?.Count() ?? 0;
             return num;
         }
@@ -108,7 +103,7 @@ namespace Magic.IndexedDb.Models
         // Not currently available in Dexie version 1,2, or 3
         public MagicQuery<T> OrderBy(Expression<Func<T, object>> predicate)
         {
-            var memberExpression = GetMemberExpressionFromLambda(predicate);
+            var memberExpression = this.GetMemberExpressionFromLambda(predicate);
             var propertyInfo = memberExpression.Member as PropertyInfo;
 
             if (propertyInfo == null)
@@ -137,14 +132,14 @@ namespace Magic.IndexedDb.Models
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.Order_By;
             smq.StringValue = columnName;
-            storedMagicQueries.Add(smq);
+            this.storedMagicQueries.Add(smq);
             return this;
         }
 
         // Not currently available in Dexie version 1,2, or 3
         public MagicQuery<T> OrderByDescending(Expression<Func<T, object>> predicate)
         {
-            var memberExpression = GetMemberExpressionFromLambda(predicate);
+            var memberExpression = this.GetMemberExpressionFromLambda(predicate);
             var propertyInfo = memberExpression.Member as PropertyInfo;
 
             if (propertyInfo == null)
@@ -173,7 +168,7 @@ namespace Magic.IndexedDb.Models
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.Order_By_Descending;
             smq.StringValue = columnName;
-            storedMagicQueries.Add(smq);
+            this.storedMagicQueries.Add(smq);
             return this;
         }
 

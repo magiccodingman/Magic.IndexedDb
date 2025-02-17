@@ -8,7 +8,7 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
-        builder.Services.AddRazorComponents();
+        builder.Services.AddRazorComponents().AddInteractiveServerComponents();
         builder.Services.AddBlazorDB((x) => { });
         var app = builder.Build();
         if (!app.Environment.IsDevelopment())
@@ -17,7 +17,7 @@ public class Program
         }
         app.UseAntiforgery();
         app.MapStaticAssets();
-        app.MapRazorComponents<App>();
+        app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
         app.Run();
     }
 }

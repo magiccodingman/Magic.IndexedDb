@@ -1,10 +1,5 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections;
 using System.Linq.Expressions;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Models
 {
@@ -15,16 +10,16 @@ namespace Magic.IndexedDb.Models
             if (node.Method.Name == "Any" && node.Arguments[0] is MemberExpression member)
             {
                 // Handle Any expressions
-                var lambda = GetLambdaExpression(node.Arguments[1]);
-                var values = GetIEnumerableItems(member);
-                return values.Select(value => ReplaceParameter(lambda, value)).Aggregate<Expression>((left, right) => Expression.OrElse(left, right));
+                var lambda = this.GetLambdaExpression(node.Arguments[1]);
+                var values = this.GetIEnumerableItems(member);
+                return values.Select(value => this.ReplaceParameter(lambda, value)).Aggregate<Expression>((left, right) => Expression.OrElse(left, right));
             }
             else if (node.Method.Name == "All" && node.Arguments[0] is MemberExpression member3)
             {
                 // Handle All expressions
-                var lambda = GetLambdaExpression(node.Arguments[1]);
-                var values = GetIEnumerableItems(member3);
-                return values.Select(value => ReplaceParameter(lambda, value)).Aggregate<Expression>((left, right) => Expression.AndAlso(left, right));
+                var lambda = this.GetLambdaExpression(node.Arguments[1]);
+                var values = this.GetIEnumerableItems(member3);
+                return values.Select(value => this.ReplaceParameter(lambda, value)).Aggregate<Expression>((left, right) => Expression.AndAlso(left, right));
             }
             else
             {
@@ -78,15 +73,15 @@ namespace Magic.IndexedDb.Models
 
             public ParameterReplacer(ParameterExpression parameter, Expression replacement)
             {
-                _parameter = parameter;
-                _replacement = replacement;
+                this._parameter = parameter;
+                this._replacement = replacement;
             }
 
             protected override Expression VisitParameter(ParameterExpression node)
             {
-                if (node == _parameter)
+                if (node == this._parameter)
                 {
-                    return _replacement;
+                    return this._replacement;
                 }
 
                 return base.VisitParameter(node);

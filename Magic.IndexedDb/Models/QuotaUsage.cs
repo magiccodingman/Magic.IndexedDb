@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Magic.IndexedDb.Models;
+﻿namespace Magic.IndexedDb.Models;
 public sealed record QuotaUsage(long Quota, long Usage)
 {
     private static double ConvertBytesToMegabytes(long bytes)
@@ -12,8 +6,8 @@ public sealed record QuotaUsage(long Quota, long Usage)
         return (double)bytes / (1024 * 1024);
     }
 
-    public double QuotaInMegabytes => ConvertBytesToMegabytes(Quota);
-    public double UsageInMegabytes => ConvertBytesToMegabytes(Usage);
+    public double QuotaInMegabytes => ConvertBytesToMegabytes(this.Quota);
+    public double UsageInMegabytes => ConvertBytesToMegabytes(this.Usage);
 
-    public (double quota, double usage) InMegabytes => (QuotaInMegabytes, UsageInMegabytes);
+    public (double quota, double usage) InMegabytes => (this.QuotaInMegabytes, this.UsageInMegabytes);
 }

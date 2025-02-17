@@ -1,5 +1,5 @@
 namespace Magic.IndexedDb
-{ 
+{
     public class StoreRecord<T>
     {
         public string? DbName { get; set; }

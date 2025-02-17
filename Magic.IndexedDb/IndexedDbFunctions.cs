@@ -1,5 +1,5 @@
 namespace Magic.IndexedDb
-{ 
+{
     internal struct IndexedDbFunctions
     {
         public const string CREATE_DB = "createDb";

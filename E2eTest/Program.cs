@@ -1,23 +1,20 @@
-﻿using E2eTestWebApp.Components;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace E2eTest;
 
 [TestClass]
 public static class Program
 {
-    public static WebApplicationFactory<E2eTestWebApp.Program> WebApplication { get; }
+    public static WebApplicationFactory<E2eTestWebApp.Program> WebApplication { get; private set; } = null!;
 
-    static Program()
+    [AssemblyInitialize]
+    public static void Initialize(TestContext context)
     {
         WebApplication = new();
     }
 
     [AssemblyCleanup]
-    public async static Task Cleanup()
+    public static async Task Cleanup()
     {
         await WebApplication.DisposeAsync();
     }

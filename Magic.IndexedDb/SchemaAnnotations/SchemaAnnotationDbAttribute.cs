@@ -1,11 +1,4 @@
-﻿using Magic.IndexedDb.Helpers;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Magic.IndexedDb
+﻿namespace Magic.IndexedDb
 {
     public class MagicTableAttribute : Attribute
     {
@@ -14,8 +7,8 @@ namespace Magic.IndexedDb
 
         public MagicTableAttribute(string schemaName, string databaseName)
         {
-            SchemaName = schemaName;
-            DatabaseName = databaseName;
+            this.SchemaName = schemaName;
+            this.DatabaseName = databaseName;
         }
     }
 }

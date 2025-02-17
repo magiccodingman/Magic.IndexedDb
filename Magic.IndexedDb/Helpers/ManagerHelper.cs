@@ -1,13 +1,11 @@
-﻿using Magic.IndexedDb.SchemaAnnotations;
-using System.Reflection;
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace Magic.IndexedDb.Helpers
 {
     public static class ManagerHelper
     {
         public static Dictionary<string, object?> ConvertPropertyNamesUsingMappings(
-            Dictionary<string, object?> inputRecord, 
+            Dictionary<string, object?> inputRecord,
             Dictionary<string, string> propertyMappings)
         {
             var updatedRecord = new Dictionary<string, object?>();

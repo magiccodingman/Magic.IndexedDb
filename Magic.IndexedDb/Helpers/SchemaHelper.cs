@@ -1,11 +1,6 @@
 ﻿using Magic.IndexedDb.SchemaAnnotations;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Helpers
 {
@@ -38,13 +33,16 @@ namespace Magic.IndexedDb.Helpers
                 var left = binaryExpression.Left as MemberExpression;
                 var right = binaryExpression.Right as MemberExpression;
 
-                if (left != null) propertyNames.Add(left.Member.Name);
-                if (right != null) propertyNames.Add(right.Member.Name);
+                if (left != null)
+                    propertyNames.Add(left.Member.Name);
+                if (right != null)
+                    propertyNames.Add(right.Member.Name);
             }
             else if (predicate.Body is MethodCallExpression methodCallExpression)
             {
                 var argument = methodCallExpression.Object as MemberExpression;
-                if (argument != null) propertyNames.Add(argument.Member.Name);
+                if (argument != null)
+                    propertyNames.Add(argument.Member.Name);
             }
 
             return propertyNames;
