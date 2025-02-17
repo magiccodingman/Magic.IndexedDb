@@ -11,6 +11,16 @@ partial class TestPageBase
 {
     private string method = "";
     private string output = "";
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            output = JsonSerializer.Serialize("Loaded.");
+            this.StateHasChanged();
+        }
+    }
+
     private async Task RunAsync()
     {
         try
@@ -25,7 +35,12 @@ partial class TestPageBase
         }
         catch (Exception ex)
         {
-            this.output = JsonSerializer.Serialize(new { Exception = ex.Message });
+            this.output = JsonSerializer.Serialize(new Dictionary<string, string>()
+            {
+                ["Exception"] = ex.GetType().ToString(),
+                ["Message"] = ex.Message,
+                ["StackTrace"] = ex.StackTrace ?? "",
+            });
         }
     }
 
