@@ -22,10 +22,23 @@ public abstract partial class TestBase<TPage> : ContextTest
         return methodInfo.Name;
     }
 
+    protected sealed record DisposablePage(IPage Page) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await Page.CloseAsync();
+    }
+
+    protected async ValueTask<DisposablePage> NewPageAsync()
+    {
+        var page = await this.Context.NewPageAsync();
+        await page.GotoAsync("/");
+        return new DisposablePage(page);
+    }
+
     protected async ValueTask<TResult?> RunTestPageMethodAsync<TResult>(
         Expression<Func<TPage, Func<Task<TResult>>>> method)
     {
-        var page = await this.Context.NewPageAsync();
+        await using var pageDisposable = await this.NewPageAsync();
+        var page = pageDisposable.Page;
 
         await page.GotoAsync(typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "");
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(JsonSerializer.Serialize("Loaded."));
@@ -41,6 +54,7 @@ public abstract partial class TestBase<TPage> : ContextTest
 
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(AnyCharacter());
         var output = await page.GetByTestId("output").InputValueAsync();
+
         try
         {
             return JsonSerializer.Deserialize<TResult>(output);
