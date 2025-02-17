@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Components;
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace E2eTestWebApp.Components.TestPages;
+namespace E2eTestWebApp.TestPages;
 
 partial class TestPageBase
 {
@@ -29,8 +29,7 @@ partial class TestPageBase
                 .GetMethods()
                 .Single(x => x.Name == method)
                 .Invoke(this, []);
-            while (output is Task or ValueTask)
-                output = await output;
+            output = await output;
             this.output = JsonSerializer.Serialize(output);
         }
         catch (Exception ex)

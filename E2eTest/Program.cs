@@ -1,7 +1,4 @@
-﻿using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Mvc.Testing;
-using System.Diagnostics;
-using System.Reflection;
+﻿using System.Diagnostics;
 
 namespace E2eTest;
 
@@ -19,7 +16,7 @@ public static class Program
             StartInfo = new ProcessStartInfo()
             {
                 FileName = "dotnet",
-                Arguments = "run --project ../../../../E2eTestWebApp",
+                Arguments = "run --no-build --project ../../../../E2eTestWebApp",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
@@ -31,7 +28,7 @@ public static class Program
             if (!server.Start())
                 throw new Exception("Failed to start E2eTestWebApp. Process.Start returns false.");
         }
-        catch (Exception ex)
+        catch
         {
             server.Dispose();
             throw;

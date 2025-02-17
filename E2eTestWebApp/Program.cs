@@ -1,4 +1,3 @@
-using E2eTestWebApp.Components;
 using Magic.IndexedDb.Extensions;
 
 namespace E2eTestWebApp;

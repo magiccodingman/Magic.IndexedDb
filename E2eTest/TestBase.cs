@@ -1,34 +1,49 @@
-﻿using Microsoft.Playwright;
+﻿// works with TestPageBase in E2eTestWebApp
+
+using Microsoft.AspNetCore.Components;
+using Microsoft.Playwright;
+using System.Linq.Expressions;
+using System.Reflection;
 using System.Text.Json;
 namespace E2eTest;
 
 
 [TestClass]
 #pragma warning disable MSTEST0016 // Test class should have test method
-public abstract partial class TestBase : ContextTest
+public abstract partial class TestBase<TPage> : ContextTest
 #pragma warning restore MSTEST0016 // Test class should have test method
 {
-    protected async ValueTask<T?> RunTestPageAsync<T>(string page, string method)
+    private static string ResolveMethod<TObject, TMethod>(Expression<Func<TObject, TMethod>> method)
     {
-        var p = await this.Context.NewPageAsync();
+        var unaryExpression = (UnaryExpression)method.Body;
+        var methodCallExpression = (MethodCallExpression)unaryExpression.Operand;
+        var methodInfoExpression = (ConstantExpression)methodCallExpression.Object!;
+        var methodInfo = (MemberInfo)methodInfoExpression.Value!;
+        return methodInfo.Name;
+    }
 
-        await p.GotoAsync(page);
-        await this.Expect(p.GetByTestId("output")).ToHaveValueAsync(JsonSerializer.Serialize("Loaded."));
+    protected async ValueTask<TResult?> RunTestPageMethodAsync<TResult>(
+        Expression<Func<TPage, Func<Task<TResult>>>> method)
+    {
+        var page = await this.Context.NewPageAsync();
 
-        await p.GetByTestId("method").FillAsync(method);
-        await p.WaitForTimeoutAsync(500);
+        await page.GotoAsync(typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "");
+        await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(JsonSerializer.Serialize("Loaded."));
 
-        await p.GetByTestId("clear").ClickAsync();
-        await this.Expect(p.GetByTestId("output")).ToHaveValueAsync("");
+        await page.GetByTestId("method").FillAsync(ResolveMethod(method));
+        await page.WaitForTimeoutAsync(500);
 
-        await p.GetByTestId("run").ClickAsync();
-        await p.WaitForTimeoutAsync(500);
+        await page.GetByTestId("clear").ClickAsync();
+        await this.Expect(page.GetByTestId("output")).ToHaveValueAsync("");
 
-        await this.Expect(p.GetByTestId("output")).ToHaveValueAsync(AnyCharacter());
-        var output = await p.GetByTestId("output").InputValueAsync();
+        await page.GetByTestId("run").ClickAsync();
+        await page.WaitForTimeoutAsync(500);
+
+        await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(AnyCharacter());
+        var output = await page.GetByTestId("output").InputValueAsync();
         try
         {
-            return JsonSerializer.Deserialize<T>(output);
+            return JsonSerializer.Deserialize<TResult>(output);
         }
         catch
         {
@@ -42,7 +57,6 @@ public abstract partial class TestBase : ContextTest
     public override BrowserNewContextOptions ContextOptions()
     {
         var options = base.ContextOptions();
-        // don't use uppercase letters here
         options.BaseURL = Program.BaseUrl;
         return options;
     }
