@@ -29,9 +29,17 @@ public abstract partial class TestBase<TPage> : ContextTest
         public async ValueTask DisposeAsync() => await Page.CloseAsync();
     }
 
-    protected async ValueTask<IPage> NewPageAsync()
+    protected async ValueTask<IPage> NewPageAsync(string? initScript = null)
     {
         var page = await this.Context.NewPageAsync();
+        if (initScript is not null)
+            await page.AddInitScriptAsync(scriptPath: initScript);
+        else
+        {
+            initScript = $"{this.GetType().Name}.cs.js";
+            if (File.Exists(initScript))
+                await page.AddInitScriptAsync(scriptPath: initScript);
+        }
         await page.GotoAsync("/");
         return page;
     }

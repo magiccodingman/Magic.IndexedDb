@@ -25,4 +25,10 @@
 		<Using Include="System.Threading.Tasks" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <None Update="OpenTest.cs.js">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
+
 </Project>
