@@ -1,6 +1,8 @@
 ﻿// works with TestPageBase in E2eTestWebApp
 
+using E2eTest.Entities;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Playwright;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -27,18 +29,17 @@ public abstract partial class TestBase<TPage> : ContextTest
         public async ValueTask DisposeAsync() => await Page.CloseAsync();
     }
 
-    protected async ValueTask<DisposablePage> NewPageAsync()
+    protected async ValueTask<IPage> NewPageAsync()
     {
         var page = await this.Context.NewPageAsync();
         await page.GotoAsync("/");
-        return new DisposablePage(page);
+        return page;
     }
 
     protected async ValueTask<TResult?> RunTestPageMethodAsync<TResult>(
         Expression<Func<TPage, Func<Task<TResult>>>> method)
     {
-        await using var pageDisposable = await this.NewPageAsync();
-        var page = pageDisposable.Page;
+        var page = await this.Context.NewPageAsync();
 
         await page.GotoAsync(typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "");
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(JsonSerializer.Serialize("Loaded."));

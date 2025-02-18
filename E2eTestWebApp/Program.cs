@@ -1,12 +1,20 @@
 using Magic.IndexedDb;
 using Magic.IndexedDb.Extensions;
+using System.Diagnostics;
 
 namespace E2eTestWebApp;
 
 public class Program
 {
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
+        Process? parentProcess = null;
+        if (args.Length >= 2 && args[0] == "--E2eTest")
+        {
+            parentProcess = Process.GetProcessById(int.Parse(args[1]));
+            args = args[2..];
+        }
+
         var builder = WebApplication.CreateBuilder(args);
         _ = builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
@@ -29,6 +37,16 @@ public class Program
         _ = app.UseAntiforgery();
         _ = app.MapStaticAssets();
         _ = app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
-        app.Run();
+
+        if (parentProcess is null)
+        {
+            await app.RunAsync();
+        }
+        else
+        {
+            await app.StartAsync();
+            await parentProcess.WaitForExitAsync();
+            await app.DisposeAsync();
+        }
     }
 }

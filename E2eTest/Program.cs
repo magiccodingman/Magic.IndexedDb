@@ -18,12 +18,15 @@ public static class Program
         if (count is not 1)
             return;
 
+        using var currentProcess = Process.GetCurrentProcess();
+        var dotnetRunArguments = "--no-build --project ../../../../E2eTestWebApp";
+        var webAppArguments = $"--E2eTest {currentProcess.Id}";
         var server = new Process
         {
             StartInfo = new ProcessStartInfo()
             {
                 FileName = "dotnet",
-                Arguments = "run --no-build --project ../../../../E2eTestWebApp",
+                Arguments = $"run {dotnetRunArguments} -- {webAppArguments}",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
