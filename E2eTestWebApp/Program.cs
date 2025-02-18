@@ -1,3 +1,4 @@
+using Magic.IndexedDb;
 using Magic.IndexedDb.Extensions;
 
 namespace E2eTestWebApp;
@@ -7,16 +8,27 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
-        builder.Services.AddRazorComponents().AddInteractiveServerComponents();
-        builder.Services.AddBlazorDB((x) => { });
-        var app = builder.Build();
-        if (!app.Environment.IsDevelopment())
+        _ = builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+
+        _ = builder.Services.AddBlazorDB((x) =>
         {
-            app.UseExceptionHandler("/Error", createScopeForErrors: true);
-        }
-        app.UseAntiforgery();
-        app.MapStaticAssets();
-        app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+            x.Name = "OpenTest.RegisteredOpen1";
+            x.Version = "1";
+            x.StoreSchemas = [];
+        });
+        _ = builder.Services.AddSingleton(new DbStore()
+        {
+            Name = "OpenTest.RegisteredOpen2",
+            Version = "1",
+            StoreSchemas = []
+        });
+
+
+        var app = builder.Build();
+        _ = app.UseExceptionHandler("/Error", createScopeForErrors: true);
+        _ = app.UseAntiforgery();
+        _ = app.MapStaticAssets();
+        _ = app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
         app.Run();
     }
 }
