@@ -42,7 +42,7 @@ namespace Magic.IndexedDb
 
         // TODO: make it readonly
         public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
-        public string CurrentVersion => this._dbStore.Version;
+        public int CurrentVersion => this._dbStore.Version;
         public string DbName => this._dbStore.Name;
 
         /// <summary>
@@ -203,7 +203,7 @@ namespace Magic.IndexedDb
             // Check if the key is of the correct type
             if (!primaryKeyProperty.PropertyType.IsInstanceOfType(key))
             {
-                throw new ArgumentException($"Invalid key type. Expected: {primaryKeyProperty.PropertyType}, received: {key.GetType()}");
+                throw new ArgumentException($"Invalid key type. Expected: {primaryKeyProperty.PropertyType}, received: {key?.GetType()}");
             }
 
             string columnName = primaryKeyProperty.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
@@ -273,29 +273,6 @@ namespace Magic.IndexedDb
                 string jsonQuery = this.GetJsonQueryFromExpression(Expression.Lambda<Func<T, bool>>(expression, predicate.Parameters));
                 jsonQueries.Add(jsonQuery);
             }
-        }
-
-        private object ConvertValueToType(object value, Type targetType)
-        {
-            if (targetType == typeof(Guid) && value is string stringValue)
-            {
-                return Guid.Parse(stringValue);
-            }
-            if (targetType.IsEnum)
-            {
-                return Enum.ToObject(targetType, Convert.ToInt64(value));
-            }
-
-            var nullableType = Nullable.GetUnderlyingType(targetType);
-            if (nullableType != null)
-            {
-                // It's nullable
-                if (value == null)
-                    return null;
-
-                return Convert.ChangeType(value, nullableType);
-            }
-            return Convert.ChangeType(value, targetType);
         }
 
         private string GetJsonQueryFromExpression<T>(Expression<Func<T, bool>> predicate) where T : class

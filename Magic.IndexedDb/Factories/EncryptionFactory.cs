@@ -3,7 +3,7 @@
     public sealed class EncryptionFactory(IndexedDbManager indexDbManager) : IEncryptionFactory
     {
         public Task<string> EncryptAsync(
-            string data, string key,
+            string data, string? key,
             CancellationToken cancellationToken = default)
         {
             return indexDbManager.CallJsAsync<string>(
@@ -12,7 +12,7 @@
         }
 
         public Task<string> DecryptAsync(
-            string encryptedData, string key,
+            string encryptedData, string? key,
             CancellationToken cancellationToken = default)
         {
             return indexDbManager.CallJsAsync<string>(
