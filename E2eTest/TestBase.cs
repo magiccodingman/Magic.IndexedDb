@@ -44,13 +44,13 @@ public abstract partial class TestBase<TPage> : ContextTest
         return page;
     }
 
-    protected async ValueTask<TResult?> RunTestPageMethodAsync<TResult>(
-        Expression<Func<TPage, Func<Task<TResult>>>> method)
+    protected async ValueTask<string> RunTestPageMethodAsync(
+        Expression<Func<TPage, Func<Task<string>>>> method)
     {
         var page = await this.Context.NewPageAsync();
 
         await page.GotoAsync(typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "");
-        await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(JsonSerializer.Serialize("Loaded."));
+        await this.Expect(page.GetByTestId("output")).ToHaveValueAsync("Loaded.");
 
         await page.GetByTestId("method").FillAsync(ResolveMethod(method));
         await page.WaitForTimeoutAsync(500);
@@ -59,22 +59,9 @@ public abstract partial class TestBase<TPage> : ContextTest
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync("");
 
         await page.GetByTestId("run").ClickAsync();
-        await page.WaitForTimeoutAsync(500);
-
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(AnyCharacter());
-        var output = await page.GetByTestId("output").InputValueAsync();
 
-        try
-        {
-            return JsonSerializer.Deserialize<TResult>(output);
-        }
-        catch
-        {
-            Assert.Fail($"Unexpected output from test page {page}.{method}:{Environment.NewLine}" +
-                $"{output}");
-            throw new Exception($"Unexpected output from test page {page}.{method}:{Environment.NewLine}" +
-                $"{output}");
-        }
+        return await page.GetByTestId("output").InputValueAsync();
     }
 
     public override BrowserNewContextOptions ContextOptions()

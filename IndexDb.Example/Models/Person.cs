@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace IndexDb.Example
 {
-    [MagicTable("Person", DbNames.Client)]
+    [MagicTable("Person", null)]
     public class Person
     {
         [MagicPrimaryKey]

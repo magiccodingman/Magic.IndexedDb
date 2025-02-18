@@ -26,7 +26,7 @@ internal static class AssertExtensions
         }
     }
 
-    public static void AreJsonEqual(this Assert assert, string expected, string actual)
+    public static void AreJsonEqual(this Assert _, string expected, string actual)
     {
         var element1 = JsonSerializer.Deserialize<JsonElement>(expected);
         var element2 = JsonSerializer.Deserialize<JsonElement>(actual);

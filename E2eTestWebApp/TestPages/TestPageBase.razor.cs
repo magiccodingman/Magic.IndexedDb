@@ -16,7 +16,7 @@ partial class TestPageBase
     {
         if (firstRender)
         {
-            output = JsonSerializer.Serialize("Loaded.");
+            output = "Loaded.";
             this.StateHasChanged();
         }
     }
@@ -25,12 +25,11 @@ partial class TestPageBase
     {
         try
         {
-            dynamic? output = this.GetType()
+            var output = this.GetType()
                 .GetMethods()
                 .Single(x => x.Name == method)
                 .Invoke(this, []);
-            output = await output;
-            this.output = JsonSerializer.Serialize(output);
+            this.output = await (Task<string>)output!;
         }
         catch (Exception ex)
         {

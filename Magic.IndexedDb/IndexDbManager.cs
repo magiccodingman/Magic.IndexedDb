@@ -40,7 +40,6 @@ namespace Magic.IndexedDb
             this._jsModule = jsRuntime;
         }
 
-        // TODO: make it readonly
         public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
         public int CurrentVersion => this._dbStore.Version;
         public string DbName => this._dbStore.Name;

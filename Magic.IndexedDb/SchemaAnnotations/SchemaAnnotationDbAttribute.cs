@@ -1,11 +1,12 @@
 ﻿namespace Magic.IndexedDb
 {
-    public class MagicTableAttribute : Attribute
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class MagicTableAttribute : Attribute
     {
         public string SchemaName { get; }
-        public string DatabaseName { get; }
+        public string? DatabaseName { get; }
 
-        public MagicTableAttribute(string schemaName, string databaseName)
+        public MagicTableAttribute(string schemaName, string? databaseName)
         {
             this.SchemaName = schemaName;
             this.DatabaseName = databaseName;

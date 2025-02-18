@@ -1,6 +1,8 @@
 ﻿using Magic.IndexedDb.SchemaAnnotations;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Magic.IndexedDb.Helpers
 {
@@ -60,10 +62,6 @@ namespace Magic.IndexedDb.Helpers
 
                 foreach (var type in types)
                 {
-                    //var attributes = type.GetCustomAttributes(typeof(SchemaAnnotationDbAttribute), false);
-
-                    //if (attributes.Length > 0)
-                    //{
                     var schemaAttribute = type.GetCustomAttribute<MagicTableAttribute>();
                     if (schemaAttribute != null)
                     {
@@ -87,7 +85,7 @@ namespace Magic.IndexedDb.Helpers
             return schemas;
         }
 
-        public static StoreSchema GetStoreSchema<T>(string name = null, bool PrimaryKeyAuto = true) where T : class
+        public static StoreSchema GetStoreSchema<T>(string? name = null, bool PrimaryKeyAuto = true) where T : class
         {
             Type type = typeof(T);
             return GetStoreSchema(type, name, PrimaryKeyAuto);
@@ -97,12 +95,6 @@ namespace Magic.IndexedDb.Helpers
         {
             StoreSchema schema = new StoreSchema();
             schema.PrimaryKeyAuto = PrimaryKeyAuto;
-
-
-            //if (String.IsNullOrWhiteSpace(name))
-            //    schema.Name = type.Name;
-            //else
-            //    schema.Name = name;
 
             // Get the schema name from the SchemaAnnotationDbAttribute if it exists
             var schemaAttribute = type.GetCustomAttribute<MagicTableAttribute>();
@@ -158,17 +150,10 @@ namespace Magic.IndexedDb.Helpers
 
         public static string GetPropertyColumnName<T>(this PropertyInfo prop) where T : Attribute
         {
-            return prop.Name;
+            var attribute = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
+            if (attribute is not null)
+                return attribute.Name;
+            return JsonNamingPolicy.CamelCase.ConvertName(prop.Name);
         }
-
-
-        //public StoreSchema GetStoreSchema<T>(bool PrimaryKeyAuto = true) where T : class
-        //{
-        //    StoreSchema schema = new StoreSchema();
-        //    schema.PrimaryKeyAuto = PrimaryKeyAuto;
-
-
-        //    return schema;
-        //}
     }
 }
