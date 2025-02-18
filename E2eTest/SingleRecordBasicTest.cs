@@ -36,19 +36,46 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
     public async Task DeleteTest()
     {
         var page = await this.NewPageAsync();
-        _ = await page.EvaluateAsync("deleteTestNewDatabase()");
+        await page.DeleteDatabaseAsync("SingleRecordBasic.Delete");
 
         var result = await this.RunTestPageMethodAsync(p => p.Delete);
         Assert.AreEqual("OK", result);
 
         var records = await page.EvaluateAsync<string>("getAll('SingleRecordBasic.Delete', 'Records')");
+        Assert.That.AreJsonEqual("[]", records);
+    }
+
+    [TestMethod]
+    public async Task UpdateTest()
+    {
+        var page = await this.NewPageAsync();
+        await page.DeleteDatabaseAsync("SingleRecordBasic.Update");
+
+        var result = await this.RunTestPageMethodAsync(p => p.Update);
+        Assert.AreEqual("1", result);
+
+        var records = await page.EvaluateAsync<string>("getAll('SingleRecordBasic.Update', 'Records')");
         Assert.That.AreJsonEqual("""
-            [
-                {
-                    "id":1234,
-                    "value":"hello"
-                }
-            ]
+            [{
+                "id":12,
+                "normal":"Updated",
+                "Renamed":"R",
+                "index":"I",
+                "uniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
+                "enum":0,
+                "nested":{"value":1234},
+                "largeNumber":9007199254740991
+            }]
             """, records);
+    }
+
+    [TestMethod]
+    public async Task GetByIdTest()
+    {
+        var page = await this.NewPageAsync();
+        await page.DeleteDatabaseAsync("SingleRecordBasic.GetById");
+
+        var result = await this.RunTestPageMethodAsync(p => p.GetById);
+        Assert.AreEqual("Norm", result);
     }
 }

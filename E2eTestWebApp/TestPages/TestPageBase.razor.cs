@@ -30,6 +30,8 @@ partial class TestPageBase
                 .Single(x => x.Name == method)
                 .Invoke(this, []);
             this.output = await (Task<string>)output!;
+            if (string.IsNullOrEmpty(this.output))
+                this.output = "Completed.";
         }
         catch (Exception ex)
         {
