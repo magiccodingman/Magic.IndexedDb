@@ -14,7 +14,7 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
     private record NestedItem(int Value);
 
     [MagicTable("Records", null)]
-    private record Record(
+    private record RecordToAdd(
         [property: MagicPrimaryKey] 
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] 
         int Id,
@@ -45,9 +45,9 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
         {
             Name = "SingleRecordBasic.Add",
             Version = 1,
-            StoreSchemas = [SchemaHelper.GetStoreSchema<Record>(null, false)]
+            StoreSchemas = [SchemaHelper.GetStoreSchema<RecordToAdd>(null, false)]
         });
-        var id = await database.AddAsync<Record, int>(new Record(
+        var id = await database.AddAsync<RecordToAdd, int>(new RecordToAdd(
             Id: 12, 
             Normal: "Norm", 
             Ignored: true, 
@@ -58,5 +58,19 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
             Nested: new(1234),
             LargeNumber: 9007199254740991));
         return id.ToString();
+    }
+
+    [MagicTable("Records", null)]
+    private record RecordToDelete([property: MagicPrimaryKey] int Id);
+    public async Task<string> Delete()
+    {
+        var database = await magic.OpenAsync(new DbStore()
+        {
+            Name = "SingleRecordBasic.Delete",
+            Version = 1,
+            StoreSchemas = [SchemaHelper.GetStoreSchema<RecordToAdd>(null, false)]
+        });
+        await database.DeleteAsync(new RecordToDelete(123));
+        return "OK";
     }
 }

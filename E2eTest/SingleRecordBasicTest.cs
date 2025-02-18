@@ -31,4 +31,24 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
             ]
             """, records);
     }
+
+    [TestMethod]
+    public async Task DeleteTest()
+    {
+        var page = await this.NewPageAsync();
+        _ = await page.EvaluateAsync("deleteTestNewDatabase()");
+
+        var result = await this.RunTestPageMethodAsync(p => p.Delete);
+        Assert.AreEqual("OK", result);
+
+        var records = await page.EvaluateAsync<string>("getAll('SingleRecordBasic.Delete', 'Records')");
+        Assert.That.AreJsonEqual("""
+            [
+                {
+                    "id":1234,
+                    "value":"hello"
+                }
+            ]
+            """, records);
+    }
 }
