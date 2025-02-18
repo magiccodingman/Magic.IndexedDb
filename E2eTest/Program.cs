@@ -8,9 +8,16 @@ public static class Program
     private static Process? server = null;
     public static string BaseUrl { get; private set; } = "";
 
+    // https://stackoverflow.com/questions/4029886/
+    private static int count = 0;
+
     [AssemblyInitialize]
     public static async Task InitializeAsync(TestContext context)
     {
+        count++;
+        if (count is not 1)
+            return;
+
         var server = new Process
         {
             StartInfo = new ProcessStartInfo()
@@ -70,6 +77,10 @@ public static class Program
     [AssemblyCleanup]
     public static void Cleanup()
     {
+        count--;
+        if (count is not 0)
+            return;
+
         if (server is not null)
         {
             if (!server.HasExited)
