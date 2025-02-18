@@ -13,13 +13,13 @@ public class Program
         _ = builder.Services.AddBlazorDB((x) =>
         {
             x.Name = "OpenTest.RegisteredOpen1";
-            x.Version = "1";
+            x.Version = 1;
             x.StoreSchemas = [];
         });
         _ = builder.Services.AddSingleton(new DbStore()
         {
             Name = "OpenTest.RegisteredOpen2",
-            Version = "1",
+            Version = 1,
             StoreSchemas = []
         });
 

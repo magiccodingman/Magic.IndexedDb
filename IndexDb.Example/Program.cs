@@ -22,7 +22,7 @@ string EncryptionKey = "zQfTuWnZi8u7x!A%C*F-JaBdRlUkXp2l";
 builder.Services.AddBlazorDB(options =>
 {
     options.Name = DbNames.Client;
-    options.Version = "1";
+    options.Version = 1;
     options.EncryptionKey = EncryptionKey;
     options.StoreSchemas = SchemaHelper.GetAllSchemas(DbNames.Client);
     options.DbMigrations = new List<DbMigration>
