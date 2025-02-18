@@ -17,15 +17,22 @@ namespace Magic.IndexedDb.Helpers
             if (value == null)
                 throw new ArgumentNullException(nameof(value), "Object cannot be null");
 
-            return JsonSerializer.Serialize(value, settings.Options);
+            var options = settings.GetOptionsWithResolver<T>(); // Ensure the correct resolver is applied
+
+            return JsonSerializer.Serialize(value, options);
         }
 
-        public static T? DeserializeObject<T>(string json)
+        public static T? DeserializeObject<T>(string json, MagicJsonSerializationSettings? settings = null)
         {
             if (string.IsNullOrWhiteSpace(json))
                 throw new ArgumentException("JSON cannot be null or empty.", nameof(json));
 
-            return JsonSerializer.Deserialize<T>(json);
+            if (settings == null)
+                settings = new MagicJsonSerializationSettings();
+
+            var options = settings.GetOptionsWithResolver<T>(); // Ensure correct resolver for deserialization
+
+            return JsonSerializer.Deserialize<T>(json, options);
         }
 
         public static void PopulateObject<T>(T source, T target)

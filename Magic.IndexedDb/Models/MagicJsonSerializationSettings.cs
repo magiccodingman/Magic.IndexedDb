@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.Json.Serialization;
-using System.Text.Json;
-using System.Threading.Tasks;
+﻿using System.Text.Json;
 
 namespace Magic.IndexedDb.Models
 {
@@ -15,7 +9,7 @@ namespace Magic.IndexedDb.Models
         public JsonSerializerOptions Options
         {
             get => _options;
-            set => _options = value ?? new JsonSerializerOptions(); // Ensure it never gets null
+            set => _options = value ?? new JsonSerializerOptions(); // Ensure it's never null
         }
 
         public bool UseCamelCase
@@ -28,6 +22,16 @@ namespace Magic.IndexedDb.Models
                     PropertyNamingPolicy = value ? JsonNamingPolicy.CamelCase : null
                 };
             }
+        }
+
+        /// <summary>
+        /// Ensures the MagicContractResolver is applied for a specific type at runtime.
+        /// </summary>
+        public JsonSerializerOptions GetOptionsWithResolver<T>()
+        {
+            var newOptions = new JsonSerializerOptions(Options); // Clone settings
+            newOptions.Converters.Add(new MagicContractResolver<T>()); // Ensure the correct resolver is added
+            return newOptions;
         }
     }
 }
