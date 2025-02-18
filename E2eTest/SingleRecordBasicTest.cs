@@ -15,5 +15,20 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
 
         var result = await this.RunTestPageMethodAsync(p => p.Add);
         Assert.AreEqual("12", result);
+        var records = await page.EvaluateAsync<string>("getAll('SingleRecordBasic.Add', 'Records')");
+        Assert.That.AreJsonEqual("""
+            [
+                {
+                    "id":12,
+                    "normal":"Norm",
+                    "Renamed":"R",
+                    "index":"I",
+                    "uniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
+                    "enum":0,
+                    "nested":{"value":1234},
+                    "largeNumber":9007199254740991
+                }
+            ]
+            """, records);
     }
 }
