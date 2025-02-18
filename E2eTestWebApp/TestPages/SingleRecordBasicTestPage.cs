@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Components;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 using Magic.IndexedDb.SchemaAnnotations;
+using System.Text.Json;
 
 namespace E2eTestWebApp.TestPages;
 
@@ -100,5 +101,18 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
         var id = await database.AddAsync<Record, int>(Record.Sample);
         var result = await database.GetByIdAsync<Record, int>(id);
         return result.Normal;
+    }
+
+    public async Task<string> GetAll()
+    {
+        var database = await magic.OpenAsync(new DbStore()
+        {
+            Name = "SingleRecordBasic.GetAll",
+            Version = 1,
+            StoreSchemas = [SchemaHelper.GetStoreSchema<Record>(null, false)]
+        });
+        _ = await database.AddAsync<Record, int>(Record.Sample);
+        var result = await database.GetAllAsync<Record>();
+        return JsonSerializer.Serialize(result);
     }
 }

@@ -78,4 +78,25 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
         var result = await this.RunTestPageMethodAsync(p => p.GetById);
         Assert.AreEqual("Norm", result);
     }
+
+    [TestMethod]
+    public async Task GetAllTest()
+    {
+        var page = await this.NewPageAsync();
+        await page.DeleteDatabaseAsync("SingleRecordBasic.GetAll");
+
+        var result = await this.RunTestPageMethodAsync(p => p.GetAll);
+        Assert.That.AreJsonEqual("""
+            [{
+                "Id":12,
+                "Normal":"Norm",
+                "Renamed":"R",
+                "Index":"I",
+                "UniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
+                "Enum":0,
+                "Nested":{"Value":1234},
+                "LargeNumber":9007199254740991
+            }]
+            """, result);
+    }
 }
