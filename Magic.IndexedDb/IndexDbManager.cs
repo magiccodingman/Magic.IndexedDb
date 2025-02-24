@@ -374,7 +374,6 @@ namespace Magic.IndexedDb
 
             // Preprocess the predicate to break down Any and All expressions
             var preprocessedPredicate = PreprocessPredicate(predicate);
-            var asdf = preprocessedPredicate.ToString();
             CollectBinaryExpressions(preprocessedPredicate.Body, preprocessedPredicate, query.JsonQueries);
 
             return query;
