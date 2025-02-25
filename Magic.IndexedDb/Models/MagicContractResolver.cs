@@ -25,66 +25,58 @@ namespace Magic.IndexedDb.Models
                 return;
             }
 
-            try
+            // Handle simple or primitive types directly
+            if (IsSimpleType(typeof(T)))
             {
-                // Handle simple or primitive types directly
-                if (IsSimpleType(typeof(T)))
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+
+            // Handle collections
+            if (value is IEnumerable enumerable && typeof(T) != typeof(string))
+            {
+                writer.WriteStartArray();
+                foreach (var item in enumerable)
                 {
-                    JsonSerializer.Serialize(writer, value, options);
-                    return;
-                }
-
-                // Handle collections
-                if (value is IEnumerable enumerable && typeof(T) != typeof(string))
-                {
-                    writer.WriteStartArray();
-                    foreach (var item in enumerable)
-                    {
-                        if (item == null)
-                            writer.WriteNullValue();
-                        else
-                            JsonSerializer.Serialize(writer, item, item.GetType(), options);
-                    }
-                    writer.WriteEndArray();
-                    return;
-                }
-
-                // Handle complex objects
-                writer.WriteStartObject();
-                foreach (var property in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    if (ShouldIgnoreProperty(property))
-                        continue;
-
-                    var propName = options.PropertyNamingPolicy?.ConvertName(property.Name) ?? property.Name;
-
-                    if (property.GetIndexParameters().Length > 0)
-                        continue; // Skip indexers entirely
-
-                    object? propValue;
-                    try
-                    {
-                        propValue = property.GetValue(value);
-                    }
-                    catch
-                    {
-                        // Fallback: write null if getting property fails
-                        propValue = null;
-                    }
-
-                    writer.WritePropertyName(propName);
-                    if (propValue == null)
+                    if (item == null)
                         writer.WriteNullValue();
                     else
-                        JsonSerializer.Serialize(writer, propValue, propValue.GetType(), options);
+                        JsonSerializer.Serialize(writer, item, item.GetType(), options);
                 }
-                writer.WriteEndObject();
+                writer.WriteEndArray();
+                return;
             }
-            catch
+
+            // Handle complex objects
+            writer.WriteStartObject();
+            foreach (var property in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
-                // Fallback to system serializer on complete failure
-                JsonSerializer.Serialize(writer, value, value.GetType(), options);
+                if (ShouldIgnoreProperty(property))
+                    continue;
+
+                var propName = options.PropertyNamingPolicy?.ConvertName(property.Name) ?? property.Name;
+
+                if (property.GetIndexParameters().Length > 0)
+                    continue; // Skip indexers entirely
+
+                object? propValue;
+                try
+                {
+                    propValue = property.GetValue(value);
+                }
+                catch
+                {
+                    // Fallback: write null if getting property fails
+                    propValue = null;
+                }
+
+                writer.WritePropertyName(propName);
+                if (propValue == null)
+                    writer.WriteNullValue();
+                else
+                    JsonSerializer.Serialize(writer, propValue, propValue.GetType(), options);
             }
+            writer.WriteEndObject();
         }
 
         private static bool ShouldIgnoreProperty(PropertyInfo property)
