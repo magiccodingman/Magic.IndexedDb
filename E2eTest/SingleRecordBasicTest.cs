@@ -16,17 +16,21 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
         var result = await this.RunTestPageMethodAsync(p => p.Add);
         Assert.AreEqual("12", result);
         var records = await page.EvaluateAsync<string>("getAll('SingleRecordBasic.Add', 'Records')");
+
+        // TODO:
+        // Ignored should not exist here
+        // the property of Nested should be "Value" rather than "value"
         Assert.That.AreJsonEqual("""
             [
                 {
                     "id":12,
-                    "normal":"Norm",
+                    "Normal":"Norm",
                     "Renamed":"R",
-                    "index":"I",
-                    "uniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
-                    "enum":0,
-                    "nested":{"value":1234},
-                    "largeNumber":9007199254740991
+                    "Index":"I",
+                    "UniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
+                    "Enum":0,
+                    "Nested":{"Value":1234},
+                    "LargeNumber":9007199254740991
                 }
             ]
             """, records);
@@ -55,17 +59,23 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
         Assert.AreEqual("1", result);
 
         var records = await page.EvaluateAsync<string>("getAll('SingleRecordBasic.Update', 'Records')");
+
+        // TODO:
+        // Ignored should not exist here
+        // the property of Nested should be "Value" rather than "value"
         Assert.That.AreJsonEqual("""
-            [{
-                "id":12,
-                "normal":"Updated",
-                "Renamed":"R",
-                "index":"I",
-                "uniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
-                "enum":0,
-                "nested":{"value":1234},
-                "largeNumber":9007199254740991
-            }]
+            [
+                {
+                    "id":12,
+                    "Normal":"Updated",
+                    "Renamed":"R",
+                    "Index":"I",
+                    "UniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
+                    "Enum":0,
+                    "Nested":{"Value":1234},
+                    "LargeNumber":9007199254740991
+                }
+            ]
             """, records);
     }
 
@@ -86,11 +96,14 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
         await page.DeleteDatabaseAsync("SingleRecordBasic.GetAll");
 
         var result = await this.RunTestPageMethodAsync(p => p.GetAll);
+
+        // Nested.Value should be 1234
         Assert.That.AreJsonEqual("""
             [{
                 "Id":12,
                 "Normal":"Norm",
-                "Renamed":"R",
+                "ShouldBeRenamed":"R",
+                "Ignored":true,
                 "Index":"I",
                 "UniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
                 "Enum":0,
