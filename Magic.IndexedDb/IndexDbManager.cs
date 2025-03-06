@@ -41,7 +41,7 @@ namespace Magic.IndexedDb
 
         // TODO: make it readonly
         public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
-        public string CurrentVersion => _dbStore.Version;
+        public int CurrentVersion => _dbStore.Version;
         public string DbName => _dbStore.Name;
 
         /// <summary>
