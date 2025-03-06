@@ -37,6 +37,9 @@ This code is still very young. I will be making updates for this code as I come 
 - [Examples](#examples)
 - [Acknowledgements](#acknowledgements)
 
+# Critical Notes:
+The Encryption attribute and functionality has been stripped from this project. It was not sufficient and a completely new system is being designed to bring to life the idea. But the documentation needs to be updated to strip out the encryption attributes and functionality as it no longer works in the current documented form. Documentation and code will reflect this in the very near future. But for now, please ignore that attribute. An obsolete tag has been placed on the attribute for now and the new serialization logic being implemented has zero encryption functionality. Thus even if it says you can do it, it won't work.
+
 ## Installation
 
 1. Add the library to your project.
