@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
+    [Obsolete("Future refactor is planned for significantly improved encryption system. This feature is no longer supported nor working.")]
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false)]
     public class MagicEncryptAttribute : Attribute
     {

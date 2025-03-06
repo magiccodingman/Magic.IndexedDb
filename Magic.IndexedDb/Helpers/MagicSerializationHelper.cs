@@ -1,4 +1,5 @@
-﻿using Magic.IndexedDb.Models;
+﻿using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.Models;
 using System.Text.Json;
 
 namespace Magic.IndexedDb.Helpers
@@ -9,6 +10,12 @@ namespace Magic.IndexedDb.Helpers
     /// </summary>
     public static class MagicSerializationHelper
     {
+        public static string[] SerializeObjects(ITypedArgument[] objs, MagicJsonSerializationSettings? settings = null)
+        {
+            return objs.Select(arg => arg.Serialize()).ToArray();
+        }
+
+
         public static string SerializeObject<T>(T value, MagicJsonSerializationSettings? settings = null)
         {
             if (settings == null)

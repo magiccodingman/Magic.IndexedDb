@@ -1,20 +1,52 @@
-﻿using Magic.IndexedDb.SchemaAnnotations;
-using System.Collections.Concurrent;
-using System.Reflection;
-using System.Text.Json.Serialization;
-using System.Text.Json;
+﻿using System;
 using System.Collections;
+using System.Collections.Concurrent;
+using System.Linq;
+using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Magic.IndexedDb.Helpers;
+using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.SchemaAnnotations;
 
 namespace Magic.IndexedDb.Models
 {
     internal class MagicContractResolver<T> : JsonConverter<T>
     {
-        private static readonly ConcurrentDictionary<MemberInfo, bool> _cachedIgnoredProperties = new();
-
         public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            // Defer deserialization back to built-in handling to ensure correctness
-            return JsonSerializer.Deserialize<T>(ref reader, options);
+            if (reader.TokenType != JsonTokenType.StartObject)
+                throw new JsonException("Expected StartObject token.");
+
+            var record = Activator.CreateInstance<T>();
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                    return record;
+
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                    throw new JsonException("Expected PropertyName token.");
+
+                string jsonPropertyName = reader.GetString()!;
+                if (!reader.Read())
+                    throw new JsonException("Unexpected end of JSON.");
+
+                string csharpPropertyName = PropertyMappingCache.GetCsharpPropertyName<T>(jsonPropertyName);
+
+                var property = typeof(T).GetProperty(csharpPropertyName);
+                if (property != null)
+                {
+                    var value = JsonSerializer.Deserialize(ref reader, property.PropertyType, options);
+                    property.SetValue(record, value);
+                }
+                else
+                {
+                    reader.Skip();
+                }
+            }
+
+            return record;
         }
 
         public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
@@ -49,15 +81,18 @@ namespace Magic.IndexedDb.Models
 
             // Handle complex objects
             writer.WriteStartObject();
+
             foreach (var property in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
-                if (ShouldIgnoreProperty(property))
-                    continue;
+                MagicPropertyEntry mpe = PropertyMappingCache.GetPropertyEntry<T>(property);
 
-                var propName = options.PropertyNamingPolicy?.ConvertName(property.Name) ?? property.Name;
+                if (mpe.NotMapped)
+                    continue;
 
                 if (property.GetIndexParameters().Length > 0)
                     continue; // Skip indexers entirely
+
+                string jsPropertyName = mpe.JsPropertyName;
 
                 object? propValue;
                 try
@@ -66,24 +101,17 @@ namespace Magic.IndexedDb.Models
                 }
                 catch
                 {
-                    // Fallback: write null if getting property fails
                     propValue = null;
                 }
 
-                writer.WritePropertyName(propName);
+                writer.WritePropertyName(jsPropertyName);
                 if (propValue == null)
                     writer.WriteNullValue();
                 else
                     JsonSerializer.Serialize(writer, propValue, propValue.GetType(), options);
             }
-            writer.WriteEndObject();
-        }
 
-        private static bool ShouldIgnoreProperty(PropertyInfo property)
-        {
-            return _cachedIgnoredProperties.GetOrAdd(property, prop =>
-                prop.GetCustomAttributes(inherit: true)
-                    .Any(a => a.GetType().FullName == typeof(MagicNotMappedAttribute).FullName));
+            writer.WriteEndObject();
         }
 
         private static bool IsSimpleType(Type type)
@@ -99,5 +127,4 @@ namespace Magic.IndexedDb.Models
                    type == typeof(TimeSpan);
         }
     }
-
 }

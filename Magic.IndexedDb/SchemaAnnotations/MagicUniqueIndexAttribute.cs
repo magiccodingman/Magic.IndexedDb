@@ -1,4 +1,5 @@
-﻿using Magic.IndexedDb.SchemaAnnotations;
+﻿using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.SchemaAnnotations;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,9 +9,8 @@ using System.Threading.Tasks;
 namespace Magic.IndexedDb
 {
     [AttributeUsage(AttributeTargets.Property)]
-    public class MagicUniqueIndexAttribute : Attribute
+    public class MagicUniqueIndexAttribute : Attribute, IColumnNamed
     {
-        [MagicColumnNameDesignator]
         public string ColumnName { get; }
 
         public MagicUniqueIndexAttribute(string columnName = null)

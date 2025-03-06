@@ -8,6 +8,8 @@ using Magic.IndexedDb.Models;
 using Magic.IndexedDb.SchemaAnnotations;
 using Microsoft.JSInterop;
 using System.Text.Json.Nodes;
+using Magic.IndexedDb.Interfaces;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Magic.IndexedDb
 {
@@ -21,7 +23,7 @@ namespace Magic.IndexedDb
             CancellationToken cancellationToken = default)
         {
             var result = new IndexedDbManager(dbStore, jsRuntime);
-            await result.CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, [dbStore]);
+            await result.CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, new TypedArgument<DbStore>(dbStore));
             return result;
         }
 
@@ -55,7 +57,7 @@ namespace Magic.IndexedDb
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return CallJsAsync(IndexedDbFunctions.DELETE_DB, cancellationToken, [dbName]);
+            return CallJsAsync(IndexedDbFunctions.DELETE_DB, cancellationToken, new TypedArgument<string>(dbName));
         }
 
         public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
@@ -66,23 +68,14 @@ namespace Magic.IndexedDb
         public async Task<TKey> AddAsync<T, TKey>(T record, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            object? processedRecord = await ProcessRecordAsync(record, cancellationToken);
-            Dictionary<string, object?>? convertedRecord = null;
-            if (processedRecord is ExpandoObject expando)
-                convertedRecord = expando.ToDictionary(kv => kv.Key, kv => kv.Value);
-            else
-                convertedRecord = ManagerHelper.ConvertRecordToDictionary((T)processedRecord);
 
-            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-            var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
-
-            StoreRecord<Dictionary<string, object?>> RecordToSend = new StoreRecord<Dictionary<string, object?>>()
+            StoreRecord<T?> RecordToSend = new StoreRecord<T?>()
             {
                 DbName = this.DbName,
                 StoreName = schemaName,
-                Record = updatedRecord
+                Record = record
             };
-            return await CallJsAsync<TKey>(IndexedDbFunctions.ADD_ITEM, cancellationToken, [RecordToSend]);
+            return await CallJsAsync<TKey>(IndexedDbFunctions.ADD_ITEM, cancellationToken, new TypedArgument<StoreRecord<T?>>(RecordToSend));
         }
 
         public async Task<string> DecryptAsync(
@@ -214,7 +207,8 @@ namespace Magic.IndexedDb
         {
             // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
-            return CallJsAsync(IndexedDbFunctions.BULKADD_ITEM, cancellationToken, [DbName, storeName, recordsToBulkAdd]);
+            return CallJsAsync(IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
+                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
         }
 
         public async Task AddRangeAsync<T>(
@@ -222,115 +216,53 @@ namespace Magic.IndexedDb
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
-            //var trans = GenerateTransaction(null);
-            //var TableCount = await CallJavascript<int>(IndexedDbFunctions.COUNT_TABLE, trans, DbName, schemaName);
-            List<Dictionary<string, object?>> processedRecords = new List<Dictionary<string, object?>>();
-            foreach (var record in records)
-            {
-                bool IsExpando = false;
-                T? myClass = null;
-
-                object? processedRecord = await ProcessRecordAsync(record, cancellationToken);
-                if (processedRecord is ExpandoObject expando)
-                {
-                    myClass = ExpandoToTypeConverter<T>.ConvertExpando(expando);
-                    IsExpando = true;
-                }
-                else
-                    myClass = (T?)processedRecord;
-
-
-                Dictionary<string, object?>? convertedRecord = null;
-                if (processedRecord is ExpandoObject)
-                {
-                    var result = ((ExpandoObject)processedRecord)?.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
-                    if (result != null)
-                        convertedRecord = result;
-                }
-                else
-                {
-                    convertedRecord = ManagerHelper.ConvertRecordToDictionary(myClass);
-                }
-                var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-
-                // Convert the property names in the convertedRecord dictionary
-                if (convertedRecord != null)
-                {
-                    var updatedRecord = ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings);
-
-                    if (updatedRecord != null)
-                    {
-                        if (IsExpando)
-                        {
-                            //var test = updatedRecord.Cast<Dictionary<string, object>();
-                            var dictionary = updatedRecord as Dictionary<string, object?>;
-                            processedRecords.Add(dictionary);
-                        }
-                        else
-                        {
-                            processedRecords.Add(updatedRecord);
-                        }
-                    }
-                }
-            }
-
-            await BulkAddRecordAsync(schemaName, processedRecords, cancellationToken);
+            await BulkAddRecordAsync(schemaName, records, cancellationToken);
         }
 
         public async Task<int> UpdateAsync<T>(T item, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
-            if (primaryKeyProperty is null)
-                throw new ArgumentException("Item being updated must have a key.");
 
-            object? primaryKeyValue = primaryKeyProperty.GetValue(item);
-            var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
+            object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
             if (primaryKeyValue is null)
                 throw new ArgumentException("Item being updated must have a key.");
 
-            UpdateRecord<Dictionary<string, object?>> record = new UpdateRecord<Dictionary<string, object?>>()
+            UpdateRecord<T> record = new UpdateRecord<T>()
             {
                 Key = primaryKeyValue,
                 DbName = this.DbName,
                 StoreName = schemaName,
-                Record = convertedRecord
+                Record = item
             };
 
-            return await CallJsAsync<int>(IndexedDbFunctions.UPDATE_ITEM, cancellationToken, [record]);
+            return await CallJsAsync<int>(IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
         public async Task<int> UpdateRangeAsync<T>(
-            IEnumerable<T> items,
-            CancellationToken cancellationToken = default) where T : class
+    IEnumerable<T> items,
+    CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
 
-            if (primaryKeyProperty is null)
-                throw new ArgumentException("Item being update range item must have a key.");
-
-            List<UpdateRecord<Dictionary<string, object?>>> recordsToUpdate = new List<UpdateRecord<Dictionary<string, object?>>>();
-
-            foreach (var item in items)
+            var recordsToUpdate = items.Select(item =>
             {
-                object? primaryKeyValue = primaryKeyProperty.GetValue(item);
-                var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
-
+                object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
                 if (primaryKeyValue is null)
-                    throw new ArgumentException("Item being update range item must have a key.");
+                    throw new ArgumentException("Item being updated must have a key.");
 
-                recordsToUpdate.Add(new UpdateRecord<Dictionary<string, object?>>()
+                return new UpdateRecord<T>()
                 {
                     Key = primaryKeyValue,
                     DbName = this.DbName,
                     StoreName = schemaName,
-                    Record = convertedRecord
-                });
-            }
+                    Record = item
+                };
+            });
+
             return await CallJsAsync<int>(
-                IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, [recordsToUpdate]);
+                IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, new TypedArgument<IEnumerable<UpdateRecord<T>>>(recordsToUpdate));
         }
+
 
         public async Task<T?> GetByIdAsync<T>(
             object key,
@@ -338,33 +270,12 @@ namespace Magic.IndexedDb
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
-            // Find the primary key property
-            var primaryKeyProperty = typeof(T)
-                .GetProperties()
-                .FirstOrDefault(p => p.GetCustomAttributes(typeof(MagicPrimaryKeyAttribute), false).Length > 0);
+            // Validate key type
+            AttributeHelpers.ValidatePrimaryKey<T>(key);
 
-            if (primaryKeyProperty == null)
-            {
-                throw new InvalidOperationException("No primary key property found with PrimaryKeyDbAttribute.");
-            }
-
-            // Check if the key is of the correct type
-            if (!primaryKeyProperty.PropertyType.IsInstanceOfType(key))
-            {
-                throw new ArgumentException($"Invalid key type. Expected: {primaryKeyProperty.PropertyType}, received: {key.GetType()}");
-            }
-
-            string columnName = primaryKeyProperty.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
-
-            var data = new { DbName = DbName, StoreName = schemaName, Key = columnName, KeyValue = key };
-
-            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-            var RecordToConvert = await CallJsAsync<Dictionary<string, object>>(
-                IndexedDbFunctions.FIND_ITEM, cancellationToken, [data.DbName, data.StoreName, data.KeyValue]);
-            if (RecordToConvert is not null)
-                return ConvertIndexedDbRecordToCRecord<T>(RecordToConvert, propertyMappings);
-            else
-                return default;
+            return await CallJsAsync<T>(
+                IndexedDbFunctions.FIND_ITEM, cancellationToken,
+                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName), new TypedArgument<object>(key) });
         }
 
         public MagicQuery<T> Where<T>(Expression<Func<T, bool>> predicate) where T : class
@@ -396,15 +307,18 @@ namespace Magic.IndexedDb
             {
                 jsonQueryAdditions = MagicSerializationHelper.SerializeObject(query.storedMagicQueries.ToArray());
             }
-            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-            IList<Dictionary<string, object>>? ListToConvert =
-                await CallJsAsync<IList<Dictionary<string, object>>>
+
+            var args = new ITypedArgument[] {
+                new TypedArgument<string>(DbName),
+                new TypedArgument<string>(storeName),
+                new TypedArgument<string[]>(jsonQuery.ToArray()),
+                new TypedArgument<string>(jsonQueryAdditions!),
+                new TypedArgument<bool?>(query?.ResultsUnique!),
+            };
+
+            return await CallJsAsync<IList<T>>
                 (IndexedDbFunctions.WHERE, cancellationToken,
-                [DbName, storeName, jsonQuery.ToArray(), jsonQueryAdditions!, query?.ResultsUnique!]);
-
-            var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
-
-            return resultList;
+                args);
         }
 
         private void CollectBinaryExpressions<T>(Expression expression, Expression<Func<T, bool>> predicate, List<string> jsonQueries) where T : class
@@ -453,56 +367,6 @@ namespace Magic.IndexedDb
                 return Convert.ChangeType(value, nullableType);
             }
             return Convert.ChangeType(value, targetType);
-        }
-
-
-        private IList<TRecord> ConvertListToRecords<TRecord>(IList<Dictionary<string, object>> listToConvert, Dictionary<string, string> propertyMappings)
-        {
-            var records = new List<TRecord>();
-            var recordType = typeof(TRecord);
-
-            foreach (var item in listToConvert)
-            {
-                var record = Activator.CreateInstance<TRecord>();
-
-                foreach (var kvp in item)
-                {
-                    if (propertyMappings.TryGetValue(kvp.Key, out var propertyName))
-                    {
-                        var property = recordType.GetProperty(propertyName);
-                        if (property != null)
-                        {
-                            var value = ManagerHelper.GetValueFromValueKind(kvp.Value, property.PropertyType);
-                            property.SetValue(record, ConvertValueToType(value!, property.PropertyType));
-                        }
-                    }
-                }
-
-                records.Add(record);
-            }
-
-            return records;
-        }
-
-        private TRecord ConvertIndexedDbRecordToCRecord<TRecord>(Dictionary<string, object> item, Dictionary<string, string> propertyMappings)
-        {
-            var recordType = typeof(TRecord);
-            var record = Activator.CreateInstance<TRecord>();
-
-            foreach (var kvp in item)
-            {
-                if (propertyMappings.TryGetValue(kvp.Key, out var propertyName))
-                {
-                    var property = recordType.GetProperty(propertyName);
-                    if (property != null)
-                    {
-                        var value = ManagerHelper.GetValueFromValueKind(kvp.Value, property.PropertyType);
-                        property.SetValue(record, ConvertValueToType(value!, property.PropertyType));
-                    }
-                }
-            }
-
-            return record;
         }
 
         private string GetJsonQueryFromExpression<T>(Expression<Func<T, bool>> predicate) where T : class
@@ -638,24 +502,6 @@ namespace Magic.IndexedDb
                     var propertyInfo = typeof(T).GetProperty(left.Member.Name);
                     if (propertyInfo != null)
                     {
-                        bool index = propertyInfo.GetCustomAttributes(typeof(MagicIndexAttribute), false).Length == 0;
-                        bool unique = propertyInfo.GetCustomAttributes(typeof(MagicUniqueIndexAttribute), false).Length == 0;
-                        bool primary = propertyInfo.GetCustomAttributes(typeof(MagicPrimaryKeyAttribute), false).Length == 0;
-
-                        if (index == true && unique == true && primary == true)
-                        {
-                            throw new InvalidOperationException($"Property '{propertyInfo.Name}' does not have the IndexDbAttribute.");
-                        }
-
-                        string? columnName = null;
-
-                        if (index == false)
-                            columnName = propertyInfo.GetPropertyColumnName<MagicIndexAttribute>();
-                        else if (unique == false)
-                            columnName = propertyInfo.GetPropertyColumnName<MagicUniqueIndexAttribute>();
-                        else if (primary == false)
-                            columnName = propertyInfo.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
-
                         bool _isString = false;
                         JsonNode? valSend = null;
                         if (right != null && right.Value != null)
@@ -666,7 +512,7 @@ namespace Magic.IndexedDb
 
                         var jsonCondition = new JsonObject
             {
-                { "property", columnName },
+                { "property", PropertyMappingCache.GetJsPropertyName<T>(propertyInfo) },
                 { "operation", operation },
                 { "value", valSend },
                 { "isString", _isString },
@@ -713,58 +559,51 @@ namespace Magic.IndexedDb
         public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-            var ListToConvert = await CallJsAsync<IList<Dictionary<string, object>>>(
-                IndexedDbFunctions.TOARRAY, cancellationToken, [DbName, schemaName]);
-
-            var resultList = ConvertListToRecords<T>(ListToConvert, propertyMappings);
-            return resultList;
+            return await CallJsAsync<IList<T>>(
+                IndexedDbFunctions.TOARRAY, cancellationToken,
+                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName) });
         }
 
         public async Task DeleteAsync<T>(T item, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
-            if (primaryKeyProperty is null)
-                throw new ArgumentException("Item being Deleted must have a key.");
 
-            object? primaryKeyValue = primaryKeyProperty.GetValue(item);
-            if (primaryKeyValue is null)
-                throw new ArgumentException("Item being Deleted must have a key.");
+            object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
 
-            var convertedRecord = ManagerHelper.ConvertRecordToDictionary(item);
-            UpdateRecord<Dictionary<string, object?>> record = new UpdateRecord<Dictionary<string, object?>>()
+            UpdateRecord<T> record = new UpdateRecord<T>()
             {
                 Key = primaryKeyValue,
                 DbName = this.DbName,
                 StoreName = schemaName,
-                Record = convertedRecord
+                Record = item
             };
 
-            await CallJsAsync(IndexedDbFunctions.DELETE_ITEM, cancellationToken, [record]);
+            await CallJsAsync(IndexedDbFunctions.DELETE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
         public async Task<int> DeleteRangeAsync<T>(
-            IEnumerable<T> items, CancellationToken cancellationToken = default) where T : class
+    IEnumerable<T> items, CancellationToken cancellationToken = default) where T : class
         {
-            PropertyInfo? primaryKeyProperty = typeof(T).GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
-            if (primaryKeyProperty is null)
-                throw new ArgumentException("No primary key property found with PrimaryKeyDbAttribute.");
-
-            List<object> keys = new List<object>();
-            foreach (var item in items)
-            {
-                object? primaryKeyValue = primaryKeyProperty.GetValue(item);
-                if (primaryKeyValue is null)
-                    throw new ArgumentException("Item being Deleted must have a key.");
-                keys.Add(primaryKeyValue);
-            }
-
             string schemaName = SchemaHelper.GetSchemaName<T>();
+
+            var keys = items.Select(item =>
+            {
+                object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue(item);
+                if (primaryKeyValue is null)
+                    throw new ArgumentException("Item being deleted must have a key.");
+                return primaryKeyValue;
+            });
+
+            var args = new ITypedArgument[] {
+                new TypedArgument<string>(DbName),
+                new TypedArgument<string>(schemaName),
+                new TypedArgument<IEnumerable<object>?>(keys) };
+
             return await CallJsAsync<int>(
                 IndexedDbFunctions.BULK_DELETE, cancellationToken,
-                [DbName, schemaName, keys]);
+                args);
         }
+
 
         /// <summary>
         /// Clears all data from a Table but keeps the table
@@ -774,7 +613,8 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         public Task ClearTableAsync(string storeName, CancellationToken cancellationToken = default)
         {
-            return CallJsAsync(IndexedDbFunctions.CLEAR_TABLE, cancellationToken, [DbName, storeName]);
+            return CallJsAsync(IndexedDbFunctions.CLEAR_TABLE, cancellationToken,
+                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(storeName) });
         }
 
         /// <summary>
@@ -787,14 +627,16 @@ namespace Magic.IndexedDb
             return ClearTableAsync(SchemaHelper.GetSchemaName<T>(), cancellationToken);
         }
 
-        internal async Task CallJsAsync(string functionName, CancellationToken token, object[] args)
+        internal async Task CallJsAsync(string functionName, CancellationToken token, params ITypedArgument[] args)
         {
-            await this._jsModule.InvokeVoidAsync(functionName, token, args);
+            string[] serializedArgs = MagicSerializationHelper.SerializeObjects(args);
+            await this._jsModule.InvokeVoidAsync(functionName, token, serializedArgs);
         }
 
-        internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, object[] args)
+        internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
         {
-            return await this._jsModule.InvokeAsync<T>(functionName, token, args);
+            string[] serializedArgs = MagicSerializationHelper.SerializeObjects(args);
+            return await this._jsModule.InvokeAsync<T>(functionName, token, serializedArgs);
         }
     }
 }

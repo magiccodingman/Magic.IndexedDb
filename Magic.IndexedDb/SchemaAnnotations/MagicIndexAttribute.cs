@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.SchemaAnnotations;
 
 namespace Magic.IndexedDb.SchemaAnnotations
 {
     [AttributeUsage(AttributeTargets.Property)]
-    public class MagicIndexAttribute : Attribute
+    public class MagicIndexAttribute : Attribute, IColumnNamed
     {
-        [MagicColumnNameDesignator]
         public string ColumnName { get; }
 
         public MagicIndexAttribute(string columnName = null)
