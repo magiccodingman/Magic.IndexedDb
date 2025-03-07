@@ -57,13 +57,6 @@ namespace Magic.IndexedDb.Models
                 return;
             }
 
-            // Handle simple or primitive types directly
-            if (IsSimpleType(typeof(T)))
-            {
-                JsonSerializer.Serialize(writer, value, options);
-                return;
-            }
-
             // Handle collections
             if (value is IEnumerable enumerable && typeof(T) != typeof(string))
             {
@@ -76,6 +69,19 @@ namespace Magic.IndexedDb.Models
                         JsonSerializer.Serialize(writer, item, item.GetType(), options);
                 }
                 writer.WriteEndArray();
+                return;
+            }
+
+            if (typeof(T) == typeof(string))
+            {
+                writer.WriteStringValue(value as string); // ✅ Directly write the string, no recursion
+                return;
+            }
+
+            // Handle simple or primitive types directly
+            if (IsSimpleType(typeof(T)))
+            {
+                JsonSerializer.Serialize(writer, value, options);
                 return;
             }
 
@@ -104,7 +110,11 @@ namespace Magic.IndexedDb.Models
                     propValue = null;
                 }
 
-                writer.WritePropertyName(jsPropertyName);
+                string propertyName = options.PropertyNamingPolicy == JsonNamingPolicy.CamelCase
+                    ? char.ToLowerInvariant(mpe.JsPropertyName[0]) + mpe.JsPropertyName.Substring(1) // Convert to camelCase
+                    : mpe.JsPropertyName; // Keep original casing if camelCase is not set
+
+                writer.WritePropertyName(propertyName);
                 if (propValue == null)
                     writer.WriteNullValue();
                 else

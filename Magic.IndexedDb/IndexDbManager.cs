@@ -41,8 +41,6 @@ namespace Magic.IndexedDb
             this._jsModule = jsRuntime;
         }
 
-        // TODO: make it readonly
-        public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
         public string CurrentVersion => _dbStore.Version;
         public string DbName => _dbStore.Name;
 
@@ -78,88 +76,15 @@ namespace Magic.IndexedDb
             return await CallJsAsync<TKey>(IndexedDbFunctions.ADD_ITEM, cancellationToken, new TypedArgument<StoreRecord<T?>>(RecordToSend));
         }
 
+        [Obsolete]
         public async Task<string> DecryptAsync(
             string EncryptedValue, CancellationToken cancellationToken = default)
         {
-            EncryptionFactory encryptionFactory = new EncryptionFactory(this);
+            return "Obsolete, decryptions no longer functioning";
+            /*EncryptionFactory encryptionFactory = new EncryptionFactory(this);
             string decryptedValue = await encryptionFactory.DecryptAsync(
                 EncryptedValue, _dbStore.EncryptionKey, cancellationToken);
-            return decryptedValue;
-        }
-
-        private async Task<object> ProcessRecordAsync<T>(
-            T record, CancellationToken cancellationToken) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            StoreSchema? storeSchema = Stores.FirstOrDefault(s => s.Name == schemaName);
-
-            if (storeSchema == null)
-            {
-                throw new InvalidOperationException($"StoreSchema not found for '{schemaName}'");
-            }
-
-            // Encrypt properties with EncryptDb attribute
-            var propertiesToEncrypt = typeof(T).GetProperties()
-                .Where(p => p.GetCustomAttributes(typeof(MagicEncryptAttribute), false).Length > 0);
-
-            EncryptionFactory encryptionFactory = new EncryptionFactory(this);
-            foreach (var property in propertiesToEncrypt)
-            {
-                if (property.PropertyType != typeof(string))
-                {
-                    throw new InvalidOperationException("EncryptDb attribute can only be used on string properties.");
-                }
-
-                string? originalValue = property.GetValue(record) as string;
-                if (!string.IsNullOrWhiteSpace(originalValue))
-                {
-                    string encryptedValue = await encryptionFactory.EncryptAsync(
-                        originalValue, _dbStore.EncryptionKey, cancellationToken);
-                    property.SetValue(record, encryptedValue);
-                }
-                else
-                {
-                    property.SetValue(record, originalValue);
-                }
-            }
-
-            // Proceed with adding the record
-            if (storeSchema.PrimaryKeyAuto)
-            {
-                var primaryKeyProperty = typeof(T)
-                    .GetProperties()
-                    .FirstOrDefault(p => p.GetCustomAttributes(typeof(MagicPrimaryKeyAttribute), false).Length > 0);
-
-                if (primaryKeyProperty != null)
-                {
-                    Dictionary<string, object?> recordAsDict;
-
-                    var primaryKeyValue = primaryKeyProperty.GetValue(record);
-                    if (primaryKeyValue == null || primaryKeyValue.Equals(GetDefaultValue(primaryKeyValue.GetType())))
-                    {
-                        recordAsDict = typeof(T).GetProperties()
-                        .Where(p => p.Name != primaryKeyProperty.Name && p.GetCustomAttributes(typeof(MagicNotMappedAttribute), false).Length == 0)
-                        .ToDictionary(p => p.Name, p => p.GetValue(record));
-                    }
-                    else
-                    {
-                        recordAsDict = typeof(T).GetProperties()
-                        .Where(p => p.GetCustomAttributes(typeof(MagicNotMappedAttribute), false).Length == 0)
-                        .ToDictionary(p => p.Name, p => p.GetValue(record));
-                    }
-
-                    // Create a new ExpandoObject and copy the key-value pairs from the dictionary
-                    var expandoRecord = new ExpandoObject() as IDictionary<string, object?>;
-                    foreach (var kvp in recordAsDict)
-                    {
-                        expandoRecord.Add(kvp);
-                    }
-
-                    return expandoRecord;
-                }
-            }
-
-            return record;
+            return decryptedValue;*/
         }
 
         // Returns the default value for the given type
@@ -208,7 +133,9 @@ namespace Magic.IndexedDb
             // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
             return CallJsAsync(IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
+                new ITypedArgument[] { new TypedArgument<string>(DbName),
+                    new TypedArgument<string>(storeName),
+                    new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
         }
 
         public async Task AddRangeAsync<T>(
@@ -629,13 +556,15 @@ namespace Magic.IndexedDb
 
         internal async Task CallJsAsync(string functionName, CancellationToken token, params ITypedArgument[] args)
         {
-            string[] serializedArgs = MagicSerializationHelper.SerializeObjects(args);
+            var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+            object[] serializedArgs = MagicSerializationHelper.SerializeObjects(args, settings);
             await this._jsModule.InvokeVoidAsync(functionName, token, serializedArgs);
         }
 
         internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
         {
-            string[] serializedArgs = MagicSerializationHelper.SerializeObjects(args);
+            var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+            object[] serializedArgs = MagicSerializationHelper.SerializeObjects(args, settings);
             return await this._jsModule.InvokeAsync<T>(functionName, token, serializedArgs);
         }
     }

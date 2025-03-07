@@ -13,23 +13,8 @@ namespace Magic.IndexedDb.Helpers
 {
     public static class PropertyMappingCache
     {
-        private static readonly ConcurrentDictionary<Type, Dictionary<PropertyInfo, MagicPropertyEntry>> _propertyCache = new();
-        private static readonly ConcurrentDictionary<Type, MagicTableAttribute?> _schemaCache = new(); // Now storing the attribute reference
-
-        /// <summary>
-        /// Gets the schema name (table name) for the given type <typeparamref name="T"/>.
-        /// Ensures all properties and schema information are cached together.
-        /// </summary>
-        public static string GetSchemaName<T>() where T : class
-        {
-            EnsureTypeIsCached<T>();
-
-            if (!_schemaCache.TryGetValue(typeof(T), out var schemaAttribute) || schemaAttribute == null)
-                throw new InvalidOperationException($"Type {typeof(T).Name} does not have a [MagicTable] attribute.");
-
-            return schemaAttribute.SchemaName;
-        }
-
+        internal static readonly ConcurrentDictionary<Type, Dictionary<PropertyInfo, MagicPropertyEntry>> _propertyCache = new();
+        
         /// <summary>
         /// Gets the C# property name given a JavaScript property name.
         /// </summary>
@@ -52,12 +37,29 @@ namespace Magic.IndexedDb.Helpers
         /// <summary>
         /// Gets the JavaScript property name (ColumnName) given a C# property name.
         /// </summary>
+        public static string GetJsPropertyName(string csharpPropertyName, Type type)
+        {
+            EnsureTypeIsCached(type);
+
+            var properties = _propertyCache[type];
+            return properties.FirstOrDefault(kvp => kvp.Key.Name == csharpPropertyName).Value.JsPropertyName ?? csharpPropertyName;
+        }
+
+
+        /// <summary>
+        /// Gets the JavaScript property name (ColumnName) given a C# property name.
+        /// </summary>
         public static string GetJsPropertyName<T>(string csharpPropertyName)
         {
-            EnsureTypeIsCached<T>();
+            return GetJsPropertyName(csharpPropertyName, typeof(T));
+        }
 
-            var properties = _propertyCache[typeof(T)];
-            return properties.FirstOrDefault(kvp => kvp.Key.Name == csharpPropertyName).Value.JsPropertyName ?? csharpPropertyName;
+        /// <summary>
+        /// Gets the JavaScript property name (ColumnName) given a PropertyInfo reference.
+        /// </summary>
+        public static string GetJsPropertyName(PropertyInfo property, Type type)
+        {
+            return GetJsPropertyName(property.Name, type);
         }
 
         /// <summary>
@@ -65,10 +67,7 @@ namespace Magic.IndexedDb.Helpers
         /// </summary>
         public static string GetJsPropertyName<T>(PropertyInfo property)
         {
-            EnsureTypeIsCached<T>();
-
-            var properties = _propertyCache[typeof(T)];
-            return properties.TryGetValue(property, out var propertyEntry) ? propertyEntry.JsPropertyName : property.Name;
+            return GetJsPropertyName<T>(property.Name);
         }
 
         /// <summary>
@@ -76,9 +75,17 @@ namespace Magic.IndexedDb.Helpers
         /// </summary>
         public static MagicPropertyEntry GetPropertyEntry<T>(string propertyName)
         {
-            EnsureTypeIsCached<T>();
+            return GetPropertyEntry(propertyName, typeof(T));
+        }
 
-            var properties = _propertyCache[typeof(T)];
+        /// <summary>
+        /// Gets the cached MagicPropertyEntry for a given property name.
+        /// </summary>
+        public static MagicPropertyEntry GetPropertyEntry(string propertyName, Type type)
+        {
+            EnsureTypeIsCached(type);
+
+            var properties = _propertyCache[type];
             return properties.FirstOrDefault(kvp => kvp.Key.Name == propertyName).Value;
         }
 
@@ -87,24 +94,31 @@ namespace Magic.IndexedDb.Helpers
         /// </summary>
         public static MagicPropertyEntry GetPropertyEntry<T>(PropertyInfo property)
         {
-            EnsureTypeIsCached<T>();
-
-            var properties = _propertyCache[typeof(T)];
-            return properties.TryGetValue(property, out var propertyEntry) ? propertyEntry : new MagicPropertyEntry();
+            return GetPropertyEntry<T>(property.Name);
         }
 
+        /// <summary>
+        /// Gets the cached MagicPropertyEntry for a given PropertyInfo reference.
+        /// </summary>
+        public static MagicPropertyEntry GetPropertyEntry(PropertyInfo property, Type type)
+        {
+            return GetPropertyEntry(property.Name, type);
+        }
 
         /// <summary>
         /// Ensures that both schema and property caches are built for the given type.
         /// </summary>
-        private static void EnsureTypeIsCached<T>()
+        internal static void EnsureTypeIsCached<T>()
         {
             Type type = typeof(T);
+        }
 
+        internal static void EnsureTypeIsCached(Type type)
+        {
             // Ensures both caches are built in a single operation
-            if (!_propertyCache.ContainsKey(type) || !_schemaCache.ContainsKey(type))
+            if (!_propertyCache.ContainsKey(type) || !SchemaHelper._schemaCache.ContainsKey(type))
             {
-                _schemaCache.GetOrAdd(type, t => t.GetCustomAttribute<MagicTableAttribute>());
+                SchemaHelper._schemaCache.GetOrAdd(type, t => t.GetCustomAttribute<MagicTableAttribute>());
 
                 _propertyCache.GetOrAdd(type, t =>
                 {

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Models
@@ -21,5 +22,11 @@ namespace Magic.IndexedDb.Models
         {
             return MagicSerializationHelper.SerializeObject(Value);
         }
+
+        public JsonElement SerializeToJsonElement(MagicJsonSerializationSettings? settings = null)
+        {
+            return MagicSerializationHelper.SerializeObjectToJsonElement(Value, settings);
+        }
     }
+
 }
