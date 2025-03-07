@@ -37,8 +37,6 @@ namespace Magic.IndexedDb.Models
                 // ✅ Re-run primitive check for JsonElement
                 if (IsSimpleJsonElement(element))
                     return (T?)(object)element; // 🚀 Directly cast JsonElement to T
-
-                return (T?)(object)JsonSerializer.Deserialize<JsonElement>(ref reader);
             }
 
             // ✅ Handle root-level arrays correctly
