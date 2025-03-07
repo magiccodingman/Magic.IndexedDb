@@ -10,6 +10,7 @@ using Microsoft.JSInterop;
 using System.Text.Json.Nodes;
 using Magic.IndexedDb.Interfaces;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using Microsoft.Extensions.Options;
 
 namespace Magic.IndexedDb
 {
@@ -565,9 +566,19 @@ namespace Magic.IndexedDb
 
         internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
         {
+
+            var ss = typeof(T);
+
             var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
             object[] serializedArgs = MagicSerializationHelper.SerializeObjects(args, settings);
-            return await this._jsModule.InvokeAsync<T>(functionName, token, serializedArgs);
+            // Invoke JavaScript function and retrieve result as a JsonElement to avoid type mismatches
+            var resultJsonElement = await _jsModule.InvokeAsync<JsonElement>(functionName, token, serializedArgs);
+
+            // Convert JsonElement to a JSON string for custom deserialization
+            string resultJson = resultJsonElement.GetRawText();
+
+            var result = MagicSerializationHelper.DeserializeObject<T>(resultJson, settings);
+            return result;
         }
     }
 }

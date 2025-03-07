@@ -40,50 +40,6 @@ namespace Magic.IndexedDb.Helpers
                 PropertySetters[prop.Name] = propertySetterExp.Compile();
             }
         }
-
-        public static T ConvertExpando(ExpandoObject expando)
-        {
-            Type type = typeof(T);
-
-            if (IsConcrete && HasParameterlessConstructor)
-            {
-                // Use the fastest method: Precomputed property setters
-                var instance = Activator.CreateInstance<T>();
-                var expandoDict = (IDictionary<string, object?>)expando;
-
-                foreach (var kvp in expandoDict)
-                {
-                    if (PropertySetters.TryGetValue(kvp.Key, out var setter))
-                    {
-                        setter(instance, kvp.Value);
-                    }
-                }
-
-                return instance;
-            }
-            else if (IsConcrete) // Concrete class without a parameterless constructor
-            {
-                var instance = Activator.CreateInstance(type);
-                MagicSerializationHelper.PopulateObject(MagicSerializationHelper.SerializeObject(expando), instance);
-                return (T)instance!;
-            }
-            else
-            {
-                // Last resort: If `T` is an interface or abstract class, fall back to full JSON deserialization
-                var instance = MagicSerializationHelper.DeserializeObject<T>(MagicSerializationHelper.SerializeObject(expando))!;
-
-                // Check if we can cache this as a known type
-                if (!NonConcreteTypeCache.ContainsKey(type))
-                {
-                    NonConcreteTypeCache[type] = true;
-
-                    // Dynamically compute property setters for this type
-                    PrecomputePropertySetters(type);
-                }
-
-                return instance;
-            }
-        }
     }
 
 

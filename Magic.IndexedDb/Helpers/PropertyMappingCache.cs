@@ -2,6 +2,7 @@
 using Magic.IndexedDb.Models;
 using Magic.IndexedDb.SchemaAnnotations;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,6 +15,104 @@ namespace Magic.IndexedDb.Helpers
     public static class PropertyMappingCache
     {
         internal static readonly ConcurrentDictionary<string, Dictionary<string, MagicPropertyEntry>> _propertyCache = new();
+
+
+        public static Dictionary<string, MagicPropertyEntry> GetTypeOfTProperties(Type type)
+        {
+            EnsureTypeIsCached(type);
+            if (_propertyCache.TryGetValue(type.FullName!, out var properties))
+            {
+                return properties;
+            }
+            throw new Exception("Something went very wrong getting GetTypeOfTProperties");
+        }
+
+        public static bool IsSimpleType(Type type)
+        {
+            return type.IsPrimitive ||
+                   type.IsEnum ||
+                   type == typeof(string) ||
+                   type == typeof(decimal) ||
+                   type == typeof(DateTime) ||
+                   type == typeof(DateTimeOffset) ||
+                   type == typeof(Guid) ||
+                   type == typeof(Uri) ||
+                   type == typeof(TimeSpan);
+        }
+
+
+        public static IEnumerable<Type> GetAllNestedComplexTypes(IEnumerable<PropertyInfo> properties)
+        {
+            HashSet<Type> complexTypes = new();
+            Stack<Type> typeStack = new();
+
+            // Initial population of the stack
+            foreach (var property in properties)
+            {
+                if (IsComplexType(property.PropertyType))
+                {
+                    typeStack.Push(property.PropertyType);
+                    complexTypes.Add(property.PropertyType);
+                }
+            }
+
+            // Process all nested complex types
+            while (typeStack.Count > 0)
+            {
+                var currentType = typeStack.Pop();
+                var nestedProperties = currentType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+                foreach (var nestedProperty in nestedProperties)
+                {
+                    if (IsComplexType(nestedProperty.PropertyType) && !complexTypes.Contains(nestedProperty.PropertyType))
+                    {
+                        complexTypes.Add(nestedProperty.PropertyType);
+                        typeStack.Push(nestedProperty.PropertyType);
+                    }
+                }
+            }
+
+            return complexTypes;
+        }
+
+        /*public static bool IsComplexType(Type type)
+        {
+            return !(IsSimpleType(type)
+                  || type == typeof(string)
+                  || typeof(IEnumerable).IsAssignableFrom(type) // Non-generic IEnumerable
+                  || (type.IsGenericType && typeof(IEnumerable<>).IsAssignableFrom(type.GetGenericTypeDefinition())) // Generic IEnumerable<T>
+                  || type.IsArray); // Arrays are collections too
+        }*/
+
+        public static bool IsComplexType(Type type)
+        {
+            if (IsSimpleType(type) || type == typeof(string))
+                return false;
+
+            // Handle generic collections like List<T>, Dictionary<TKey, TValue>
+            if (type.IsGenericType)
+            {
+                Type genericTypeDef = type.GetGenericTypeDefinition();
+
+                // If it's a generic IEnumerable<T>, get the type argument and check if it's complex
+                if (typeof(IEnumerable<>).IsAssignableFrom(genericTypeDef))
+                {
+                    Type itemType = type.GetGenericArguments()[0];
+                    return IsComplexType(itemType);
+                }
+
+                // Otherwise, it might be a generic class like StoreRecord<T>
+                return type.GetGenericArguments().Any(IsComplexType);
+            }
+
+            // Handle non-generic collections like arrays
+            if (typeof(IEnumerable).IsAssignableFrom(type) || type.IsArray)
+                return false;
+
+            return true; // Consider anything else a complex object
+        }
+
+
 
         /// <summary>
         /// Gets the C# property name given a JavaScript property name.
@@ -160,8 +259,12 @@ namespace Magic.IndexedDb.Helpers
             // Initialize the dictionary for this type
             var propertyEntries = new Dictionary<string, MagicPropertyEntry>();
 
+            List<MagicPropertyEntry> newMagicPropertyEntry = new List<MagicPropertyEntry>();
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy))
             {
+                if (property.GetIndexParameters().Length > 0)
+                    continue; // 🔥 Skip indexers entirely
+
                 string propertyKey = property.Name; // Now stored as string, not PropertyInfo
 
                 var columnAttribute = property.GetCustomAttributes()
@@ -180,12 +283,21 @@ namespace Magic.IndexedDb.Helpers
                     property.IsDefined(typeof(MagicPrimaryKeyAttribute), inherit: true),
                     property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true)
                 );
-
+                newMagicPropertyEntry.Add(magicEntry);
                 propertyEntries[propertyKey] = magicEntry; // Store property entry with string key
             }
 
             // Cache the properties for this type
             _propertyCache[typeKey] = propertyEntries;
+
+            var complexTypes = GetAllNestedComplexTypes(newMagicPropertyEntry.Select(x => x.Property));
+            if (complexTypes != null && complexTypes.Any())
+            {
+                foreach (var comp in complexTypes)
+                {
+                    EnsureTypeIsCached(comp);
+                }
+            }
         }
     }
 }
