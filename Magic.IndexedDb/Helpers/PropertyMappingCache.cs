@@ -12,12 +12,43 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Helpers
 {
+    public struct SearchPropEntry
+    {
+        public SearchPropEntry(Dictionary<string, MagicPropertyEntry> _propertyEntries)
+        {
+            propertyEntries = _propertyEntries;
+            jsNameToCsName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var entry in propertyEntries)
+            {
+                jsNameToCsName[entry.Value.JsPropertyName] = entry.Value.CsharpPropertyName;
+            }
+        }
+
+        public Dictionary<string, MagicPropertyEntry> propertyEntries { get; }
+        public Dictionary<string, string> jsNameToCsName { get; }
+    }
+
+
+
     public static class PropertyMappingCache
     {
-        internal static readonly ConcurrentDictionary<string, Dictionary<string, MagicPropertyEntry>> _propertyCache = new();
+        internal static readonly ConcurrentDictionary<string, SearchPropEntry> _propertyCache = new();
 
 
-        public static Dictionary<string, MagicPropertyEntry> GetTypeOfTProperties(Type type)
+        public static MagicPropertyEntry GetPrimaryKeyOfType(Type type)
+        {
+            var properties = GetTypeOfTProperties(type);
+            foreach (var prop in properties.propertyEntries)
+            {
+                if (prop.Value.PrimaryKey)
+                    return prop.Value;
+            }
+
+            throw new Exception($"The provided type doesn't have a primary key: {type.FullName}");
+        }
+
+        public static SearchPropEntry GetTypeOfTProperties(Type type)
         {
             EnsureTypeIsCached(type);
             if (_propertyCache.TryGetValue(type.FullName!, out var properties))
@@ -132,10 +163,9 @@ namespace Magic.IndexedDb.Helpers
 
             try
             {
-                if (_propertyCache.TryGetValue(typeKey, out var properties) &&
-                    properties.TryGetValue(jsPropertyName, out var entry))
+                if (_propertyCache.TryGetValue(typeKey, out var search))
                 {
-                    return entry.CsharpPropertyName;
+                    return search.GetCsharpPropertyName(jsPropertyName);
                 }
             }
             catch (Exception ex)
@@ -145,6 +175,25 @@ namespace Magic.IndexedDb.Helpers
 
             return jsPropertyName; // Fallback to original name if not found
         }
+
+        public static string GetCsharpPropertyName(this SearchPropEntry propCachee, string jsPropertyName)
+        {
+            try
+            {
+                if (propCachee.jsNameToCsName.TryGetValue(jsPropertyName, out var csName)
+                    && propCachee.propertyEntries.TryGetValue(csName, out var entry))
+                {
+                    return entry.CsharpPropertyName;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error retrieving C# property name for JS property '{jsPropertyName}'.", ex);
+            }
+
+            return jsPropertyName; // Fallback to original name if not found
+        }
+
 
         /// <summary>
         /// Gets the JavaScript property name (ColumnName) given a C# property name.
@@ -175,7 +224,7 @@ namespace Magic.IndexedDb.Helpers
             try
             {
                 if (_propertyCache.TryGetValue(typeKey, out var properties) &&
-                    properties.TryGetValue(csharpPropertyName, out var entry))
+                    properties.propertyEntries.TryGetValue(csharpPropertyName, out var entry))
                 {
                     return entry.JsPropertyName;
                 }
@@ -207,7 +256,7 @@ namespace Magic.IndexedDb.Helpers
             try
             {
                 if (_propertyCache.TryGetValue(typeKey, out var properties) &&
-                    properties.TryGetValue(propertyName, out var entry))
+                    properties.propertyEntries.TryGetValue(propertyName, out var entry))
                 {
                     return entry;
                 }
@@ -257,7 +306,7 @@ namespace Magic.IndexedDb.Helpers
             SchemaHelper.EnsureSchemaIsCached(type);
 
             // Initialize the dictionary for this type
-            var propertyEntries = new Dictionary<string, MagicPropertyEntry>();
+            var propertyEntries = new Dictionary<string, MagicPropertyEntry>(StringComparer.OrdinalIgnoreCase);
 
             List<MagicPropertyEntry> newMagicPropertyEntry = new List<MagicPropertyEntry>();
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy))
@@ -288,7 +337,7 @@ namespace Magic.IndexedDb.Helpers
             }
 
             // Cache the properties for this type
-            _propertyCache[typeKey] = propertyEntries;
+            _propertyCache[typeKey] = new SearchPropEntry(propertyEntries);
 
             var complexTypes = GetAllNestedComplexTypes(newMagicPropertyEntry.Select(x => x.Property));
             if (complexTypes != null && complexTypes.Any())

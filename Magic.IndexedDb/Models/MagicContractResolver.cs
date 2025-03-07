@@ -19,6 +19,28 @@ namespace Magic.IndexedDb.Models
             if (reader.TokenType == JsonTokenType.Null)
                 return default; // ✅ Return default(T) if null is encountered
 
+            // ✅ Handle primitive types before assuming it's complex
+            if (PropertyMappingCache.IsSimpleType(typeToConvert))
+            {
+                return (T?)ReadSimpleType(ref reader, typeToConvert);
+            }
+
+            // ✅ Explicitly check if the type is `JsonElement`
+            if (typeToConvert == typeof(JsonElement))
+            {
+                JsonElement element = JsonSerializer.Deserialize<JsonElement>(ref reader); // Extract JsonElement
+
+                // ✅ Re-run null check for JsonElement
+                if (IsSimpleJsonNull(element))
+                    return default;
+
+                // ✅ Re-run primitive check for JsonElement
+                if (IsSimpleJsonElement(element))
+                    return (T?)(object)element; // 🚀 Directly cast JsonElement to T
+
+                return (T?)(object)JsonSerializer.Deserialize<JsonElement>(ref reader);
+            }
+
             // ✅ Handle root-level arrays correctly
             if (reader.TokenType == JsonTokenType.StartArray)
             {
@@ -28,7 +50,66 @@ namespace Magic.IndexedDb.Models
                 return (T?)ReadIEnumerable(ref reader, typeToConvert, options);
             }
 
-            return (T?)ReadComplexObject(ref reader, typeToConvert, options);
+            // ✅ If it's neither a primitive nor an array, assume it's a complex object
+            if (reader.TokenType == JsonTokenType.StartObject)
+            {
+                return (T?)ReadComplexObject(ref reader, typeToConvert, options);
+            }
+
+            throw new JsonException($"Unexpected JSON token: {reader.TokenType} when deserializing {typeToConvert.Name}.");
+        }
+
+        private object CreateObjectFromDictionary(Type type, Dictionary<string, object?> propertyValues)
+        {
+            var constructor = type.GetConstructors().FirstOrDefault();
+
+            // 🔥 If there's a constructor AND it has parameters, we use it (for records like QuotaUsage)
+            if (constructor != null && constructor.GetParameters().Length > 0)
+            {
+                var parameters = constructor.GetParameters()
+                    .Select(p =>
+                    {
+                        if (propertyValues.TryGetValue(p.Name!, out var value))
+                            return value;
+
+                        var matchedKey = propertyValues.Keys
+                            .FirstOrDefault(k => string.Equals(k, p.Name, StringComparison.OrdinalIgnoreCase));
+
+                        return matchedKey != null ? propertyValues[matchedKey] : GetDefaultValue(p.ParameterType);
+                    })
+                    .ToArray();
+
+                return constructor.Invoke(parameters);
+            }
+
+            // 🔥 Handle non-constructor classes (e.g., Person class)
+            var instance = Activator.CreateInstance(type);
+            if (instance == null)
+                throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
+
+            foreach (var (propName, value) in propertyValues)
+            {
+                var property = type.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+                if (property != null && property.CanWrite)
+                {
+                    property.SetValue(instance, value);
+                }
+            }
+
+            return instance;
+        }
+
+
+        private bool IsSimpleJsonElement(JsonElement element)
+        {
+            return element.ValueKind == JsonValueKind.String ||
+                   element.ValueKind == JsonValueKind.Number ||
+                   element.ValueKind == JsonValueKind.True ||
+                   element.ValueKind == JsonValueKind.False;
+        }
+        private bool IsSimpleJsonNull(JsonElement element)
+        {
+            return element.ValueKind == JsonValueKind.Null;
         }
 
         /// <summary>
@@ -42,13 +123,18 @@ namespace Magic.IndexedDb.Models
             if (reader.TokenType != JsonTokenType.StartObject)
                 throw new JsonException($"Expected StartObject token for type {type.Name}.");
 
-            var instance = Activator.CreateInstance(type);
-            var properties = PropertyMappingCache.GetTypeOfTProperties(type);
+            // 🔥 Step 1: Create a dictionary to store extracted values
+            var propertyValues = new Dictionary<string, object?>();
 
+            var properties = PropertyMappingCache.GetTypeOfTProperties(type);
             while (reader.Read())
             {
                 if (reader.TokenType == JsonTokenType.EndObject)
-                    return instance;
+                {
+                    // 🔥 Step 3: Convert the dictionary into the final object
+                    var result = CreateObjectFromDictionary(type, propertyValues);
+                    return result;
+                }
 
                 if (reader.TokenType != JsonTokenType.PropertyName)
                     throw new JsonException("Expected PropertyName token.");
@@ -57,10 +143,12 @@ namespace Magic.IndexedDb.Models
                 if (!reader.Read())
                     throw new JsonException("Unexpected end of JSON.");
 
-                // 🔥 Resolve correct C# property name dynamically
-                string csharpPropertyName = PropertyMappingCache.GetCsharpPropertyName(jsonPropertyName, type);
 
-                if (properties.TryGetValue(csharpPropertyName, out var mpe))
+                string csharpPropertyName = properties.GetCsharpPropertyName(jsonPropertyName);
+
+                //string csharpPropertyName = PropertyMappingCache.GetCsharpPropertyName(jsonPropertyName, type);
+
+                if (properties.propertyEntries.TryGetValue(csharpPropertyName, out var mpe))
                 {
                     if (mpe.NotMapped)
                     {
@@ -68,18 +156,9 @@ namespace Magic.IndexedDb.Models
                         continue;
                     }
 
+                    // 🔥 Step 2: Extract values and store them in the dictionary
                     object? value = ReadPropertyValue(ref reader, mpe, options);
-                    if (value != null)
-                    {
-                        try
-                        {
-                            mpe.Setter(instance, value);
-                        }
-                        catch
-                        {
-                            // Prevent hard crash but log if needed
-                        }
-                    }
+                    propertyValues[csharpPropertyName] = value;
                 }
                 else
                 {
@@ -87,8 +166,16 @@ namespace Magic.IndexedDb.Models
                 }
             }
 
-            return instance;
+            throw new JsonException("Unexpected end of JSON while reading an object.");
         }
+
+        private object? GetDefaultValue(Type type)
+        {
+            return type.IsValueType ? Activator.CreateInstance(type) : null;
+        }
+
+
+
 
         /// <summary>
         /// Reads and assigns a property value, detecting collections, simple types, and complex objects.
@@ -174,8 +261,6 @@ namespace Magic.IndexedDb.Models
             return list;
         }
 
-
-
         public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
         {
             if (value == null)
@@ -202,7 +287,7 @@ namespace Magic.IndexedDb.Models
 
             // 🔥 Handle complex objects recursively
             writer.WriteStartObject();            
-            SerializeComplexProperties(writer, value, properties, options);
+            SerializeComplexProperties(writer, value, properties.propertyEntries, options);
             writer.WriteEndObject();
         }
 
@@ -260,7 +345,7 @@ namespace Magic.IndexedDb.Models
                         {
                             var nestedProperties = PropertyMappingCache.GetTypeOfTProperties(itemType);
                             writer.WriteStartObject();
-                            SerializeComplexProperties(writer, item, nestedProperties, options);
+                            SerializeComplexProperties(writer, item, nestedProperties.propertyEntries, options);
                             writer.WriteEndObject();
                         }
                         else
@@ -356,7 +441,7 @@ namespace Magic.IndexedDb.Models
                 {
                     var nestedProps = PropertyMappingCache.GetTypeOfTProperties(propValue.GetType());
                     writer.WriteStartObject();
-                    SerializeComplexProperties(writer, propValue, nestedProps, options);
+                    SerializeComplexProperties(writer, propValue, nestedProps.propertyEntries, options);
                     writer.WriteEndObject();
                 }
             }

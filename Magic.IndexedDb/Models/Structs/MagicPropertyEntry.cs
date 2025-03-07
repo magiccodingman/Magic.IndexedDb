@@ -28,6 +28,10 @@ namespace Magic.IndexedDb.Models
 
             IsComplexType = PropertyMappingCache.IsComplexType(property.PropertyType);
 
+            // 🔥 Identify if this property is a constructor parameter
+            var declaringType = property.DeclaringType!;
+            var constructor = declaringType.GetConstructors().FirstOrDefault();
+
             // 🔥 Create delegates for performance 🔥
             if (property.CanRead)
             {
@@ -53,7 +57,9 @@ namespace Magic.IndexedDb.Models
         /// camel case if that's the current json setting. These must stay 
         /// as they were initially designated.
         /// </summary>
-        public bool NeverCamelCase { get
+        public bool NeverCamelCase
+        {
+            get
             {
                 if (PrimaryKey || UniqueIndex || Indexed)
                     return true;
