@@ -13,38 +13,39 @@ namespace Magic.IndexedDb.Helpers
 {
     public static class PropertyMappingCache
     {
-        internal static readonly ConcurrentDictionary<Type, Dictionary<PropertyInfo, MagicPropertyEntry>> _propertyCache = new();
-        
+        internal static readonly ConcurrentDictionary<string, Dictionary<string, MagicPropertyEntry>> _propertyCache = new();
+
         /// <summary>
         /// Gets the C# property name given a JavaScript property name.
         /// </summary>
         public static string GetCsharpPropertyName<T>(string jsPropertyName)
         {
-            EnsureTypeIsCached<T>();
-
-            var properties = _propertyCache[typeof(T)];
-            return properties.FirstOrDefault(kvp => kvp.Value.JsPropertyName == jsPropertyName).Value.CsharpPropertyName ?? jsPropertyName;
+            return GetCsharpPropertyName(jsPropertyName, typeof(T));
         }
 
         /// <summary>
-        /// Gets the C# property name given a PropertyInfo reference.
+        /// Gets the C# property name given a JavaScript property name.
         /// </summary>
-        public static string GetCsharpPropertyName<T>(PropertyInfo property)
-        {
-            return GetCsharpPropertyName<T>(property.Name);
-        }
-
-        /// <summary>
-        /// Gets the JavaScript property name (ColumnName) given a C# property name.
-        /// </summary>
-        public static string GetJsPropertyName(string csharpPropertyName, Type type)
+        public static string GetCsharpPropertyName(string jsPropertyName, Type type)
         {
             EnsureTypeIsCached(type);
+            string typeKey = type.FullName!;
 
-            var properties = _propertyCache[type];
-            return properties.FirstOrDefault(kvp => kvp.Key.Name == csharpPropertyName).Value.JsPropertyName ?? csharpPropertyName;
+            try
+            {
+                if (_propertyCache.TryGetValue(typeKey, out var properties) &&
+                    properties.TryGetValue(jsPropertyName, out var entry))
+                {
+                    return entry.CsharpPropertyName;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error retrieving C# property name for JS property '{jsPropertyName}' in type {type.FullName}.", ex);
+            }
+
+            return jsPropertyName; // Fallback to original name if not found
         }
-
 
         /// <summary>
         /// Gets the JavaScript property name (ColumnName) given a C# property name.
@@ -54,20 +55,38 @@ namespace Magic.IndexedDb.Helpers
             return GetJsPropertyName(csharpPropertyName, typeof(T));
         }
 
-        /// <summary>
-        /// Gets the JavaScript property name (ColumnName) given a PropertyInfo reference.
-        /// </summary>
-        public static string GetJsPropertyName(PropertyInfo property, Type type)
+        public static string GetJsPropertyName<T>(PropertyInfo prop)
         {
-            return GetJsPropertyName(property.Name, type);
+            return GetJsPropertyName(prop.Name, typeof(T));
+        }
+
+        public static string GetJsPropertyName(PropertyInfo prop, Type type)
+        {
+            return GetJsPropertyName(prop.Name, type);
         }
 
         /// <summary>
-        /// Gets the JavaScript property name (ColumnName) given a PropertyInfo reference.
+        /// Gets the JavaScript property name (ColumnName) given a C# property name.
         /// </summary>
-        public static string GetJsPropertyName<T>(PropertyInfo property)
+        public static string GetJsPropertyName(string csharpPropertyName, Type type)
         {
-            return GetJsPropertyName<T>(property.Name);
+            EnsureTypeIsCached(type);
+            string typeKey = type.FullName!;
+
+            try
+            {
+                if (_propertyCache.TryGetValue(typeKey, out var properties) &&
+                    properties.TryGetValue(csharpPropertyName, out var entry))
+                {
+                    return entry.JsPropertyName;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error retrieving JS property name for C# property '{csharpPropertyName}' in type {type.FullName}.", ex);
+            }
+
+            return csharpPropertyName; // Fallback to original name if not found
         }
 
         /// <summary>
@@ -84,9 +103,22 @@ namespace Magic.IndexedDb.Helpers
         public static MagicPropertyEntry GetPropertyEntry(string propertyName, Type type)
         {
             EnsureTypeIsCached(type);
+            string typeKey = type.FullName!;
 
-            var properties = _propertyCache[type];
-            return properties.FirstOrDefault(kvp => kvp.Key.Name == propertyName).Value;
+            try
+            {
+                if (_propertyCache.TryGetValue(typeKey, out var properties) &&
+                    properties.TryGetValue(propertyName, out var entry))
+                {
+                    return entry;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error retrieving property entry for '{propertyName}' in type {type.FullName}.", ex);
+            }
+
+            throw new Exception($"Error: Property '{propertyName}' not found in type {type.FullName}.");
         }
 
         /// <summary>
@@ -94,7 +126,7 @@ namespace Magic.IndexedDb.Helpers
         /// </summary>
         public static MagicPropertyEntry GetPropertyEntry<T>(PropertyInfo property)
         {
-            return GetPropertyEntry<T>(property.Name);
+            return GetPropertyEntry(property.Name, typeof(T));
         }
 
         /// <summary>
@@ -104,6 +136,7 @@ namespace Magic.IndexedDb.Helpers
         {
             return GetPropertyEntry(property.Name, type);
         }
+
 
         /// <summary>
         /// Ensures that both schema and property caches are built for the given type.
@@ -115,40 +148,44 @@ namespace Magic.IndexedDb.Helpers
 
         internal static void EnsureTypeIsCached(Type type)
         {
-            // Ensures both caches are built in a single operation
-            if (!_propertyCache.ContainsKey(type) || !SchemaHelper._schemaCache.ContainsKey(type))
+            string typeKey = type.FullName!;
+
+            // Avoid re-registering types if the typeKey already exists
+            if (_propertyCache.ContainsKey(typeKey))
+                return;
+
+            // Ensure schema metadata is cached
+            SchemaHelper.EnsureSchemaIsCached(type);
+
+            // Initialize the dictionary for this type
+            var propertyEntries = new Dictionary<string, MagicPropertyEntry>();
+
+            foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy))
             {
-                SchemaHelper._schemaCache.GetOrAdd(type, t => t.GetCustomAttribute<MagicTableAttribute>());
+                string propertyKey = property.Name; // Now stored as string, not PropertyInfo
 
-                _propertyCache.GetOrAdd(type, t =>
+                var columnAttribute = property.GetCustomAttributes()
+                                              .FirstOrDefault(attr => attr is IColumnNamed) as IColumnNamed;
+
+                if (columnAttribute != null && string.IsNullOrWhiteSpace(columnAttribute.ColumnName))
                 {
-                    var propertyEntries = new Dictionary<PropertyInfo, MagicPropertyEntry>();
+                    columnAttribute = null;
+                }
 
-                    foreach (var property in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                    {
-                        var columnAttribute = property.GetCustomAttributes()
-                                                      .FirstOrDefault(attr => attr is IColumnNamed) as IColumnNamed;
+                var magicEntry = new MagicPropertyEntry(
+                    property,
+                    columnAttribute,
+                    property.IsDefined(typeof(MagicIndexAttribute), inherit: true),
+                    property.IsDefined(typeof(MagicUniqueIndexAttribute), inherit: true),
+                    property.IsDefined(typeof(MagicPrimaryKeyAttribute), inherit: true),
+                    property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true)
+                );
 
-                        if (columnAttribute != null && string.IsNullOrWhiteSpace(columnAttribute.ColumnName))
-                        {
-                            columnAttribute = null;
-                        }
-
-                        var magicEntry = new MagicPropertyEntry(
-                            property,
-                            columnAttribute,
-                            property.IsDefined(typeof(MagicIndexAttribute), inherit: true),
-                            property.IsDefined(typeof(MagicUniqueIndexAttribute), inherit: true),
-                            property.IsDefined(typeof(MagicPrimaryKeyAttribute), inherit: true),
-                            property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true)
-                        );
-
-                        propertyEntries[property] = magicEntry;
-                    }
-
-                    return propertyEntries;
-                });
+                propertyEntries[propertyKey] = magicEntry; // Store property entry with string key
             }
+
+            // Cache the properties for this type
+            _propertyCache[typeKey] = propertyEntries;
         }
     }
 }
