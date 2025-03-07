@@ -59,7 +59,7 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
         {
             Name = "SingleRecordBasic.Add",
             Version = 1,
-            StoreSchemas = [SchemaHelper.GetStoreSchema<Record>(null, false)]
+            StoreSchemas = [SchemaHelper.GetStoreSchema(typeof(Record))]
         });
         var id = await database.AddAsync<Record, int>(NewSample);
         return id.ToString();
@@ -71,7 +71,7 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
         {
             Name = "SingleRecordBasic.Delete",
             Version = 1,
-            StoreSchemas = [SchemaHelper.GetStoreSchema<Record>(null, false)]
+            StoreSchemas = [SchemaHelper.GetStoreSchema(typeof(Record))]
         });
         _ = await database.AddAsync<Record, int>(NewSample);
         await database.DeleteAsync(NewSample);
@@ -84,7 +84,7 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
         {
             Name = "SingleRecordBasic.Update",
             Version = 1,
-            StoreSchemas = [SchemaHelper.GetStoreSchema<Record>(null, false)]
+            StoreSchemas = [SchemaHelper.GetStoreSchema(typeof(Record))]
         });
         _ = await database.AddAsync<Record, int>(NewSample);
 
@@ -100,7 +100,7 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
         {
             Name = "SingleRecordBasic.GetById",
             Version = 1,
-            StoreSchemas = [SchemaHelper.GetStoreSchema<Record>(null, false)]
+            StoreSchemas = [SchemaHelper.GetStoreSchema(typeof(Record))]
         });
         var id = await database.AddAsync<Record, int>(NewSample);
         var result = await database.GetByIdAsync<Record>(id);
@@ -113,7 +113,7 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
         {
             Name = "SingleRecordBasic.GetAll",
             Version = 1,
-            StoreSchemas = [SchemaHelper.GetStoreSchema<Record>(null, false)]
+            StoreSchemas = [SchemaHelper.GetStoreSchema(typeof(Record))]
         });
         _ = await database.AddAsync<Record, int>(NewSample);
         var result = await database.GetAllAsync<Record>();

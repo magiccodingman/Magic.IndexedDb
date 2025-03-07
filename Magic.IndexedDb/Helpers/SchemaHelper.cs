@@ -1,5 +1,6 @@
 ﻿using Magic.IndexedDb.SchemaAnnotations;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -11,198 +12,106 @@ namespace Magic.IndexedDb.Helpers
 {
     public static class SchemaHelper
     {
-        public const string defaultNone = "DefaultedNone";
+        internal static readonly ConcurrentDictionary<Type, MagicTableAttribute?> _schemaCache = new();
+        private static readonly ConcurrentDictionary<string, List<StoreSchema>> _databaseSchemasCache = new();
+        private static bool _schemasScanned = false;
+        private static readonly object _lock = new();
 
+        /// <summary>
+        /// Gets the schema name (table name) for the given type <typeparamref name="T"/>.
+        /// Ensures all properties and schema information are cached together.
+        /// </summary>
         public static string GetSchemaName<T>() where T : class
         {
-            Type type = typeof(T);
-            string schemaName;
-            var schemaAttribute = type.GetCustomAttribute<MagicTableAttribute>();
-            if (schemaAttribute != null)
-            {
-                schemaName = schemaAttribute.SchemaName;
-            }
-            else
-            {
-                schemaName = type.Name;
-            }
-            return schemaName;
+            PropertyMappingCache.EnsureTypeIsCached<T>();
+
+            if (!_schemaCache.TryGetValue(typeof(T), out var schemaAttribute) || schemaAttribute == null)
+                throw new InvalidOperationException($"Type {typeof(T).Name} does not have a [MagicTable] attribute.");
+
+            return schemaAttribute.SchemaName;
         }
 
-        public static List<string> GetPropertyNamesFromExpression<T>(Expression<Func<T, bool>> predicate) where T : class
-        {
-            var propertyNames = new List<string>();
-
-            if (predicate.Body is BinaryExpression binaryExpression)
-            {
-                var left = binaryExpression.Left as MemberExpression;
-                var right = binaryExpression.Right as MemberExpression;
-
-                if (left != null) propertyNames.Add(left.Member.Name);
-                if (right != null) propertyNames.Add(right.Member.Name);
-            }
-            else if (predicate.Body is MethodCallExpression methodCallExpression)
-            {
-                var argument = methodCallExpression.Object as MemberExpression;
-                if (argument != null) propertyNames.Add(argument.Member.Name);
-            }
-
-            return propertyNames;
-        }
-
-
+        /// <summary>
+        /// Retrieves all schemas for a given database name.
+        /// </summary>
         public static List<StoreSchema> GetAllSchemas(string databaseName = null)
         {
-            List<StoreSchema> schemas = new List<StoreSchema>();
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-
-            foreach (var assembly in assemblies)
+            lock (_lock)
             {
-                var types = assembly.GetTypes();
+                // If we've already scanned all schemas, return the cached list.
+                if (_schemasScanned && _databaseSchemasCache.TryGetValue(databaseName ?? "DefaultedNone", out var cachedSchemas))
+                    return cachedSchemas;
 
-                foreach (var type in types)
+                var schemas = new List<StoreSchema>();
+                var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+                foreach (var assembly in assemblies)
                 {
-                    //var attributes = type.GetCustomAttributes(typeof(SchemaAnnotationDbAttribute), false);
-
-                    //if (attributes.Length > 0)
-                    //{
-                    var schemaAttribute = type.GetCustomAttribute<MagicTableAttribute>();
-                    if (schemaAttribute != null)
+                    foreach (var type in assembly.GetTypes())
                     {
-                        string DbName = null;
+                        if (!type.IsClass || type.IsAbstract) continue;
 
-                        if (!String.IsNullOrWhiteSpace(databaseName))
-                            DbName = databaseName;
-                        else
-                            DbName = defaultNone;
+                        // Ensure type is cached and check if it has a MagicTableAttribute
+                        PropertyMappingCache.EnsureTypeIsCached(type);
+                        if (!_schemaCache.TryGetValue(type, out var schemaAttribute) || schemaAttribute == null) continue;
 
-                        if (schemaAttribute.DatabaseName.Equals(DbName))
+                        // Determine if the schema belongs to the target database
+                        string dbName = !string.IsNullOrWhiteSpace(databaseName) ? databaseName : "DefaultedNone";
+                        if (schemaAttribute.DatabaseName.Equals(dbName, StringComparison.OrdinalIgnoreCase))
                         {
-                            //var schema = typeof(SchemaHelper).GetMethod("GetStoreSchema").MakeGenericMethod(type).Invoke(null, new object[] { }) as StoreSchema;
                             var schema = GetStoreSchema(type);
                             schemas.Add(schema);
                         }
                     }
                 }
-            }
 
-            return schemas;
+                // Cache results for future calls
+                _databaseSchemasCache[databaseName ?? "DefaultedNone"] = schemas;
+                _schemasScanned = true;
+
+                return schemas;
+            }
         }
 
-        public static StoreSchema GetStoreSchema<T>(string name = null, bool PrimaryKeyAuto = true) where T : class
+        /// <summary>
+        /// Retrieves the store schema from a given type.
+        /// Now fully optimized by leveraging cached attributes and property mappings.
+        /// </summary>
+        public static StoreSchema GetStoreSchema(Type type)
         {
-            Type type = typeof(T);
-            return GetStoreSchema(type, name, PrimaryKeyAuto);
-        }
+            PropertyMappingCache.EnsureTypeIsCached(type);
 
-        public static StoreSchema GetStoreSchema(Type type, string name = null, bool PrimaryKeyAuto = true)
-        {
-            StoreSchema schema = new StoreSchema();
-            schema.PrimaryKeyAuto = PrimaryKeyAuto;
+            if (!_schemaCache.TryGetValue(type, out var schemaAttribute) || schemaAttribute == null)
+                throw new InvalidOperationException($"Type {type.Name} does not have a [MagicTable] attribute.");
 
-
-            //if (String.IsNullOrWhiteSpace(name))
-            //    schema.Name = type.Name;
-            //else
-            //    schema.Name = name;
-
-            // Get the schema name from the SchemaAnnotationDbAttribute if it exists
-            var schemaAttribute = type.GetCustomAttribute<MagicTableAttribute>();
-            if (schemaAttribute != null)
+            var schema = new StoreSchema
             {
-                schema.Name = schemaAttribute.SchemaName;
-            }
-            else if (!String.IsNullOrWhiteSpace(name))
-            {
-                schema.Name = name;
-            }
-            else
-            {
-                schema.Name = type.Name;
-            }
+                Name = schemaAttribute.SchemaName,
+                PrimaryKeyAuto = true
+            };
 
             // Get the primary key property
-            PropertyInfo? primaryKeyProperty = type.GetProperties().FirstOrDefault(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute)));
+            var primaryKeyProperty = type.GetProperties().FirstOrDefault(prop =>
+                PropertyMappingCache.GetPropertyEntry(prop, type).PrimaryKey);
 
             if (primaryKeyProperty == null)
-            {
-                throw new InvalidOperationException("The entity does not have a primary key attribute.");
-            }
+                throw new InvalidOperationException($"The entity {type.Name} does not have a primary key attribute.");
 
-            if (type.GetProperties().Count(prop => Attribute.IsDefined(prop, typeof(MagicPrimaryKeyAttribute))) > 1)
-            {
-                throw new InvalidOperationException("The entity has more than one primary key attribute.");
-            }
+            schema.PrimaryKey = PropertyMappingCache.GetJsPropertyName(primaryKeyProperty, type);
 
-            schema.PrimaryKey = primaryKeyProperty.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
+            // Get unique index properties
+            schema.UniqueIndexes = type.GetProperties()
+                .Where(prop => PropertyMappingCache.GetPropertyEntry(prop, type).UniqueIndex)
+                .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
+                .ToList();
 
-            // Get the unique index properties
-            var uniqueIndexProperties = type.GetProperties().Where(prop => Attribute.IsDefined(prop, typeof(MagicUniqueIndexAttribute)));
-
-            foreach (PropertyInfo? prop in uniqueIndexProperties)
-            {
-                if (prop != null)
-                {
-                    schema.UniqueIndexes.Add(prop.GetPropertyColumnName<MagicUniqueIndexAttribute>());
-                }
-            }
-
-            // Get the index properties
-            var indexProperties = type.GetProperties().Where(prop => Attribute.IsDefined(prop, typeof(MagicIndexAttribute)));
-
-            foreach (var prop in indexProperties)
-            {
-                schema.Indexes.Add(prop.GetPropertyColumnName<MagicIndexAttribute>());
-            }
+            // Get index properties
+            schema.Indexes = type.GetProperties()
+                .Where(prop => PropertyMappingCache.GetPropertyEntry(prop, type).Indexed)
+                .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
+                .ToList();
 
             return schema;
         }
-
-        public static string GetPropertyColumnName(this PropertyInfo prop, Type attributeType)
-        {
-            Attribute? attribute = Attribute.GetCustomAttribute(prop, attributeType);
-
-            string columnName = prop.Name;
-
-            if (attribute != null)
-            {
-                PropertyInfo[] properties = attributeType.GetProperties();
-                foreach (PropertyInfo property in properties)
-                {
-                    if (Attribute.IsDefined(property, typeof(MagicColumnNameDesignatorAttribute)))
-                    {
-                        object? designatedColumnNameObject = property.GetValue(attribute);
-                        if (designatedColumnNameObject != null)
-                        {
-                            string designatedColumnName = designatedColumnNameObject as string ?? designatedColumnNameObject.ToString();
-                            if (!string.IsNullOrWhiteSpace(designatedColumnName))
-                            {
-                                columnName = designatedColumnName;
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-
-            return columnName;
-        }
-        public static string GetPropertyColumnName<T>(this PropertyInfo prop) where T : Attribute
-        {
-            T? attribute = (T?)Attribute.GetCustomAttribute(prop, typeof(T));
-
-            return prop.GetPropertyColumnName(typeof(T));
-
-        }
-
-
-        //public StoreSchema GetStoreSchema<T>(bool PrimaryKeyAuto = true) where T : class
-        //{
-        //    StoreSchema schema = new StoreSchema();
-        //    schema.PrimaryKeyAuto = PrimaryKeyAuto;
-
-
-        //    return schema;
-        //}
     }
 }

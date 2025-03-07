@@ -9,6 +9,7 @@ namespace Magic.IndexedDb
 {
     public class MagicTableAttribute : Attribute
     {
+        public const string defaultNone = "DefaultedNone";
         public string SchemaName { get; }
         public string DatabaseName { get; }
 
@@ -19,7 +20,7 @@ namespace Magic.IndexedDb
             if (!String.IsNullOrWhiteSpace(databaseName))
                 DatabaseName = databaseName;
             else
-                DatabaseName = SchemaHelper.defaultNone;
+                DatabaseName = defaultNone;
         }
     }
 }

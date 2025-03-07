@@ -115,28 +115,17 @@ namespace Magic.IndexedDb.Models
             {
                 throw new ArgumentException("The expression must represent a single property access.");
             }
+            MagicPropertyEntry mpe = PropertyMappingCache.GetPropertyEntry<T>(propertyInfo);
+            
 
-            var indexDbAttr = propertyInfo.GetCustomAttribute<MagicIndexAttribute>();
-            var uniqueIndexDbAttr = propertyInfo.GetCustomAttribute<MagicUniqueIndexAttribute>();
-            var primaryKeyDbAttr = propertyInfo.GetCustomAttribute<MagicPrimaryKeyAttribute>();
-
-            if (indexDbAttr == null && uniqueIndexDbAttr == null && primaryKeyDbAttr == null)
+            if (!mpe.PrimaryKey && !mpe.Indexed && !mpe.UniqueIndex)
             {
                 throw new ArgumentException("The selected property must have either MagicIndexAttribute, MagicUniqueIndexAttribute, or MagicPrimaryKeyAttribute.");
             }
 
-            string? columnName = null;
-
-            if (indexDbAttr != null)
-                columnName = propertyInfo.GetPropertyColumnName<MagicIndexAttribute>();
-            else if (primaryKeyDbAttr != null)
-                columnName = propertyInfo.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
-            else if (uniqueIndexDbAttr != null)
-                columnName = propertyInfo.GetPropertyColumnName<MagicUniqueIndexAttribute>();
-
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.Order_By;
-            smq.StringValue = columnName;
+            smq.StringValue = mpe.JsPropertyName;
             storedMagicQueries.Add(smq);
             return this;
         }
@@ -152,27 +141,9 @@ namespace Magic.IndexedDb.Models
                 throw new ArgumentException("The expression must represent a single property access.");
             }
 
-            var indexDbAttr = propertyInfo.GetCustomAttribute<MagicIndexAttribute>();
-            var uniqueIndexDbAttr = propertyInfo.GetCustomAttribute<MagicUniqueIndexAttribute>();
-            var primaryKeyDbAttr = propertyInfo.GetCustomAttribute<MagicPrimaryKeyAttribute>();
-
-            if (indexDbAttr == null && uniqueIndexDbAttr == null && primaryKeyDbAttr == null)
-            {
-                throw new ArgumentException("The selected property must have either MagicIndexAttribute, MagicUniqueIndexAttribute, or MagicPrimaryKeyAttribute.");
-            }
-
-            string? columnName = null;
-
-            if (indexDbAttr != null)
-                columnName = propertyInfo.GetPropertyColumnName<MagicIndexAttribute>();
-            else if (primaryKeyDbAttr != null)
-                columnName = propertyInfo.GetPropertyColumnName<MagicPrimaryKeyAttribute>();
-            else if (uniqueIndexDbAttr != null)
-                columnName = propertyInfo.GetPropertyColumnName<MagicUniqueIndexAttribute>();
-
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.Name = MagicQueryFunctions.Order_By_Descending;
-            smq.StringValue = columnName;
+            smq.StringValue = PropertyMappingCache.GetJsPropertyName<T>(propertyInfo);
             storedMagicQueries.Add(smq);
             return this;
         }

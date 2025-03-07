@@ -1,4 +1,6 @@
-﻿using Magic.IndexedDb.Models;
+﻿using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.Models;
+using System.Linq;
 using System.Text.Json;
 
 namespace Magic.IndexedDb.Helpers
@@ -9,6 +11,28 @@ namespace Magic.IndexedDb.Helpers
     /// </summary>
     public static class MagicSerializationHelper
     {
+
+        public static object[] SerializeObjects(ITypedArgument[] objs, MagicJsonSerializationSettings? settings = null)
+        {
+            return objs.Select(arg => arg.SerializeToJsonElement(settings)).Cast<object>().ToArray();
+        }
+
+        public static JsonElement SerializeObjectToJsonElement<T>(T value, MagicJsonSerializationSettings? settings = null)
+        {
+            if (settings == null)
+                settings = new MagicJsonSerializationSettings();
+
+            if (value == null)
+                throw new ArgumentNullException(nameof(value), "Object cannot be null");
+
+            var options = settings.GetOptionsWithResolver<T>(); // Ensure the correct resolver is applied
+            string jsonString = JsonSerializer.Serialize(value, options); // Serialize using your settings
+
+            // Convert the string to a JsonElement so that Blazor treats it as a structured object
+            using JsonDocument doc = JsonDocument.Parse(jsonString);
+            return doc.RootElement.Clone(); // Clone to prevent disposal issues
+        }
+
         public static string SerializeObject<T>(T value, MagicJsonSerializationSettings? settings = null)
         {
             if (settings == null)
