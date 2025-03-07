@@ -79,6 +79,8 @@ namespace Magic.IndexedDb.Helpers
         /// </summary>
         public static StoreSchema GetStoreSchema(Type type)
         {
+            PropertyMappingCache.EnsureTypeIsCached(type);
+
             if (!_schemaCache.TryGetValue(type, out var schemaAttribute) || schemaAttribute == null)
                 throw new InvalidOperationException($"Type {type.Name} does not have a [MagicTable] attribute.");
 
