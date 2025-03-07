@@ -10,7 +10,7 @@ namespace Magic.IndexedDb
     public class DbStore
     {
         public string Name { get; set; }
-        public string Version { get; set; }
+        public int Version { get; set; }
 
         [Obsolete("Being depreciated")]
         public string EncryptionKey { get; set; }
