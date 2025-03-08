@@ -3,9 +3,16 @@ using Magic.IndexedDb.SchemaAnnotations;
 
 namespace TestWasm.Models
 {
+    public class Nested
+    {
+        public string Value { get; set; } = "abc";
+    }
+
     [MagicTable("Person", DbNames.Client)]
     public class Person
     {
+        public Nested Nested { get; set; } = new Nested();
+
         [MagicPrimaryKey("id")]
         public int _Id { get; set; }
 

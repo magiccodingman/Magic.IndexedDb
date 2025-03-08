@@ -24,13 +24,13 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
             [
                 {
                     "id":12,
-                    "Normal":"Norm",
+                    "normal":"Norm",
                     "Renamed":"R",
                     "Index":"I",
                     "UniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
-                    "Enum":0,
-                    "Nested":{"Value":1234},
-                    "LargeNumber":9007199254740991
+                    "enum":0,
+                    "nested":{"value":1234},
+                    "largeNumber":9007199254740991
                 }
             ]
             """, records);
@@ -67,13 +67,13 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
             [
                 {
                     "id":12,
-                    "Normal":"Updated",
+                    "normal":"Updated",
                     "Renamed":"R",
                     "Index":"I",
                     "UniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
-                    "Enum":0,
-                    "Nested":{"Value":1234},
-                    "LargeNumber":9007199254740991
+                    "enum":0,
+                    "nested":{"value":1234},
+                    "largeNumber":9007199254740991
                 }
             ]
             """, records);
@@ -103,7 +103,7 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
                 "Id":12,
                 "Normal":"Norm",
                 "ShouldBeRenamed":"R",
-                "Ignored":true,
+                "Ignored":false,
                 "Index":"I",
                 "UniqueIndex":"633a97d2-0c92-4c68-883b-364f94ad6030",
                 "Enum":0,

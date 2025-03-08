@@ -6,40 +6,56 @@ namespace Magic.IndexedDb.Factories
 {
     public class MagicDbFactory : IMagicDbFactory, IAsyncDisposable
     {
-        readonly Task<IJSObjectReference> _jsRuntime;
+        Lazy<Task<IJSObjectReference>>? _jsRuntime;
         readonly IServiceProvider _serviceProvider;
-        readonly IDictionary<string, IndexedDbManager> _databases = new Dictionary<string, IndexedDbManager>();
+        readonly Dictionary<string, IndexedDbManager> _databases = new();
 
         public MagicDbFactory(IServiceProvider serviceProvider, IJSRuntime jSRuntime)
         {
             _serviceProvider = serviceProvider;
-            this._jsRuntime = jSRuntime.InvokeAsync<IJSObjectReference>(
+            this._jsRuntime = new(() => jSRuntime.InvokeAsync<IJSObjectReference>(
                 "import",
-                "./_content/Magic.IndexedDb/magicDB.js").AsTask();
+                "./_content/Magic.IndexedDb/magicDB.js").AsTask());
         }
         public async ValueTask DisposeAsync()
         {
-            var js = await _jsRuntime;
+            var js = _jsRuntime;
+            _jsRuntime = null;
+
+            if (js is null || !js.IsValueCreated)
+                return;
+
+            IJSObjectReference module;
             try
             {
-                var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                await js.InvokeVoidAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token);
+                module = await js.Value;
             }
             catch
             {
-                // do nothing here
+                return;
             }
-            await js.DisposeAsync();
+
+            try
+            {
+                var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await module.InvokeVoidAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token);
+            }
+            finally
+            {
+                await module.DisposeAsync();
+            }
         }
 
         public async ValueTask<IndexedDbManager> OpenAsync(
             DbStore dbStore, bool force = false, 
             CancellationToken cancellationToken = default)
         {
+            ObjectDisposedException.ThrowIf(_jsRuntime is null, this);
+
             if (force || !_databases.ContainsKey(dbStore.Name))
             {
                 var db = await IndexedDbManager.CreateAndOpenAsync(
-                    dbStore, await _jsRuntime, cancellationToken);
+                    dbStore, await _jsRuntime.Value, cancellationToken);
                 _databases[dbStore.Name] = db;
             }
             return _databases[dbStore.Name];
@@ -47,6 +63,8 @@ namespace Magic.IndexedDb.Factories
 
         public IndexedDbManager Get(string dbName)
         {
+            ObjectDisposedException.ThrowIf(_jsRuntime is null, this);
+
             if (_databases.TryGetValue(dbName, out var db))
                 return db;
             throw new MagicException(
