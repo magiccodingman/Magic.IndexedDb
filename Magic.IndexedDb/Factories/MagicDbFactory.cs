@@ -19,7 +19,16 @@ namespace Magic.IndexedDb.Factories
         }
         public async ValueTask DisposeAsync()
         {
-            var js = await _jsRuntime;
+            IJSObjectReference js;
+            try
+            {
+                js = await _jsRuntime;
+            }
+            catch
+            {
+                return;
+            }
+
             try
             {
                 var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
