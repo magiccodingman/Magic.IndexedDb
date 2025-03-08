@@ -27,7 +27,7 @@ namespace Magic.IndexedDb.Models
             PrimaryKey = primaryKey;
             NotMapped = notMapped;
 
-            IsComplexType = IsComplexTypeFunc(property.PropertyType);
+            IsComplexType = PropertyMappingCache.IsComplexType(property.PropertyType);
 
             // 🔥 Identify if this property is a constructor parameter
             var declaringType = property.DeclaringType!;
@@ -54,15 +54,6 @@ namespace Magic.IndexedDb.Models
             {
                 Setter = (_, __) => { }; // No setter available
             }
-        }
-
-        private bool IsComplexTypeFunc(Type type)
-        {
-            return !(PropertyMappingCache.IsSimpleType(type)
-                  || type == typeof(string)
-                  || typeof(IEnumerable).IsAssignableFrom(type) // Non-generic IEnumerable
-                  || (type.IsGenericType && typeof(IEnumerable<>).IsAssignableFrom(type.GetGenericTypeDefinition())) // Generic IEnumerable<T>
-                  || type.IsArray); // Arrays are collections too
         }
 
         public object? DefaultValue { get; }
