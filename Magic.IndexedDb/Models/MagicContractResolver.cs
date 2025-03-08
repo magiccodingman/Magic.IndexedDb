@@ -159,9 +159,11 @@ namespace Magic.IndexedDb.Models
             throw new JsonException("Unexpected end of JSON while reading an object.");
         }
 
-        private object? GetDefaultValue(Type type)
+        private static readonly ConcurrentDictionary<Type, object?> _defaultValues = new();
+
+        public static object? GetDefaultValue(Type type)
         {
-            return type.IsValueType ? Activator.CreateInstance(type) : null;
+            return _defaultValues.GetOrAdd(type, t => t.IsValueType ? Activator.CreateInstance(t) : null);
         }
 
 
@@ -182,7 +184,7 @@ namespace Magic.IndexedDb.Models
                 return ReadIEnumerable(ref reader, propertyType, options);
             }
 
-            if (PropertyMappingCache.IsComplexType(propertyType))
+            if (mpe.IsComplexType)
             {
                 return ReadComplexObject(ref reader, propertyType, options);
             }

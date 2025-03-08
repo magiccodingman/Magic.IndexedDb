@@ -13,10 +13,10 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Helpers
 {
+
     public struct SearchPropEntry
     {
-        public SearchPropEntry(Dictionary<string, MagicPropertyEntry> _propertyEntries,
-            ConstructorInfo? constructor, ParameterInfo[]? constructorParams)
+        public SearchPropEntry(Type type, Dictionary<string, MagicPropertyEntry> _propertyEntries, ConstructorInfo[] constructors)
         {
             propertyEntries = _propertyEntries;
             jsNameToCsName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -27,37 +27,62 @@ namespace Magic.IndexedDb.Helpers
                 jsNameToCsName[entry.Value.JsPropertyName] = entry.Value.CsharpPropertyName;
             }
 
-            // Store constructor parameters and their indexes
-            if (constructor != null && constructorParams != null)
-            {
-                for (int i = 0; i < constructorParams.Length; i++)
-                {
-                    ConstructorParameterMappings[constructorParams[i].Name!] = i;
-                }
+            // 🔥 Pick the best constructor: Prefer a parameterized one, else fallback to parameterless
+            var constructor = constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
+            Constructor = constructor; // ✅ Assign to instance variable
+            HasConstructorParameters = constructor != null && constructor.GetParameters().Length > 0;
 
-                // Compile a fast instance creator delegate if there is a parameterized constructor
-                InstanceCreator = (args) => constructor.Invoke(args);
+            // 🔥 Cache constructor parameter mappings
+            if (HasConstructorParameters)
+            {
+                var parameters = constructor.GetParameters();
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    ConstructorParameterMappings[parameters[i].Name!] = i;
+                }
+            }
+
+            // 🔥 Store constructor in a local variable before using in lambda (Fix for struct issue)
+            var localConstructor = constructor;
+
+            // 🔥 Cache fast instance creator
+            if (localConstructor != null)
+            {
+                InstanceCreator = (args) => localConstructor.Invoke(args);
             }
             else
             {
-                // If there's no constructor, use parameterless instance creation
-                InstanceCreator = (_) => Activator.CreateInstance(_propertyEntries.First().Value.Property.DeclaringType!);
+                // 🚀 Use default constructor if no valid parameterized constructor is found
+                InstanceCreator = (_) => IsInstantiable(type) ? Activator.CreateInstance(type) : throw new InvalidOperationException($"Cannot instantiate abstract/interface type {type.FullName}");
             }
         }
 
+        public ConstructorInfo? Constructor { get; } // ✅ Stores the most relevant constructor
+        public bool HasConstructorParameters { get; } // ✅ Cached flag to avoid checking length
+        public Func<object?[], object?> InstanceCreator { get; } // ✅ Cached instance creator
+
         public Dictionary<string, MagicPropertyEntry> propertyEntries { get; }
         public Dictionary<string, string> jsNameToCsName { get; }
-
         public Dictionary<string, int> ConstructorParameterMappings { get; } // ✅ Stores constructor parameter indexes
-        public Func<object?[], object?> InstanceCreator { get; } // ✅ Cached constructor invocation
+
+        /// <summary>
+        /// Determines whether a type can be instantiated.
+        /// </summary>
+        private static bool IsInstantiable(Type type)
+        {
+            return !(type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition);
+        }
     }
+
+
+
 
 
 
 
     public static class PropertyMappingCache
     {
-        internal static readonly ConcurrentDictionary<string, SearchPropEntry> _propertyCache = new();
+        internal static readonly ConcurrentDictionary<Type, SearchPropEntry> _propertyCache = new();
 
 
         public static MagicPropertyEntry GetPrimaryKeyOfType(Type type)
@@ -75,42 +100,38 @@ namespace Magic.IndexedDb.Helpers
         public static SearchPropEntry GetTypeOfTProperties(Type type)
         {
             EnsureTypeIsCached(type);
-            if (_propertyCache.TryGetValue(type.FullName!, out var properties))
+            if (_propertyCache.TryGetValue(type!, out var properties))
             {
                 return properties;
             }
             throw new Exception("Something went very wrong getting GetTypeOfTProperties");
         }
 
-        private static readonly ConcurrentDictionary<Type, bool> _simpleTypeCache = new();
+        private static readonly HashSet<Type> _simpleTypes = new()
+        {
+            typeof(string), typeof(decimal), typeof(DateTime), typeof(DateTimeOffset),
+            typeof(Guid), typeof(Uri), typeof(TimeSpan)
+        };
 
         public static bool IsSimpleType(Type type)
         {
-            return _simpleTypeCache.GetOrAdd(type, t =>
-                t.IsPrimitive ||
-                t.IsEnum ||
-                t == typeof(string) ||
-                t == typeof(decimal) ||
-                t == typeof(DateTime) ||
-                t == typeof(DateTimeOffset) ||
-                t == typeof(Guid) ||
-                t == typeof(Uri) ||
-                t == typeof(TimeSpan));
+            return type.IsPrimitive || type.IsEnum || _simpleTypes.Contains(type);
         }
 
-/*
-        public static bool IsSimpleType(Type type)
-        {
-            return type.IsPrimitive ||
-                   type.IsEnum ||
-                   type == typeof(string) ||
-                   type == typeof(decimal) ||
-                   type == typeof(DateTime) ||
-                   type == typeof(DateTimeOffset) ||
-                   type == typeof(Guid) ||
-                   type == typeof(Uri) ||
-                   type == typeof(TimeSpan);
-        }*/
+
+        /*
+                public static bool IsSimpleType(Type type)
+                {
+                    return type.IsPrimitive ||
+                           type.IsEnum ||
+                           type == typeof(string) ||
+                           type == typeof(decimal) ||
+                           type == typeof(DateTime) ||
+                           type == typeof(DateTimeOffset) ||
+                           type == typeof(Guid) ||
+                           type == typeof(Uri) ||
+                           type == typeof(TimeSpan);
+                }*/
 
 
         public static IEnumerable<Type> GetAllNestedComplexTypes(IEnumerable<PropertyInfo> properties)
@@ -147,16 +168,16 @@ namespace Magic.IndexedDb.Helpers
             return complexTypes;
         }
 
-        /*public static bool IsComplexType(Type type)
+        public static bool IsComplexType(Type type)
         {
             return !(IsSimpleType(type)
                   || type == typeof(string)
                   || typeof(IEnumerable).IsAssignableFrom(type) // Non-generic IEnumerable
                   || (type.IsGenericType && typeof(IEnumerable<>).IsAssignableFrom(type.GetGenericTypeDefinition())) // Generic IEnumerable<T>
                   || type.IsArray); // Arrays are collections too
-        }*/
+        }
 
-        private static readonly ConcurrentDictionary<Type, bool> _complexTypeCache = new();
+        /*private static readonly ConcurrentDictionary<Type, bool> _complexTypeCache = new();
 
         public static bool IsComplexType(Type type)
         {
@@ -180,7 +201,7 @@ namespace Magic.IndexedDb.Helpers
 
                 return true;
             });
-        }
+        }*/
 
 
         /*public static bool IsComplexType(Type type)
@@ -231,7 +252,7 @@ namespace Magic.IndexedDb.Helpers
 
             try
             {
-                if (_propertyCache.TryGetValue(typeKey, out var search))
+                if (_propertyCache.TryGetValue(type, out var search))
                 {
                     return search.GetCsharpPropertyName(jsPropertyName);
                 }
@@ -291,7 +312,7 @@ namespace Magic.IndexedDb.Helpers
 
             try
             {
-                if (_propertyCache.TryGetValue(typeKey, out var properties) &&
+                if (_propertyCache.TryGetValue(type, out var properties) &&
                     properties.propertyEntries.TryGetValue(csharpPropertyName, out var entry))
                 {
                     return entry.JsPropertyName;
@@ -323,7 +344,7 @@ namespace Magic.IndexedDb.Helpers
 
             try
             {
-                if (_propertyCache.TryGetValue(typeKey, out var properties) &&
+                if (_propertyCache.TryGetValue(type, out var properties) &&
                     properties.propertyEntries.TryGetValue(propertyName, out var entry))
                 {
                     return entry;
@@ -364,10 +385,10 @@ namespace Magic.IndexedDb.Helpers
 
         internal static void EnsureTypeIsCached(Type type)
         {
-            string typeKey = type.FullName!;
+            //string typeKey = type.FullName!;
 
             // Avoid re-registering types if the typeKey already exists
-            if (_propertyCache.ContainsKey(typeKey))
+            if (_propertyCache.ContainsKey(type))
                 return;
 
             // Ensure schema metadata is cached
@@ -405,12 +426,11 @@ namespace Magic.IndexedDb.Helpers
             }
 
             // 🔥 Extract constructor metadata
-            var constructor = type.GetConstructors().FirstOrDefault();
-            var constructorParams = constructor?.GetParameters();
+            var constructors = type.GetConstructors();
 
             // Cache the properties for this type
-            _propertyCache[typeKey] = new SearchPropEntry(propertyEntries, 
-                constructor, constructorParams ?? Array.Empty<ParameterInfo>());
+            _propertyCache[type] = new SearchPropEntry(type, propertyEntries,
+                constructors);
 
             var complexTypes = GetAllNestedComplexTypes(newMagicPropertyEntry.Select(x => x.Property));
             if (complexTypes != null && complexTypes.Any())

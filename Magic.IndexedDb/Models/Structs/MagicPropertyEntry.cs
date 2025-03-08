@@ -1,6 +1,7 @@
 ﻿using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Interfaces;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.Metrics;
 using System.Linq;
@@ -26,7 +27,7 @@ namespace Magic.IndexedDb.Models
             PrimaryKey = primaryKey;
             NotMapped = notMapped;
 
-            IsComplexType = PropertyMappingCache.IsComplexType(property.PropertyType);
+            IsComplexType = IsComplexTypeFunc(property.PropertyType);
 
             // 🔥 Identify if this property is a constructor parameter
             var declaringType = property.DeclaringType!;
@@ -53,6 +54,15 @@ namespace Magic.IndexedDb.Models
             {
                 Setter = (_, __) => { }; // No setter available
             }
+        }
+
+        private bool IsComplexTypeFunc(Type type)
+        {
+            return !(PropertyMappingCache.IsSimpleType(type)
+                  || type == typeof(string)
+                  || typeof(IEnumerable).IsAssignableFrom(type) // Non-generic IEnumerable
+                  || (type.IsGenericType && typeof(IEnumerable<>).IsAssignableFrom(type.GetGenericTypeDefinition())) // Generic IEnumerable<T>
+                  || type.IsArray); // Arrays are collections too
         }
 
         public object? DefaultValue { get; }
