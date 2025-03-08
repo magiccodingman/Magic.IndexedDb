@@ -57,46 +57,38 @@ namespace Magic.IndexedDb.Models
             throw new JsonException($"Unexpected JSON token: {reader.TokenType} when deserializing {typeToConvert.Name}.");
         }
 
-        private object CreateObjectFromDictionary(Type type, Dictionary<string, object?> propertyValues)
+        private object CreateObjectFromDictionary(Type type, Dictionary<string, object?> propertyValues, SearchPropEntry search)
         {
-            var constructor = type.GetConstructors().FirstOrDefault();
-
-            // 🔥 If there's a constructor AND it has parameters, we use it (for records like QuotaUsage)
-            if (constructor != null && constructor.GetParameters().Length > 0)
+            // 🚀 If there's a constructor with parameters, use it
+            if (search.ConstructorParameterMappings.Count > 0)
             {
-                var parameters = constructor.GetParameters()
-                    .Select(p =>
-                    {
-                        if (propertyValues.TryGetValue(p.Name!, out var value))
-                            return value;
+                var constructorArgs = new object?[search.ConstructorParameterMappings.Count];
 
-                        var matchedKey = propertyValues.Keys
-                            .FirstOrDefault(k => string.Equals(k, p.Name, StringComparison.OrdinalIgnoreCase));
+                foreach (var (paramName, index) in search.ConstructorParameterMappings)
+                {
+                    if (propertyValues.TryGetValue(paramName, out var value))
+                        constructorArgs[index] = value;
+                    else
+                        constructorArgs[index] = GetDefaultValue(type.GetProperty(paramName)?.PropertyType ?? typeof(object));
+                }
 
-                        return matchedKey != null ? propertyValues[matchedKey] : GetDefaultValue(p.ParameterType);
-                    })
-                    .ToArray();
-
-                return constructor.Invoke(parameters);
+                return search.InstanceCreator(constructorArgs) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
             }
 
-            // 🔥 Handle non-constructor classes (e.g., Person class)
-            var instance = Activator.CreateInstance(type);
-            if (instance == null)
-                throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
+            // 🚀 Use parameterless constructor
+            var obj = search.InstanceCreator(Array.Empty<object?>()) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
 
+            // 🚀 Assign property values
             foreach (var (propName, value) in propertyValues)
             {
-                var property = type.GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
-                if (property != null && property.CanWrite)
+                if (search.propertyEntries.TryGetValue(propName, out var propEntry))
                 {
-                    property.SetValue(instance, value);
+                    propEntry.Setter(obj, value);
                 }
             }
 
-            return instance;
+            return obj;
         }
-
 
         private bool IsSimpleJsonElement(JsonElement element)
         {
@@ -130,7 +122,7 @@ namespace Magic.IndexedDb.Models
                 if (reader.TokenType == JsonTokenType.EndObject)
                 {
                     // 🔥 Step 3: Convert the dictionary into the final object
-                    var result = CreateObjectFromDictionary(type, propertyValues);
+                    var result = CreateObjectFromDictionary(type, propertyValues, properties);
                     return result;
                 }
 
@@ -407,17 +399,9 @@ namespace Magic.IndexedDb.Models
                 if (mpe.NotMapped) 
                     continue;
 
-                object? propValue = null;
-                try
-                {
-                    propValue = mpe.Getter(value);
-                }
-                catch
-                {
-                    propValue = null;
-                }
+                object? propValue = mpe.Getter(value);
 
-                if (mpe.PrimaryKey && IsDefaultValue(propValue))
+                if (mpe.PrimaryKey && IsDefaultValue(propValue, mpe))
                 {
                     continue;
                 }
@@ -445,14 +429,13 @@ namespace Magic.IndexedDb.Models
             }
         }
 
-        private bool IsDefaultValue(object? value)
+        private bool IsDefaultValue(object? value, MagicPropertyEntry mpe)
         {
-            if (value == null) 
+            if (value == null)
                 return true;
 
-            Type type = value.GetType();
-            var isDefault = value.Equals(Activator.CreateInstance(type));
-            return isDefault;
+            return value.Equals(mpe.DefaultValue); // ✅ Use precomputed default value
         }
+
     }
 }

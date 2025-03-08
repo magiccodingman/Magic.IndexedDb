@@ -32,6 +32,9 @@ namespace Magic.IndexedDb.Models
             var declaringType = property.DeclaringType!;
             var constructor = declaringType.GetConstructors().FirstOrDefault();
 
+            // 🔥 Precompute and cache the default value
+            DefaultValue = property.PropertyType.IsValueType ? Activator.CreateInstance(property.PropertyType) : null;
+
             // 🔥 Create delegates for performance 🔥
             if (property.CanRead)
             {
@@ -51,6 +54,8 @@ namespace Magic.IndexedDb.Models
                 Setter = (_, __) => { }; // No setter available
             }
         }
+
+        public object? DefaultValue { get; }
 
         /// <summary>
         /// If any Magic attribute was placed on a property. We never 

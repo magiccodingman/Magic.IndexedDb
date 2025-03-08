@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -14,20 +15,43 @@ namespace Magic.IndexedDb.Helpers
 {
     public struct SearchPropEntry
     {
-        public SearchPropEntry(Dictionary<string, MagicPropertyEntry> _propertyEntries)
+        public SearchPropEntry(Dictionary<string, MagicPropertyEntry> _propertyEntries,
+            ConstructorInfo? constructor, ParameterInfo[]? constructorParams)
         {
             propertyEntries = _propertyEntries;
             jsNameToCsName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            ConstructorParameterMappings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var entry in propertyEntries)
             {
                 jsNameToCsName[entry.Value.JsPropertyName] = entry.Value.CsharpPropertyName;
             }
+
+            // Store constructor parameters and their indexes
+            if (constructor != null && constructorParams != null)
+            {
+                for (int i = 0; i < constructorParams.Length; i++)
+                {
+                    ConstructorParameterMappings[constructorParams[i].Name!] = i;
+                }
+
+                // Compile a fast instance creator delegate if there is a parameterized constructor
+                InstanceCreator = (args) => constructor.Invoke(args);
+            }
+            else
+            {
+                // If there's no constructor, use parameterless instance creation
+                InstanceCreator = (_) => Activator.CreateInstance(_propertyEntries.First().Value.Property.DeclaringType!);
+            }
         }
 
         public Dictionary<string, MagicPropertyEntry> propertyEntries { get; }
         public Dictionary<string, string> jsNameToCsName { get; }
+
+        public Dictionary<string, int> ConstructorParameterMappings { get; } // ✅ Stores constructor parameter indexes
+        public Func<object?[], object?> InstanceCreator { get; } // ✅ Cached constructor invocation
     }
+
 
 
 
@@ -58,6 +82,23 @@ namespace Magic.IndexedDb.Helpers
             throw new Exception("Something went very wrong getting GetTypeOfTProperties");
         }
 
+        private static readonly ConcurrentDictionary<Type, bool> _simpleTypeCache = new();
+
+        public static bool IsSimpleType(Type type)
+        {
+            return _simpleTypeCache.GetOrAdd(type, t =>
+                t.IsPrimitive ||
+                t.IsEnum ||
+                t == typeof(string) ||
+                t == typeof(decimal) ||
+                t == typeof(DateTime) ||
+                t == typeof(DateTimeOffset) ||
+                t == typeof(Guid) ||
+                t == typeof(Uri) ||
+                t == typeof(TimeSpan));
+        }
+
+/*
         public static bool IsSimpleType(Type type)
         {
             return type.IsPrimitive ||
@@ -69,7 +110,7 @@ namespace Magic.IndexedDb.Helpers
                    type == typeof(Guid) ||
                    type == typeof(Uri) ||
                    type == typeof(TimeSpan);
-        }
+        }*/
 
 
         public static IEnumerable<Type> GetAllNestedComplexTypes(IEnumerable<PropertyInfo> properties)
@@ -115,7 +156,34 @@ namespace Magic.IndexedDb.Helpers
                   || type.IsArray); // Arrays are collections too
         }*/
 
+        private static readonly ConcurrentDictionary<Type, bool> _complexTypeCache = new();
+
         public static bool IsComplexType(Type type)
+        {
+            return _complexTypeCache.GetOrAdd(type, t =>
+            {
+                if (IsSimpleType(t) || t == typeof(string))
+                    return false;
+
+                if (t.IsGenericType)
+                {
+                    Type genericTypeDef = t.GetGenericTypeDefinition();
+                    if (typeof(IEnumerable<>).IsAssignableFrom(genericTypeDef))
+                    {
+                        return IsComplexType(t.GetGenericArguments()[0]);
+                    }
+                    return t.GetGenericArguments().Any(IsComplexType);
+                }
+
+                if (typeof(IEnumerable).IsAssignableFrom(t) || t.IsArray)
+                    return false;
+
+                return true;
+            });
+        }
+
+
+        /*public static bool IsComplexType(Type type)
         {
             if (IsSimpleType(type) || type == typeof(string))
                 return false;
@@ -141,7 +209,7 @@ namespace Magic.IndexedDb.Helpers
                 return false;
 
             return true; // Consider anything else a complex object
-        }
+        }*/
 
 
 
@@ -336,8 +404,13 @@ namespace Magic.IndexedDb.Helpers
                 propertyEntries[propertyKey] = magicEntry; // Store property entry with string key
             }
 
+            // 🔥 Extract constructor metadata
+            var constructor = type.GetConstructors().FirstOrDefault();
+            var constructorParams = constructor?.GetParameters();
+
             // Cache the properties for this type
-            _propertyCache[typeKey] = new SearchPropEntry(propertyEntries);
+            _propertyCache[typeKey] = new SearchPropEntry(propertyEntries, 
+                constructor, constructorParams ?? Array.Empty<ParameterInfo>());
 
             var complexTypes = GetAllNestedComplexTypes(newMagicPropertyEntry.Select(x => x.Property));
             if (complexTypes != null && complexTypes.Any())
