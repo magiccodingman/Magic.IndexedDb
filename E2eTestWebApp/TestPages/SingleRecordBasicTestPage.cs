@@ -12,7 +12,10 @@ namespace E2eTestWebApp.TestPages;
 [Route("/SingleRecordBasicTest")]
 public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
 {
-    private record NestedItem(int Value);
+    private class NestedItem
+    {
+        public int Value { get; set; }
+    }
 
     [MagicTable("Records", null)]
     private class Record
@@ -49,7 +52,7 @@ public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
         Index = "I",
         UniqueIndex = Guid.Parse("633A97D2-0C92-4C68-883B-364F94AD6030"),
         Enum = DayOfWeek.Sunday,
-        Nested = new(1234),
+        Nested = new() { Value = 1234 },
         LargeNumber = 9007199254740991
     };
 
