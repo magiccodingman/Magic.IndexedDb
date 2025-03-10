@@ -229,7 +229,7 @@ namespace Magic.IndexedDb
             return Expression.Lambda<Func<T, bool>>(newExpression, predicate.Parameters);
         }
 
-        internal async Task<IList<T>?> WhereV2Async<T>(
+        internal async Task<IEnumerable<T>?> WhereV2Async<T>(
             string storeName, List<string> jsonQuery, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
@@ -247,7 +247,7 @@ namespace Magic.IndexedDb
                 new TypedArgument<bool?>(query?.ResultsUnique!),
             };
 
-            return await CallJsAsync<IList<T>>
+            return await CallJsAsync<IEnumerable<T>>
                 (IndexedDbFunctions.WHERE, cancellationToken,
                 args);
         }
@@ -572,5 +572,18 @@ namespace Magic.IndexedDb
 
             return await magicJsInvoke.MagicStreamJsAsync<T>(functionName, token, args) ?? default;
         }
+
+
+        // Synchronous alternatives
+        internal void CallJs(string functionName, CancellationToken token, params ITypedArgument[] args)
+        {
+            CallJsAsync(functionName, token, args).GetAwaiter().GetResult();
+        }
+
+        internal T CallJs<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
+        {
+            return CallJsAsync<T>(functionName, token, args).GetAwaiter().GetResult();
+        }
+
     }
 }

@@ -82,7 +82,7 @@
         <span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
         <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
         <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
-        ).<span style="color: #2A56C6;">OrderBy</span>(x =&gt; x._Id).<span style="color: #2A56C6;">Skip</span>(<span style="color: #2A56C6;">1</span>).<span style="color: #2A56C6;">Execute</span>();
+        ).<span style="color: #2A56C6;">OrderBy</span>(x =&gt; x._Id).<span style="color: #2A56C6;">Skip</span>(<span style="color: #2A56C6;">1</span>).<span style="color: #2A56C6;">ToListAsync</span>();
     </code>
 </pre>
 
@@ -117,7 +117,7 @@
                         new Person { Name = "Cathy", TestInt = 9, _Age = 22, GUIY = Guid.NewGuid(), DoNotMapTest = "I got away with reading Bobs diary.", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
                         new Person { Name = "Bob", TestInt = 3 , _Age = 69, GUIY = Guid.NewGuid(), DoNotMapTest = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
                         new Person { Name = "Alex", TestInt = 3 , _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" }
-        };
+    };
                     await manager.AddRangeAsync(persons);
                 }
 
@@ -131,7 +131,9 @@
                 || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
                 || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                ).OrderBy(x => x._Id).Skip(1).Execute();
+                ).OrderBy(x => x._Id).Skip(1).ToListAsync();
+
+
 
                 /*
                  * Still working on allowing nested

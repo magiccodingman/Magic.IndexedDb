@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -92,9 +93,53 @@ namespace Magic.IndexedDb.Models
             return this;
         }
 
+        [Obsolete("Please use 'ToListAsync' or 'AsAsyncEnumerable' or 'ToList' or 'AsEnumerable'")]
         public async Task<IEnumerable<T>> Execute()
         {
             return await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default) ?? Enumerable.Empty<T>();
+        }
+
+        //.GetAwaiter().GetResult()
+
+        /// <summary>
+        /// safe to use, but emulates an IAsync until future implementation
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        public async IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var results = await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, cancellationToken);
+
+            if (results != null)
+            {
+                foreach (var item in results)
+                {
+                    yield return item; // ✅ Stream results one at a time
+                }
+            }
+        }
+
+
+        public async Task<List<T>> ToListAsync()
+        {
+            return (await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default))?.ToList() ?? new List<T>();
+        }
+
+        public IEnumerable<T> AsEnumerable()
+        {
+            return Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default)
+                          .GetAwaiter()
+                          .GetResult()
+                          ?? Enumerable.Empty<T>();
+        }
+
+        public List<T> ToList()
+        {
+            return Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default)
+                          .GetAwaiter()
+                          .GetResult()
+                          ?.ToList()
+                          ?? new List<T>();
         }
 
         public async Task<int> Count()
