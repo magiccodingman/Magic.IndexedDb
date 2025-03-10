@@ -24,35 +24,7 @@ builder.Services.AddBlazorDB(options =>
 {
     options.Name = DbNames.Client;
     options.Version = 1;
-    options.EncryptionKey = EncryptionKey;
-    options.StoreSchemas = SchemaHelper.GetAllSchemas(DbNames.Client);
-    options.DbMigrations = new List<DbMigration>
-{
-        /*
-         * The DbMigration is not currently working or setup!
-         * This is an example and idea I'm thinking about, but 
-         * this will very likely be depreciated so do not use or rely
-         * on any of this syntax right now. If you want to have 
-         * your own migration knowledge. Write JavaScript on the front end 
-         * that will check the indedDb version and then apply migration code 
-         * on the front end if needed. But this is only needed for complex 
-         * migration projects.
-         */
-    new DbMigration
-    {
-        FromVersion = "1.1",
-        ToVersion = "2.2",
-        Instructions = new List<DbMigrationInstruction>
-        {
-            new DbMigrationInstruction
-            {
-                Action = "renameStore",
-                StoreName = "oldStore",
-                Details = "newStore"
-            }
-        }
-    }
-};
+    options.StoreSchemas = SchemaHelper.GetAllSchemas(DbNames.Client);    
 });
 
 await builder.Build().RunAsync();

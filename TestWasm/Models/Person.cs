@@ -27,8 +27,6 @@ namespace TestWasm.Models
 
         [MagicUniqueIndex("guid")]
         public Guid GUIY { get; set; } = Guid.NewGuid();
-
-        [MagicEncrypt]
         public string Secret { get; set; }
 
         [MagicNotMapped]
