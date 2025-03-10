@@ -92,6 +92,21 @@
 }
 
 @code {
+
+    private static readonly Random _random = new Random();
+
+    public static int GetRandomYear()
+    {
+        return _random.Next(1980, 2024); // Upper bound is exclusive
+    }
+
+    public static DateTime GetDateWithSameMonthDay(int year)
+    {
+        DateTime today = DateTime.Today;
+        return new DateTime(year, today.Month, today.Day);
+    }
+
+
     private List<Person> allPeople { get; set; } = new List<Person>();
     private IEnumerable<Person> WhereExample { get; set; } = Enumerable.Empty<Person>();
     private double storageQuota { get; set; }
@@ -109,15 +124,17 @@
                 if (!(await manager.GetAllAsync<Person>()).Any())
                 {
                     Person[] persons = new Person[] {
-                        new Person { Name = "Zack", TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
-                        new Person { Name = "Luna", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
-                        new Person { Name = "Jerry", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
-                        new Person { Name = "Jon", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I black mail Luna for money because I know her secret", Access = Person.Permissions.CanRead},
-                        new Person { Name = "Jack", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I have a drug problem", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
-                        new Person { Name = "Cathy", TestInt = 9, _Age = 22, GUIY = Guid.NewGuid(), DoNotMapTest = "I got away with reading Bobs diary.", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
-                        new Person { Name = "Bob", TestInt = 3 , _Age = 69, GUIY = Guid.NewGuid(), DoNotMapTest = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
-                        new Person { Name = "Alex", TestInt = 3 , _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" }
-    };
+                        new Person { Name = "Zack", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
+                        new Person { Name = "Luna", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
+                        new Person { Name = "Jerry", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
+                        new Person { Name = "Jon", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I black mail Luna for money because I know her secret", Access = Person.Permissions.CanRead},
+                        new Person { Name = "Jack", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I have a drug problem", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
+                        new Person { Name = "Cathy", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 22, GUIY = Guid.NewGuid(), DoNotMapTest = "I got away with reading Bobs diary.", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
+                        new Person { Name = "Bob", TestInt = 3 , DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 69, GUIY = Guid.NewGuid(), DoNotMapTest = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
+                        new Person { Name = "Alex", TestInt = 3 , DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" },
+                        new Person { Name = "Zapoo", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
+
+            };
                     await manager.AddRangeAsync(persons);
                 }
 
@@ -134,12 +151,16 @@
                 // || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
                 // ).OrderBy(x => x._Id).Skip(1).AsAsyncEnumerable()).ToListAsync();
 
-                WhereExample = (await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                ).OrderBy(x => x._Id).Skip(1).ToListAsync());
+                // WhereExample = (await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                // || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
+                // || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
+                // || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
+                // //|| (x.DateOfBirth != null && x.DateOfBirth.GetValueOrDefault().Year < 1980)
+                // || x.DateOfBirth == null
+                // ).OrderBy(x => x._Id).Skip(1).ToListAsync());
 
+                WhereExample = (await manager.Where<Person>(x => x.DateOfBirth == null
+                ).OrderBy(x => x._Id).Skip(1).Take(6).ToListAsync());
 
                 /*
                  * Still working on allowing nested

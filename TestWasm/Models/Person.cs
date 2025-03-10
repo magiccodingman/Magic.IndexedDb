@@ -24,6 +24,8 @@ namespace TestWasm.Models
 
         [MagicIndex]
         public int TestInt { get; set; }
+                
+        public DateTime? DateOfBirth { get; set; }
 
         [MagicUniqueIndex("guid")]
         public Guid GUIY { get; set; } = Guid.NewGuid();

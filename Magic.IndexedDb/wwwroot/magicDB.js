@@ -166,12 +166,11 @@ export function getStorageEstimate() {
 }
 
 export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
-
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
 
     let db = await getDb(dbName);
-    let table = db.table(storeName); // Corrected: Use Dexie’s table() method
+    let table = db.table(storeName);
 
     let results = [];
 
@@ -192,22 +191,28 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
                     if (!(record[condition.property] <= parsedValue)) return false;
                     break;
                 case 'Equal':
+                    if (record[condition.property] === null && condition.value === null) {
+                        return true;
+                    }
                     if (condition.isString) {
                         if (condition.caseSensitive) {
                             if (record[condition.property] !== condition.value) return false;
                         } else {
-                            if (record[condition.property].toLowerCase() !== condition.value.toLowerCase()) return false;
+                            if (record[condition.property]?.toLowerCase() !== condition.value?.toLowerCase()) return false;
                         }
                     } else {
                         if (record[condition.property] !== parsedValue) return false;
                     }
                     break;
                 case 'NotEqual':
+                    if (record[condition.property] === null && condition.value === null) {
+                        return false;
+                    }
                     if (condition.isString) {
                         if (condition.caseSensitive) {
                             if (record[condition.property] === condition.value) return false;
                         } else {
-                            if (record[condition.property].toLowerCase() === condition.value.toLowerCase()) return false;
+                            if (record[condition.property]?.toLowerCase() === condition.value?.toLowerCase()) return false;
                         }
                     } else {
                         if (record[condition.property] === parsedValue) return false;
@@ -231,23 +236,19 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
 
     async function processWithCursor(conditions) {
         return new Promise((resolve, reject) => {
-            // Dynamically detect the primary key
             let primaryKey = table.schema.primKey.name;
-
+            let cursorResults = [];
             let request = table.orderBy(primaryKey).each((record) => {
                 if (applyConditionsToRecord(record, conditions)) {
-                    results.push(record);
+                    cursorResults.push(record);
                 }
             });
-
-            request.then(resolve).catch(reject);
+            request.then(() => resolve(cursorResults)).catch(reject);
         });
     }
 
-
     async function processIndexedQuery(conditions) {
-        let localResults = [];  // Store local query results
-
+        let localResults = [];
         for (const condition of conditions) {
             if (table.schema.idxByName[condition.property]) {
                 let indexQuery = null;
@@ -271,91 +272,61 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
                         indexQuery = table.where(condition.property).anyOf(condition.value);
                         break;
                 }
-
                 if (indexQuery) {
                     let indexedResults = await indexQuery.toArray();
                     localResults.push(...indexedResults.filter(record => applyConditionsToRecord(record, conditions)));
                 }
             }
         }
-
         if (localResults.length === 0) {
-            await processWithCursor(conditions);  // Fallback to cursor-based filtering
-        } else {
-            results.push(...localResults);  // Append instead of overwriting
+            localResults = await processWithCursor(conditions);
         }
+        results.push(...localResults);
     }
 
-
     function applyArrayQueryAdditions(results, queryAdditions) {
-        if (queryAdditions != null) {
-            for (let i = 0; i < queryAdditions.length; i++) {
-                const queryAddition = queryAdditions[i];
-
-                switch (queryAddition.Name) {
-                    case 'skip':
-                        results = results.slice(queryAddition.IntValue);
-                        break;
-                    case 'take':
-                        results = results.slice(0, queryAddition.IntValue);
-                        break;
-                    case 'takeLast':
-                        results = results.slice(-queryAddition.IntValue).reverse();
-                        break;
-                    case 'orderBy':
-                        results = results.sort((a, b) => a[queryAddition.StringValue] - b[queryAddition.StringValue]);
-                        break;
-                    case 'orderByDescending':
-                        results = results.sort((a, b) => b[queryAddition.StringValue] - a[queryAddition.StringValue]);
-                        break;
-                    default:
-                        console.error('Unsupported query addition for array:', queryAddition.Name);
-                        break;
-                }
+        if (queryAdditions) {
+            if (queryAdditions.some(q => q.Name === 'orderBy')) {
+                const orderBy = queryAdditions.find(q => q.Name === 'orderBy');
+                results.sort((a, b) => a[orderBy.StringValue] - b[orderBy.StringValue]);
+            }
+            if (queryAdditions.some(q => q.Name === 'orderByDescending')) {
+                const orderByDescending = queryAdditions.find(q => q.Name === 'orderByDescending');
+                results.sort((a, b) => b[orderByDescending.StringValue] - a[orderByDescending.StringValue]);
+            }
+            if (queryAdditions.some(q => q.Name === 'skip')) {
+                results = results.slice(queryAdditions.find(q => q.Name === 'skip').IntValue);
+            }
+            if (queryAdditions.some(q => q.Name === 'take')) {
+                results = results.slice(0, queryAdditions.find(q => q.Name === 'take').IntValue);
+            }
+            if (queryAdditions.some(q => q.Name === 'takeLast')) {
+                const takeLastValue = queryAdditions.find(q => q.Name === 'takeLast').IntValue;
+                results = results.slice(-takeLastValue).reverse();
             }
         }
         return results;
     }
 
     async function combineQueries() {
-        const allQueries = [];
-
         for (const conditions of orConditionsArray) {
-
-            const query = await processIndexedQuery(conditions[0]);  // Ensure it executes fully
-
-
-            if (query) {
-                allQueries.push(query);
-            }
+            await processIndexedQuery(conditions[0]);
         }
-
-
-        if (allQueries.length > 0) {
-            // Execute all queries in parallel
-            await Promise.all(allQueries);
-
-
-            // Apply query additions to the combined results
-            results = applyArrayQueryAdditions(results, QueryAdditions);
-
-
-            if (allQueries.length > 1 && uniqueResults) {
-                // Make sure the objects in the array are unique
-                const uniqueObjects = new Set(results.map(obj => JSON.stringify(obj)));
-                results = Array.from(uniqueObjects).map(str => JSON.parse(str));
-            }
+        results = applyArrayQueryAdditions(results, QueryAdditions);
+        if (uniqueResults) {
+            const uniqueObjects = new Set(results.map(obj => JSON.stringify(obj)));
+            results = Array.from(uniqueObjects).map(str => JSON.parse(str));
         }
-
         return results;
     }
 
-
-    if (orConditionsArray.length > 0)
+    if (orConditionsArray.length > 0) {
         return await combineQueries();
-    else
+    } else {
         return [];
+    }
 }
+
 
 
 

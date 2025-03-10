@@ -131,6 +131,14 @@ namespace Magic.IndexedDb.Helpers
 
         public static bool IsSimpleType(Type type)
         {
+            if (type == null)
+                return false;
+
+            // Handle Nullable<T> types (e.g., Nullable<DateTime> -> DateTime)
+            if (Nullable.GetUnderlyingType(type) is Type underlyingType)
+                type = underlyingType;
+
+            // Check if primitive, enum, or explicitly in our list
             return type.IsPrimitive || type.IsEnum || _simpleTypes.Contains(type);
         }
 
