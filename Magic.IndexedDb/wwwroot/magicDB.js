@@ -167,7 +167,9 @@ export function getStorageEstimate() {
 export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
-    const table = await getTable(dbName, storeName);
+
+    let db = await getDb(dbName);
+    let table = db.table(storeName); // Corrected: Use Dexie’s table() method
 
     let results = [];
 
@@ -210,10 +212,10 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
                     }
                     break;
                 case 'Contains':
-                    if (!record[condition.property].toLowerCase().includes(condition.value.toLowerCase())) return false;
+                    if (!record[condition.property]?.toLowerCase().includes(condition.value.toLowerCase())) return false;
                     break;
                 case 'StartsWith':
-                    if (!record[condition.property].toLowerCase().startsWith(condition.value.toLowerCase())) return false;
+                    if (!record[condition.property]?.toLowerCase().startsWith(condition.value.toLowerCase())) return false;
                     break;
                 case 'In':
                     if (!condition.value.includes(record[condition.property])) return false;
@@ -227,20 +229,13 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
 
     async function processWithCursor(conditions) {
         return new Promise((resolve, reject) => {
-            let query = table.orderBy(":id").openCursor(); // Open cursor on the table
-
-            query.onsuccess = function (event) {
-                const cursor = event.target.result;
-                if (cursor) {
-                    if (applyConditionsToRecord(cursor.value, conditions)) {
-                        results.push(cursor.value);
-                    }
-                    cursor.continue(); // Move to the next record
-                } else {
-                    resolve(); // Done processing
+            let request = table.orderBy(':id').each((record) => {  // Corrected: Use Dexie’s `each()` for cursor-like iteration
+                if (applyConditionsToRecord(record, conditions)) {
+                    results.push(record);
                 }
-            };
-            query.onerror = reject;
+            });
+
+            request.then(resolve).catch(reject);
         });
     }
 
@@ -269,8 +264,6 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
                     case 'In':
                         indexQuery = table.where(condition.property).anyOf(condition.value);
                         break;
-                    default:
-                        continue;
                 }
                 break; // Stop at the first indexed query match
             }
@@ -284,40 +277,58 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
         }
     }
 
-    async function combineQueries() {
-        for (const conditions of orConditionsArray) {
-            await processIndexedQuery(conditions[0]); // Process each OR condition
-        }
+    function applyArrayQueryAdditions(results, queryAdditions) {
+        if (queryAdditions != null) {
+            for (let i = 0; i < queryAdditions.length; i++) {
+                const queryAddition = queryAdditions[i];
 
-        // Apply query additions (e.g., sorting, skipping, taking)
-        if (QueryAdditions) {
-            for (const addition of QueryAdditions) {
-                switch (addition.Name) {
+                switch (queryAddition.Name) {
                     case 'skip':
-                        results = results.slice(addition.IntValue);
+                        results = results.slice(queryAddition.IntValue);
                         break;
                     case 'take':
-                        results = results.slice(0, addition.IntValue);
+                        results = results.slice(0, queryAddition.IntValue);
                         break;
                     case 'takeLast':
-                        results = results.slice(-addition.IntValue).reverse();
+                        results = results.slice(-queryAddition.IntValue).reverse();
                         break;
                     case 'orderBy':
-                        results = results.sort((a, b) => a[addition.StringValue] - b[addition.StringValue]);
+                        results = results.sort((a, b) => a[queryAddition.StringValue] - b[queryAddition.StringValue]);
                         break;
                     case 'orderByDescending':
-                        results = results.sort((a, b) => b[addition.StringValue] - a[addition.StringValue]);
+                        results = results.sort((a, b) => b[queryAddition.StringValue] - a[queryAddition.StringValue]);
                         break;
                     default:
-                        console.error('Unsupported query addition:', addition.Name);
+                        console.error('Unsupported query addition for array:', queryAddition.Name);
                         break;
                 }
             }
         }
+        return results;
+    }
 
-        if (uniqueResults) {
-            const uniqueSet = new Set(results.map(obj => JSON.stringify(obj)));
-            results = Array.from(uniqueSet).map(str => JSON.parse(str));
+    async function combineQueries() {
+        const allQueries = [];
+
+        for (const conditions of orConditionsArray) {
+            const query = processIndexedQuery(conditions[0]);
+            if (query) {
+                allQueries.push(query);
+            }
+        }
+
+        if (allQueries.length > 0) {
+            // Execute all queries in parallel
+            await Promise.all(allQueries);
+
+            // Apply query additions to the combined results
+            results = applyArrayQueryAdditions(results, QueryAdditions);
+
+            if (allQueries.length > 1 && uniqueResults) {
+                // Make sure the objects in the array are unique
+                const uniqueObjects = new Set(results.map(obj => JSON.stringify(obj)));
+                results = Array.from(uniqueObjects).map(str => JSON.parse(str));
+            }
         }
 
         return results;
@@ -328,6 +339,10 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
     else
         return [];
 }
+
+
+
+
 
 async function getDb(dbName) {
     if (databases.find(d => d.name == dbName) === undefined) {
