@@ -54,8 +54,11 @@ namespace Magic.IndexedDb.Helpers
             await writer.FlushAsync();
         }
 
-        public static string SerializeObject<T>(T value, MagicJsonSerializationSettings? settings = null)
+        public static string SerializeObject<T>(T? value, MagicJsonSerializationSettings? settings = null)
         {
+            if (value == null)
+                return "null";
+
             if (settings == null)
                 settings = new MagicJsonSerializationSettings();
 

@@ -310,8 +310,7 @@ namespace Magic.IndexedDb
             {
                 if (expression is BinaryExpression binaryExpression)
                 {
-                    if (binaryExpression.NodeType == ExpressionType.AndAlso 
-                        || binaryExpression.NodeType == ExpressionType.NotEqual)
+                    if (binaryExpression.NodeType == ExpressionType.AndAlso)
                     {
                         TraverseExpression(binaryExpression.Left, inOrBranch);
                         TraverseExpression(binaryExpression.Right, inOrBranch);
@@ -382,20 +381,6 @@ namespace Magic.IndexedDb
                     else
                     {
                         throw new InvalidOperationException($"Unsupported binary expression. Expression: {expression}");
-                    }
-                }
-                else if (expression is UnaryExpression unaryExpression && unaryExpression.NodeType == ExpressionType.Not)
-                {
-                    if (unaryExpression.Operand is MethodCallExpression innerMethodCall)
-                    {
-                        if (innerMethodCall.Method.DeclaringType == typeof(string) && innerMethodCall.Method.Name == "Equals")
-                        {
-                            var left = innerMethodCall.Object as MemberExpression;
-                            var right = ToConstantExpression(innerMethodCall.Arguments[0]);
-
-                            AddConditionInternal(left, right, "NotEquals", inOrBranch, false);
-                            return;
-                        }
                     }
                 }
                 else if (expression is MethodCallExpression methodCallExpression)

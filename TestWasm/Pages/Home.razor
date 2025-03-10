@@ -131,7 +131,7 @@
                         new Person { Name = "Jack", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I have a drug problem", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
                         new Person { Name = "Cathy", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 22, GUIY = Guid.NewGuid(), DoNotMapTest = "I got away with reading Bobs diary.", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
                         new Person { Name = "Bob", TestInt = 3 , DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 69, GUIY = Guid.NewGuid(), DoNotMapTest = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
-                        new Person { Name = "Alex", TestInt = 3 , DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" },
+                        new Person { Name = "Alex", TestInt = 3 , DateOfBirth = null, _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" },
                         new Person { Name = "Zapoo", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
 
             };
@@ -151,16 +151,24 @@
                 // || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
                 // ).OrderBy(x => x._Id).Skip(1).AsAsyncEnumerable()).ToListAsync();
 
-                // WhereExample = (await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
-                // || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
-                // || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                // || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                // //|| (x.DateOfBirth != null && x.DateOfBirth.GetValueOrDefault().Year < 1980)
-                // || x.DateOfBirth == null
-                // ).OrderBy(x => x._Id).Skip(1).ToListAsync());
+                WhereExample = (await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
+                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
+                //|| (x.DateOfBirth != null && x.DateOfBirth.GetValueOrDefault().Year < 1980)
+                //|| x.DateOfBirth == null
+                ).OrderBy(x => x._Id).Skip(1).ToListAsync());
 
-                WhereExample = (await manager.Where<Person>(x => x.DateOfBirth == null
-                ).OrderBy(x => x._Id).Skip(1).Take(6).ToListAsync());
+                //   WhereExample = (await manager.Where<Person>(x => x.DateOfBirth != null
+                //   ).ToListAsync());
+
+                // WhereExample = (await manager.Where<Person>(x => x.DateOfBirth != null
+                // ).ToListAsync());
+
+
+               //    WhereExample = (await manager.Where<Person>(x => x.TestInt > 0
+               // ).OrderBy(x => x._Id).Skip(1).Take(1).ToListAsync());
+
 
                 /*
                  * Still working on allowing nested
