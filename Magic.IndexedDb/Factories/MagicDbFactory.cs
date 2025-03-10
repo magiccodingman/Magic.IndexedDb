@@ -40,9 +40,18 @@ namespace Magic.IndexedDb.Factories
                 var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 await module.InvokeVoidAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token);
             }
-            finally
+            catch
+            {
+                // do nothing
+            }
+
+            try
             {
                 await module.DisposeAsync();
+            }
+            catch
+            {
+                // do nothing
             }
         }
 

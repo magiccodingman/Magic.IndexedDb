@@ -1,12 +1,7 @@
 using Magic.IndexedDb;
 using Magic.IndexedDb.Helpers;
-using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components;
-using System.Runtime.CompilerServices;
-using System.Text.Json.Serialization;
-using Magic.IndexedDb.SchemaAnnotations;
 using System.Text.Json;
-using System.Reflection.PortableExecutable;
 
 namespace E2eTestWebApp.TestPages;
 
@@ -46,7 +41,7 @@ public class WhereTestPage(IMagicDbFactory magic) : TestPageBase
             Int32Field = 3
         });
         var result = await database
-            .Where<Record>(x => x.Int32Field < 2)
+            .Where<Record>(x => x.Int32Field < 3)
             .ToListAsync();
         return JsonSerializer.Serialize(result.Select(x => x.Id));
     }
