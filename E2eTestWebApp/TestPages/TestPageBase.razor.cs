@@ -35,12 +35,7 @@ partial class TestPageBase
         }
         catch (Exception ex)
         {
-            this.output = JsonSerializer.Serialize(new Dictionary<string, string>()
-            {
-                ["Exception"] = ex.GetType().ToString(),
-                ["Message"] = ex.Message,
-                ["StackTrace"] = ex.StackTrace ?? "",
-            });
+            this.output = ex.ToString();
         }
     }
 
