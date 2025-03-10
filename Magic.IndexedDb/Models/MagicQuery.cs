@@ -129,20 +129,22 @@ namespace Magic.IndexedDb.Models
             return (await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default))?.ToList() ?? new List<T>();
         }
 
-      /*  public IEnumerable<T> AsEnumerable()
+        /*public IEnumerable<T> AsEnumerable()
         {
             return Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default)
-                          .ToBlockingEnumerable(); // ✅ Safe synchronous conversion
+                          .GetAwaiter()
+                          .GetResult()
+                          ?? Enumerable.Empty<T>();
         }
 
         public List<T> ToList()
         {
             return Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default)
-                          .ToBlockingEnumerable()
-                          .ToList();
+                          .GetAwaiter()
+                          .GetResult()
+                          ?.ToList()
+                          ?? new List<T>();
         }*/
-
-
 
         public async Task<int> Count()
         {
