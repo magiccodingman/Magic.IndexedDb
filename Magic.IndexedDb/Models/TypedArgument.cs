@@ -27,6 +27,11 @@ namespace Magic.IndexedDb.Models
         {
             return MagicSerializationHelper.SerializeObjectToJsonElement(Value, settings);
         }
+
+        public string SerializeToJsonString(MagicJsonSerializationSettings? settings = null)
+        {
+            return MagicSerializationHelper.SerializeObject(Value, settings);
+        }
     }
 
 }

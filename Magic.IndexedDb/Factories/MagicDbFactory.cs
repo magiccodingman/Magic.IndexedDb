@@ -15,7 +15,7 @@ namespace Magic.IndexedDb.Factories
             _serviceProvider = serviceProvider;
             this._jsRuntime = new(() => jSRuntime.InvokeAsync<IJSObjectReference>(
                 "import",
-                "./_content/Magic.IndexedDb/magicDB.js").AsTask());
+                "./_content/Magic.IndexedDb/magicDbMethods.js").AsTask());
         }
         public async ValueTask DisposeAsync()
         {

@@ -397,6 +397,8 @@ namespace Magic.IndexedDb.Helpers
             // Initialize the dictionary for this type
             var propertyEntries = new Dictionary<string, MagicPropertyEntry>(StringComparer.OrdinalIgnoreCase);
 
+            bool hasMagicTableAttribute = type.IsDefined(typeof(MagicTableAttribute), inherit: true);
+
             List<MagicPropertyEntry> newMagicPropertyEntry = new List<MagicPropertyEntry>();
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy))
             {
@@ -419,7 +421,8 @@ namespace Magic.IndexedDb.Helpers
                     property.IsDefined(typeof(MagicIndexAttribute), inherit: true),
                     property.IsDefined(typeof(MagicUniqueIndexAttribute), inherit: true),
                     property.IsDefined(typeof(MagicPrimaryKeyAttribute), inherit: true),
-                    property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true)
+                    property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true),
+                    hasMagicTableAttribute || property.IsDefined(typeof(MagicNameAttribute), inherit: true)
                 );
                 newMagicPropertyEntry.Add(magicEntry);
                 propertyEntries[propertyKey] = magicEntry; // Store property entry with string key

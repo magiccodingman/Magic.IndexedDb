@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using Magic.IndexedDb.Interfaces;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using Microsoft.Extensions.Options;
+using Magic.IndexedDb.Extensions;
 
 namespace Magic.IndexedDb
 {
@@ -559,26 +560,17 @@ namespace Magic.IndexedDb
 
         internal async Task CallJsAsync(string functionName, CancellationToken token, params ITypedArgument[] args)
         {
-            var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
-            object[] serializedArgs = MagicSerializationHelper.SerializeObjects(args, settings);
-            await this._jsModule.InvokeVoidAsync(functionName, token, serializedArgs);
+            var magicJsInvoke = new MagicJsInvoke(_jsModule);
+
+            await magicJsInvoke.MagicVoidStreamJsAsync(functionName, token, args);
         }
 
         internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
         {
 
-            var ss = typeof(T);
+            var magicJsInvoke = new MagicJsInvoke(_jsModule);
 
-            var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
-            object[] serializedArgs = MagicSerializationHelper.SerializeObjects(args, settings);
-            // Invoke JavaScript function and retrieve result as a JsonElement to avoid type mismatches
-            var resultJsonElement = await _jsModule.InvokeAsync<JsonElement>(functionName, token, serializedArgs);
-
-            // Convert JsonElement to a JSON string for custom deserialization
-            string resultJson = resultJsonElement.GetRawText();
-
-            var result = MagicSerializationHelper.DeserializeObject<T>(resultJson, settings);
-            return result;
+            return await magicJsInvoke.MagicStreamJsAsync<T>(functionName, token, args) ?? default;
         }
     }
 }

@@ -18,7 +18,8 @@ namespace Magic.IndexedDb.Models
         /// Constructor for initializing MagicPropertyEntry while reducing memory footprint.
         /// </summary>
         public MagicPropertyEntry(PropertyInfo property, IColumnNamed? columnNamedAttribute,
-                                  bool indexed, bool uniqueIndex, bool primaryKey, bool notMapped)
+                                  bool indexed, bool uniqueIndex, bool primaryKey, bool notMapped, 
+                                  bool overrideNeverCamel = false)
         {
             Property = property;
             _columnNamedAttribute = columnNamedAttribute;
@@ -26,6 +27,7 @@ namespace Magic.IndexedDb.Models
             UniqueIndex = uniqueIndex;
             PrimaryKey = primaryKey;
             NotMapped = notMapped;
+            OverrideNeverCamel = overrideNeverCamel;
 
             IsComplexType = PropertyMappingCache.IsComplexType(property.PropertyType);
 
@@ -58,6 +60,8 @@ namespace Magic.IndexedDb.Models
 
         public object? DefaultValue { get; }
 
+        public bool OverrideNeverCamel { get; }
+
         /// <summary>
         /// If any Magic attribute was placed on a property. We never 
         /// camel case if that's the current json setting. These must stay 
@@ -67,7 +71,7 @@ namespace Magic.IndexedDb.Models
         {
             get
             {
-                if (PrimaryKey || UniqueIndex || Indexed)
+                if (PrimaryKey || UniqueIndex || Indexed || OverrideNeverCamel)
                     return true;
                 else
                     return false;

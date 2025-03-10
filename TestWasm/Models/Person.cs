@@ -19,7 +19,7 @@ namespace TestWasm.Models
         [MagicIndex]
         public string Name { get; set; }
 
-        [MagicIndex("Age")]
+        [MagicName("Age")]
         public int _Age { get; set; }
 
         [MagicIndex]

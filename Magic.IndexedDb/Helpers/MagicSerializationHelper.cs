@@ -1,6 +1,7 @@
 ﻿using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Models;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 
 namespace Magic.IndexedDb.Helpers
@@ -17,6 +18,11 @@ namespace Magic.IndexedDb.Helpers
             return objs.Select(arg => arg.SerializeToJsonElement(settings)).Cast<object>().ToArray();
         }
 
+        public static string[] SerializeObjectsToString(ITypedArgument[] objs, MagicJsonSerializationSettings? settings = null)
+        {
+            return objs.Select(arg => arg.SerializeToJsonString(settings)).ToArray();
+        }
+
         public static JsonElement SerializeObjectToJsonElement<T>(T value, MagicJsonSerializationSettings? settings = null)
         {
             if (settings == null)
@@ -31,6 +37,21 @@ namespace Magic.IndexedDb.Helpers
             // Convert the string to a JsonElement so that Blazor treats it as a structured object
             using JsonDocument doc = JsonDocument.Parse(jsonString);
             return doc.RootElement.Clone(); // Clone to prevent disposal issues
+        }
+
+        public static async Task SerializeObjectToStreamAsync<T>(StreamWriter writer, T value, MagicJsonSerializationSettings? settings = null)
+        {
+            if (settings == null)
+                settings = new MagicJsonSerializationSettings();
+
+            if (value == null)
+                throw new ArgumentNullException(nameof(value), "Object cannot be null");
+
+            var options = settings.GetOptionsWithResolver<T>();
+            string jsonString = JsonSerializer.Serialize(value, options); // Use your serializer
+
+            await writer.WriteAsync(jsonString);
+            await writer.FlushAsync();
         }
 
         public static string SerializeObject<T>(T value, MagicJsonSerializationSettings? settings = null)

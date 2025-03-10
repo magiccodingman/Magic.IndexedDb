@@ -12,5 +12,6 @@ namespace Magic.IndexedDb.Interfaces
     {
         string Serialize(); // Still needed for some cases
         JsonElement SerializeToJsonElement(MagicJsonSerializationSettings? settings = null); // Ensures proper object passing
+        string SerializeToJsonString(MagicJsonSerializationSettings? settings = null);
     }
 }
