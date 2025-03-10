@@ -572,18 +572,5 @@ namespace Magic.IndexedDb
 
             return await magicJsInvoke.MagicStreamJsAsync<T>(functionName, token, args) ?? default;
         }
-
-
-        // Synchronous alternatives
-        internal void CallJs(string functionName, CancellationToken token, params ITypedArgument[] args)
-        {
-            CallJsAsync(functionName, token, args).GetAwaiter().GetResult();
-        }
-
-        internal T CallJs<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
-        {
-            return CallJsAsync<T>(functionName, token, args).GetAwaiter().GetResult();
-        }
-
     }
 }

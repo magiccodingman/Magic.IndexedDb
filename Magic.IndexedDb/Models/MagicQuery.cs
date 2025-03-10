@@ -99,7 +99,10 @@ namespace Magic.IndexedDb.Models
             return await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default) ?? Enumerable.Empty<T>();
         }
 
-        //.GetAwaiter().GetResult()
+        /* public async Task<IEnumerable<T>> AsAsyncEnumerable()
+        {
+            return await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default) ?? Enumerable.Empty<T>();
+        }*/
 
         /// <summary>
         /// safe to use, but emulates an IAsync until future implementation
@@ -120,27 +123,26 @@ namespace Magic.IndexedDb.Models
         }
 
 
+
         public async Task<List<T>> ToListAsync()
         {
             return (await Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default))?.ToList() ?? new List<T>();
         }
 
-        public IEnumerable<T> AsEnumerable()
+      /*  public IEnumerable<T> AsEnumerable()
         {
             return Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default)
-                          .GetAwaiter()
-                          .GetResult()
-                          ?? Enumerable.Empty<T>();
+                          .ToBlockingEnumerable(); // ✅ Safe synchronous conversion
         }
 
         public List<T> ToList()
         {
             return Manager.WhereV2Async<T>(SchemaName, JsonQueries, this, default)
-                          .GetAwaiter()
-                          .GetResult()
-                          ?.ToList()
-                          ?? new List<T>();
-        }
+                          .ToBlockingEnumerable()
+                          .ToList();
+        }*/
+
+
 
         public async Task<int> Count()
         {
