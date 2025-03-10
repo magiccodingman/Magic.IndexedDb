@@ -72,8 +72,8 @@ namespace Magic.IndexedDb.Helpers
             if (string.IsNullOrWhiteSpace(json))
                 throw new ArgumentException("JSON cannot be null or empty.", nameof(json));
 
-            if (settings == null)
-                settings = new MagicJsonSerializationSettings();
+            // if (settings == null)
+            //    settings = new MagicJsonSerializationSettings();
 
             var options = settings.GetOptionsWithResolver<T>(); // Ensure correct resolver for deserialization
 
