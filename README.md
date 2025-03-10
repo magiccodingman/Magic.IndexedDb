@@ -132,9 +132,13 @@ This documentation explains the various query capabilities available in the `Whe
 | `OrderBy(Expression<Func<T, object>> predicate)` | Orders the query result by the specified predicate in ascending order. |
 | `OrderByDescending(Expression<Func<T, object>> predicate)` | Orders the query result by the specified predicate in descending order. |
 | `Count()` | Get the number of items in the collection. |
-| `Execute()` | Executes the MagicQuery and returns the results as an `IEnumerable<T>`. |
+| `ToListAsync()` | Executes the MagicQuery and returns the results as `List<T>`. |
+| `{NOT YET SUPPORTED} AsEnumerable()` | (**FUTURE FEATURE**) Executes the MagicQuery and returns the results as `IEnumerable<T>`. |
+| `{NOT YET SUPPORTED} ToList()` | (**FUTURE FEATURE**) Executes the MagicQuery and returns the results as `List<T>`. |
+| `AsEnumerableAsync()` | Executes the MagicQuery and returns the results as `IEnumerable<T>`. |
 
-These MagicQuery methods allow you to build complex queries similar to standard LINQ in C#. Remember to call the `Execute` method at the end of your MagicQuery to execute the query and retrieve the results.
+
+These MagicQuery methods allow you to build complex queries similar to standard LINQ in C#. Remember to call the `ToListAsync` or the `AsEnumerableAsync` method at the end of your MagicQuery to execute the query and retrieve the full results.
 
 ## Standard Operations
 
@@ -250,7 +254,7 @@ protected override async Task OnAfterRenderAsync(bool firstRender)
                     WhereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                     || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
                     || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                    ).OrderBy(x => x._Id).Skip(1).Execute();
+                    ).OrderBy(x => x._Id).Skip(1).ToListAsync();
 
                     StateHasChanged();
         }
@@ -298,13 +302,13 @@ foreach (Person person in allPeople)
 
 ## Querying Records
 
-To query records based on specific conditions, use the `Where` method on the `DbManager` instance. You can chain additional LINQ methods, such as `OrderBy`, `Skip`, and `Execute`, to further refine your query. This example retrieves `Person` records that match certain criteria:
+To query records based on specific conditions, use the `Where` method on the `DbManager` instance. You can chain additional LINQ methods, such as `OrderBy`, `Skip`, and `ToListAsync`, to further refine your query. This example retrieves `Person` records that match certain criteria:
 
 ```csharp
 var whereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
     || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
     || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-).OrderBy(x => x._Id).Skip(1).Execute();
+).OrderBy(x => x._Id).Skip(1).ToListAsync();
 ```
 
 In this example, the query returns `Person` records where the `Name` property starts with "c", "l", or "j" (case-insensitive), and the `_Age` property is greater than 35. The results are ordered by the `_Id` property and the first record is skipped.
