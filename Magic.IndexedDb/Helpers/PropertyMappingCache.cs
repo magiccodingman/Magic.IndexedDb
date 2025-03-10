@@ -27,6 +27,19 @@ namespace Magic.IndexedDb.Helpers
                 jsNameToCsName[entry.Value.JsPropertyName] = entry.Value.CsharpPropertyName;
             }
 
+            // Extract MagicTableAttribute info
+            var magicTableAttr = type.GetCustomAttribute<MagicTableAttribute>();
+            if (magicTableAttr != null && !string.IsNullOrWhiteSpace(magicTableAttr.SchemaName))
+            {
+                EffectiveTableName = magicTableAttr.SchemaName; // Use the schema name
+                EnforcePascalCase = true; // Prevent camel casing
+            }
+            else
+            {
+                EffectiveTableName = type.Name; // Default to class name
+                EnforcePascalCase = false;
+            }
+
             // 🔥 Pick the best constructor: Prefer a parameterized one, else fallback to parameterless
             var constructor = constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
             Constructor = constructor; // ✅ Assign to instance variable
@@ -56,6 +69,9 @@ namespace Magic.IndexedDb.Helpers
                 InstanceCreator = (_) => IsInstantiable(type) ? Activator.CreateInstance(type) : throw new InvalidOperationException($"Cannot instantiate abstract/interface type {type.FullName}");
             }
         }
+
+        public string EffectiveTableName { get; } // ✅ Stores the final name (SchemaName or C# class name)
+        public bool EnforcePascalCase { get; } // ✅ If true, prevents camel casing
 
         public ConstructorInfo? Constructor { get; } // ✅ Stores the most relevant constructor
         public bool HasConstructorParameters { get; } // ✅ Cached flag to avoid checking length
@@ -422,8 +438,11 @@ namespace Magic.IndexedDb.Helpers
                     property.IsDefined(typeof(MagicUniqueIndexAttribute), inherit: true),
                     property.IsDefined(typeof(MagicPrimaryKeyAttribute), inherit: true),
                     property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true),
-                    hasMagicTableAttribute || property.IsDefined(typeof(MagicNameAttribute), inherit: true)
+                    hasMagicTableAttribute
+                    || property.IsDefined(typeof(MagicNameAttribute), inherit: true)
+                    || property.IsDefined(typeof(MagicTableAttribute), inherit: true)
                 );
+
                 newMagicPropertyEntry.Add(magicEntry);
                 propertyEntries[propertyKey] = magicEntry; // Store property entry with string key
             }
