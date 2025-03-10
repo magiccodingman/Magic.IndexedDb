@@ -134,11 +134,11 @@
                 // || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
                 // ).OrderBy(x => x._Id).Skip(1).AsAsyncEnumerable()).ToListAsync();
 
-                WhereExample = (manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                WhereExample = (await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
                 || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                ).OrderBy(x => x._Id).Skip(1).ToList());
+                ).OrderBy(x => x._Id).Skip(1).ToListAsync());
 
 
                 /*
