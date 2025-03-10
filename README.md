@@ -33,65 +33,20 @@ This open source library provides an IndexedDb wrapper for C# and Blazor WebAsse
 - [Examples](#examples)
 - [Acknowledgements](#acknowledgements)
 
-# Critical Notes:
-The Encryption attribute and functionality has been stripped from this project. It was not sufficient and a completely new system is being designed to bring to life the idea. But the documentation needs to be updated to strip out the encryption attributes and functionality as it no longer works in the current documented form. Documentation and code will reflect this in the very near future. But for now, please ignore that attribute. An obsolete tag has been placed on the attribute for now and the new serialization logic being implemented has zero encryption functionality. Thus even if it says you can do it, it won't work.
-
 ## Installation
 
 1. Add the library to your project.
 2. Add the following code to your `Program.cs` file:
 
 ```csharp
-/*
- * This is an example encryption key. You must make your own 128 bit or 256 bit 
- * key! Do not use this example encryption key that I've provided here as that's
- * incredibly unsafe!
- */
-string EncryptionKey = "zQfTuWnZi8u7x!A%C*F-JaBdRlUkXp2l";
 
 builder.Services.AddBlazorDB(options =>
 {
     options.Name = DbNames.Client;
     options.Version = "1";
-    options.EncryptionKey = EncryptionKey;
-    options.StoreSchemas = SchemaHelper.GetAllSchemas("DatabaseName"); // builds entire database schema for you based on attributes
-    options.DbMigrations = new List<DbMigration>
-{
-        /*
-         * The DbMigration is not currently working or setup!
-         * This is an example and idea I'm thinking about, but 
-         * this will very likely be depreciated so do not use or rely
-         * on any of this syntax right now. If you want to have 
-         * your own migration knowledge. Write JavaScript on the front end 
-         * that will check the indedDb version and then apply migration code 
-         * on the front end if needed. But this is only needed for complex 
-         * migration projects.
-         */
-    new DbMigration
-    {
-        FromVersion = "1.1",
-        ToVersion = "2.2",
-        Instructions = new List<DbMigrationInstruction>
-        {
-            new DbMigrationInstruction
-            {
-                Action = "renameStore",
-                StoreName = "oldStore",
-                Details = "newStore"
-            }
-        }
-    }
-};
+    options.StoreSchemas = SchemaHelper.GetAllSchemas("DatabaseName"); // builds entire database schema for you based on attributes    
 });
 ```
-
-~~3. Add the following scripts to the end of the body tag in your `Index.html`:~~
-~~\<script src="_content/Magic.IndexedDb/dexie.min.js">\</script>~~
-~~\<script src="_content/Magic.IndexedDb/magicDB.js">\</script>~~
-
-3. Adding a script is now only required for versions 1.0.3 and lower. Everything above no longer requires the script tags on the index page.
-
-4. Add the following to your _Import.razor:
 
 ```csharp
 @using Magic.IndexedDb
@@ -112,14 +67,12 @@ public class Person
     [MagicIndex]
     public string Name { get; set; }
 
-    [MagicIndex("Age")]
+    [MagicName("Age")]
     public int _Age { get; set; }
 
-    [MagicEncrypt]
+    [MagicNotMapped]
     public string Secret { get; set; }
 
-    [MagicNotMapped]
-    public string SecretDecrypted { get; set; }
 }
 ```
 I highly suggest you always add the string parameters as that sets the IndexedDb column name. By default it'll use the C# class property name. But You should always have some very unique and static set string for the attribute. That way if/when you change the c# property names, class names, or anything, the schema will not care because the code has smart logic to differentiate the C# class property names and the IndexedDb column names that was set in your attribute. This way you can freely change any C# class properties without ever caring about needing to create migration code. You can additionally add or remove columns freely without issue.
@@ -130,7 +83,6 @@ I highly suggest you always add the string parameters as that sets the IndexedDb
 - `MagicPrimaryKey(string)`: Marks the property as the primary key. The parameter is the column name in IndexedDb.
 - `MagicIndex(string)`: Creates a searchable index for the property. The parameter is the column name in IndexedDb.
 - `MagicUniqueIndex(string)`: Creates a unique index for the property. The parameter is the column name in IndexedDb.
-- `MagicEncrypt`: Encrypts the string property when it's stored in IndexedDb.
 - `MagicNotMapped`: Excludes the property from being mapped to IndexedDb.
 - `MagicName`: Renames the column in IndexDB
 - 
@@ -163,7 +115,6 @@ Here's a grid-style documentation for the methods:
 | `UpdateRange<T>(IEnumerable<T> items, Action<BlazorDbEvent> action)` | Bulk update records of type `T` with an action callback. |
 | `GetAll<T>()` | Get all records of type `T` from a table. |
 | `DeleteRange<TResult>(IEnumerable<TResult> items)` | Bulk delete records of type `TResult`. |
-| `Decrypt(string EncryptedValue)` | Decrypt an encrypted string. |
 | `GetById<TResult>(object key)` | Get a record of type `TResult` by its primary key. |
 | `Where<T>(Expression<Func<T, bool>> predicate)` | Query method to allow complex query capabilities for records of type `T`. |
 
@@ -294,13 +245,7 @@ protected override async Task OnAfterRenderAsync(bool firstRender)
                         await manager.AddRange(persons);
                     }
 
-                    var allPeopleDecrypted = await manager.GetAll<Person>();
-
-                    foreach (Person person in allPeopleDecrypted)
-                    {
-                        person.SecretDecrypted = await manager.Decrypt(person.Secret);
-                        allPeople.Add(person);
-                    }
+                    allPeople = await manager.GetAll<Person>().ToList();
 
                     WhereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                     || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
@@ -365,9 +310,6 @@ var whereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", Strin
 In this example, the query returns `Person` records where the `Name` property starts with "c", "l", or "j" (case-insensitive), and the `_Age` property is greater than 35. The results are ordered by the `_Id` property and the first record is skipped.
 
 These examples demonstrate the basics of using MagicIndexedDb in a Blazor WebAssembly application. You can also perform other operations, such as updating and deleting records, by using the appropriate methods provided by the `DbManager`.
-
-## Encryptions
-Please keep in mind the current implementation of encryptions is not incredibly secure without your own flavor added. It's more to make data not easily available, but it's not HIPAA compliant nor that secure if anyone who know what they were doing tried to breach the encryption. Be sure to understand the security of front end based encryptions. I am considering a future feature for a truly secure encryption system.
 
 
 ## Acknowledgements
