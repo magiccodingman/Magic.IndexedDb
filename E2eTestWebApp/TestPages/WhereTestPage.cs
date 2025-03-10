@@ -19,7 +19,7 @@ public class WhereTestPage(IMagicDbFactory magic) : TestPageBase
         [MagicPrimaryKey("Id")]
         public int Id { get; set; }
 
-        public string? StringField { get; set; }
+        public int Int32Field { get; set; }
     }
 
     public async Task<string> Where1()
@@ -30,23 +30,23 @@ public class WhereTestPage(IMagicDbFactory magic) : TestPageBase
             Version = 1,
             StoreSchemas = [SchemaHelper.GetStoreSchema(typeof(Record))]
         });
-        await database.AddAsync(new Record()
+        await database.AddAsync<Record, int>(new Record()
         {
             Id = 1,
-            StringField = "This is a string."
+            Int32Field = 1
         });
-        await database.AddAsync(new Record()
+        await database.AddAsync<Record, int>(new Record()
         {
             Id = 2,
-            StringField = "Is this a string?"
+            Int32Field = 2
         });
-        await database.AddAsync(new Record()
+        await database.AddAsync<Record, int>(new Record()
         {
             Id = 3,
-            StringField = "Is this a string?"
+            Int32Field = 3
         });
         var result = await database
-            .Where<Record>(x => x.StringField == "Is this a string?")
+            .Where<Record>(x => x.Int32Field < 2)
             .ToListAsync();
         return JsonSerializer.Serialize(result.Select(x => x.Id));
     }
