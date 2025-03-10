@@ -15,6 +15,7 @@ import Dexie from "./dexie/dexie.js";
 let databases = [];
 
 export function createDb(dbStore) {
+    console.log("Debug: Received dbStore in createDb", dbStore);
     if (databases.find(d => d.name == dbStore.name) !== undefined)
         console.warn("Blazor.IndexedDB.Framework - Database already exists");
 
@@ -165,6 +166,7 @@ export function getStorageEstimate() {
 }
 
 export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
+
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
 
@@ -229,7 +231,10 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
 
     async function processWithCursor(conditions) {
         return new Promise((resolve, reject) => {
-            let request = table.orderBy(':id').each((record) => {  // Corrected: Use Dexie’s `each()` for cursor-like iteration
+            // Dynamically detect the primary key
+            let primaryKey = table.schema.primKey.name;
+
+            let request = table.orderBy(primaryKey).each((record) => {
                 if (applyConditionsToRecord(record, conditions)) {
                     results.push(record);
                 }
@@ -239,12 +244,13 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
         });
     }
 
-    async function processIndexedQuery(conditions) {
-        let indexQuery = null;
 
-        // Use indexed filtering if possible
+    async function processIndexedQuery(conditions) {
+        let localResults = [];  // Store local query results
+
         for (const condition of conditions) {
             if (table.schema.idxByName[condition.property]) {
+                let indexQuery = null;
                 switch (condition.operation) {
                     case 'GreaterThan':
                         indexQuery = table.where(condition.property).above(condition.value);
@@ -265,17 +271,21 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
                         indexQuery = table.where(condition.property).anyOf(condition.value);
                         break;
                 }
-                break; // Stop at the first indexed query match
+
+                if (indexQuery) {
+                    let indexedResults = await indexQuery.toArray();
+                    localResults.push(...indexedResults.filter(record => applyConditionsToRecord(record, conditions)));
+                }
             }
         }
 
-        if (indexQuery) {
-            const indexedResults = await indexQuery.toArray();
-            results.push(...indexedResults.filter(record => applyConditionsToRecord(record, conditions)));
+        if (localResults.length === 0) {
+            await processWithCursor(conditions);  // Fallback to cursor-based filtering
         } else {
-            await processWithCursor(conditions); // Fallback to cursor-based filtering
+            results.push(...localResults);  // Append instead of overwriting
         }
     }
+
 
     function applyArrayQueryAdditions(results, queryAdditions) {
         if (queryAdditions != null) {
@@ -311,18 +321,24 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
         const allQueries = [];
 
         for (const conditions of orConditionsArray) {
-            const query = processIndexedQuery(conditions[0]);
+
+            const query = await processIndexedQuery(conditions[0]);  // Ensure it executes fully
+
+
             if (query) {
                 allQueries.push(query);
             }
         }
 
+
         if (allQueries.length > 0) {
             // Execute all queries in parallel
             await Promise.all(allQueries);
 
+
             // Apply query additions to the combined results
             results = applyArrayQueryAdditions(results, QueryAdditions);
+
 
             if (allQueries.length > 1 && uniqueResults) {
                 // Make sure the objects in the array are unique
@@ -333,6 +349,7 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
 
         return results;
     }
+
 
     if (orConditionsArray.length > 0)
         return await combineQueries();

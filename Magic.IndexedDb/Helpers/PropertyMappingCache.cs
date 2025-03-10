@@ -419,7 +419,8 @@ namespace Magic.IndexedDb.Helpers
                     property.IsDefined(typeof(MagicIndexAttribute), inherit: true),
                     property.IsDefined(typeof(MagicUniqueIndexAttribute), inherit: true),
                     property.IsDefined(typeof(MagicPrimaryKeyAttribute), inherit: true),
-                    property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true)
+                    property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true),
+                    property.IsDefined(typeof(MagicNameAttribute), inherit: true)
                 );
                 newMagicPropertyEntry.Add(magicEntry);
                 propertyEntries[propertyKey] = magicEntry; // Store property entry with string key

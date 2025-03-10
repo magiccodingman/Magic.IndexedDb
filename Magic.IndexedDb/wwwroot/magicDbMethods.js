@@ -29,8 +29,6 @@ export async function streamedJsHandler(streamRef) {
 
         let { methodName, isVoid, parameters = [], isDebug } = parsedData;
         consoleLog(`Parsed Data: ${JSON.stringify(parsedData)}`, isDebug);
-
-        // Deserialize parameters
         let safeParameters = parameters.map(param => JSON.parse(param));
         consoleLog(`Fixed Parameters (Deserialized): ${JSON.stringify(safeParameters)}`, isDebug);
         parameters = null; // Free memory
