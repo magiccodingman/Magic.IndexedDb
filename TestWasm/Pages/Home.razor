@@ -51,8 +51,7 @@
             <th>ID</th>
             <th>Name</th>
             <th>Age</th>
-            <th>DecryptedSecret</th>
-            <th>Encrypted Secret</th>
+            <th>Not Mapped</th>
             <th>Access</th>
         </tr>
     </thead>
@@ -65,14 +64,10 @@
                 <td>@person._Age</td>
                 <td>
                     <div style="max-width: 400px; overflow-x: auto;">
-                        @person.SecretDecrypted
+                        @person.DoNotMapTest
                     </div>
                 </td>
-                <td>
-                    <div style="max-width: 200px; overflow-x: auto;">
-                        @person.Secret
-                    </div>
-                </td>
+
                 <td>@person.Access</td>
             </tr>
         }
@@ -83,12 +78,12 @@
 <br />
 <h3>Complex query capabilities!</h3>
 <pre>
-<code>
-<span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
-<span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
-<span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
-                    ).<span style="color: #2A56C6;">OrderBy</span>(x =&gt; x._Id).<span style="color: #2A56C6;">Skip</span>(<span style="color: #2A56C6;">1</span>).<span style="color: #2A56C6;">Execute</span>();
-</code>
+    <code>
+        <span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
+        <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
+        <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
+        ).<span style="color: #2A56C6;">OrderBy</span>(x =&gt; x._Id).<span style="color: #2A56C6;">Skip</span>(<span style="color: #2A56C6;">1</span>).<span style="color: #2A56C6;">Execute</span>();
+    </code>
 </pre>
 
 @foreach (Person person in WhereExample)
@@ -114,15 +109,15 @@
                 if (!(await manager.GetAllAsync<Person>()).Any())
                 {
                     Person[] persons = new Person[] {
-                        new Person { Name = "Zack", TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), Secret = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
-                        new Person { Name = "Luna", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), Secret = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
-                        new Person { Name = "Jerry", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), Secret = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
-                        new Person { Name = "Jon", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), Secret = "I black mail Luna for money because I know her secret", Access = Person.Permissions.CanRead},
-                        new Person { Name = "Jack", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), Secret = "I have a drug problem", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
-                        new Person { Name = "Cathy", TestInt = 9, _Age = 22, GUIY = Guid.NewGuid(), Secret = "I got away with reading Bobs diary.", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
-                        new Person { Name = "Bob", TestInt = 3 , _Age = 69, GUIY = Guid.NewGuid(), Secret = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
-                        new Person { Name = "Alex", TestInt = 3 , _Age = 80, GUIY = Guid.NewGuid(), Secret = "I'm naked! But nobody can know!" }
-                };
+                        new Person { Name = "Zack", TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
+                        new Person { Name = "Luna", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
+                        new Person { Name = "Jerry", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
+                        new Person { Name = "Jon", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I black mail Luna for money because I know her secret", Access = Person.Permissions.CanRead},
+                        new Person { Name = "Jack", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I have a drug problem", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
+                        new Person { Name = "Cathy", TestInt = 9, _Age = 22, GUIY = Guid.NewGuid(), DoNotMapTest = "I got away with reading Bobs diary.", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
+                        new Person { Name = "Bob", TestInt = 3 , _Age = 69, GUIY = Guid.NewGuid(), DoNotMapTest = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
+                        new Person { Name = "Alex", TestInt = 3 , _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" }
+        };
                     await manager.AddRangeAsync(persons);
                 }
 
@@ -130,12 +125,7 @@
                 storageQuota = storageInfo.QuotaInMegabytes;
                 storageUsage = storageInfo.UsageInMegabytes;
 
-                var allPeopleDecrypted = await manager.GetAllAsync<Person>();
-                foreach (Person person in allPeopleDecrypted)
-                {
-                    person.SecretDecrypted = await manager.DecryptAsync(person.Secret);
-                    allPeople.Add(person);
-                }
+                allPeople = (await manager.GetAllAsync<Person>()).ToList();
 
                 WhereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)

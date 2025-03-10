@@ -14,16 +14,14 @@ import Dexie from "./dexie/dexie.js";
  */
 let databases = [];
 
-export function createDb(dbStore)
-{
+export function createDb(dbStore) {
     if (databases.find(d => d.name == dbStore.name) !== undefined)
         console.warn("Blazor.IndexedDB.Framework - Database already exists");
 
     const db = new Dexie(dbStore.name);
 
     const stores = {};
-    for (let i = 0; i < dbStore.storeSchemas.length; i++)
-    {
+    for (let i = 0; i < dbStore.storeSchemas.length; i++) {
         // build string
         const schema = dbStore.storeSchemas[i];
         let def = "";
@@ -31,19 +29,15 @@ export function createDb(dbStore)
             def = def + "++";
         if (schema.primaryKey !== null && schema.primaryKey !== "")
             def = def + schema.primaryKey;
-        if (schema.uniqueIndexes !== undefined)
-        {
-            for (var j = 0; j < schema.uniqueIndexes.length; j++)
-            {
+        if (schema.uniqueIndexes !== undefined) {
+            for (var j = 0; j < schema.uniqueIndexes.length; j++) {
                 def = def + ",";
                 var u = "&" + schema.uniqueIndexes[j];
                 def = def + u;
             }
         }
-        if (schema.indexes !== undefined)
-        {
-            for (var j = 0; j < schema.indexes.length; j++)
-            {
+        if (schema.indexes !== undefined) {
+            for (var j = 0; j < schema.indexes.length; j++) {
                 def = def + ",";
                 var u = schema.indexes[j];
                 def = def + u;
@@ -52,12 +46,10 @@ export function createDb(dbStore)
         stores[schema.name] = def;
     }
     db.version(dbStore.version).stores(stores);
-    if (databases.find(d => d.name == dbStore.name) !== undefined)
-    {
+    if (databases.find(d => d.name == dbStore.name) !== undefined) {
         databases.find(d => d.name == dbStore.name).db = db;
     }
-    else
-    {
+    else {
         databases.push({
             name: dbStore.name,
             db: db
@@ -66,67 +58,56 @@ export function createDb(dbStore)
     db.open();
 }
 
-export function closeAll()
-{
+export function closeAll() {
     const dbs = databases;
     databases = [];
     for (db of dbs)
         db.db.close();
 }
 
-export async function deleteDb(dbName)
-{
+export async function deleteDb(dbName) {
     const db = await getDb(dbName);
     const index = databases.findIndex(d => d.name == dbName);
     databases.splice(index, 1);
     db.delete();
 }
 
-export async function addItem(item)
-{
+export async function addItem(item) {
     const table = await getTable(item.dbName, item.storeName);
     return await table.add(item.record);
 }
 
-export async function bulkAddItem(dbName, storeName, items)
-{
+export async function bulkAddItem(dbName, storeName, items) {
     const table = await getTable(dbName, storeName);
     return await table.bulkAdd(items);
 }
 
-export async function countTable(dbName, storeName)
-{
+export async function countTable(dbName, storeName) {
     const table = await getTable(dbName, storeName);
     return await table.count();
 }
 
-export async function putItem(item)
-{
+export async function putItem(item) {
     const table = await getTable(item.dbName, item.storeName);
     return await table.put(item.record);
 }
 
-export async function updateItem(item)
-{
+export async function updateItem(item) {
     const table = await getTable(item.dbName, item.storeName);
     return await table.update(item.key, item.record);
 }
 
-export async function bulkUpdateItem(items)
-{
+export async function bulkUpdateItem(items) {
     const table = await getTable(items[0].dbName, items[0].storeName);
     let updatedCount = 0;
     let errors = false;
 
-    for (const item of items)
-    {
-        try
-        {
+    for (const item of items) {
+        try {
             await table.update(item.key, item.record);
             updatedCount++;
         }
-        catch (e)
-        {
+        catch (e) {
             console.error(e);
             errors = true;
         }
@@ -138,21 +119,17 @@ export async function bulkUpdateItem(items)
         return updatedCount;
 }
 
-export async function bulkDelete(dbName, storeName, keys)
-{
+export async function bulkDelete(dbName, storeName, keys) {
     const table = await getTable(dbName, storeName);
     let deletedCount = 0;
     let errors = false;
 
-    for (const key of keys)
-    {
-        try
-        {
+    for (const key of keys) {
+        try {
             await table.delete(key);
             deletedCount++;
         }
-        catch (e)
-        {
+        catch (e) {
             console.error(e);
             errors = true;
         }
@@ -164,309 +141,186 @@ export async function bulkDelete(dbName, storeName, keys)
         return deletedCount;
 }
 
-export async function deleteItem(item)
-{
+export async function deleteItem(item) {
     const table = await getTable(item.dbName, item.storeName);
     await table.delete(item.key)
 }
 
-export async function clear(dbName, storeName)
-{
+export async function clear(dbName, storeName) {
     const table = await getTable(dbName, storeName);
     await table.clear();
 }
 
-export async function findItem(dbName, storeName, keyValue)
-{
+export async function findItem(dbName, storeName, keyValue) {
     const table = await getTable(dbName, storeName);
     return await table.get(keyValue);
 }
 
-export async function toArray(dbName, storeName)
-{
+export async function toArray(dbName, storeName) {
     const table = await getTable(dbName, storeName);
     return await table.toArray();
 }
-export function getStorageEstimate()
-{
+export function getStorageEstimate() {
     return navigator.storage.estimate();
 }
 
-export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true)
-{
+export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
-
     const table = await getTable(dbName, storeName);
 
-    let combinedQuery;
+    let results = [];
 
-    function applyConditions(conditions)
-    {
-        let dexieQuery;
-        for (let i = 0; i < conditions.length; i++)
-        {
-            const condition = conditions[i];
+    function applyConditionsToRecord(record, conditions) {
+        for (const condition of conditions) {
             const parsedValue = condition.isString ? condition.value : parseInt(condition.value);
-
-            switch (condition.operation)
-            {
+            switch (condition.operation) {
                 case 'GreaterThan':
-                    if (!dexieQuery)
-                    {
-                        dexieQuery = table.where(condition.property).above(parsedValue);
-                    } else
-                    {
-                        dexieQuery = dexieQuery.and(item => item[condition.property] > parsedValue);
-                    }
+                    if (!(record[condition.property] > parsedValue)) return false;
                     break;
                 case 'GreaterThanOrEqual':
-                    if (!dexieQuery)
-                    {
-                        dexieQuery = table.where(condition.property).aboveOrEqual(parsedValue);
-                    } else
-                    {
-                        dexieQuery = dexieQuery.and(item => item[condition.property] >= parsedValue);
-                    }
+                    if (!(record[condition.property] >= parsedValue)) return false;
                     break;
                 case 'LessThan':
-                    if (!dexieQuery)
-                    {
-                        dexieQuery = table.where(condition.property).below(parsedValue);
-                    } else
-                    {
-                        dexieQuery = dexieQuery.and(item => item[condition.property] < parsedValue);
-                    }
+                    if (!(record[condition.property] < parsedValue)) return false;
                     break;
                 case 'LessThanOrEqual':
-                    if (!dexieQuery)
-                    {
-                        dexieQuery = table.where(condition.property).belowOrEqual(parsedValue);
-                    } else
-                    {
-                        dexieQuery = dexieQuery.and(item => item[condition.property] <= parsedValue);
-                    }
+                    if (!(record[condition.property] <= parsedValue)) return false;
                     break;
                 case 'Equal':
-                    if (!dexieQuery)
-                    {
-                        if (condition.isString)
-                        {
-                            if (condition.caseSensitive)
-                            {
-                                dexieQuery = table.where(condition.property).equals(condition.value);
-                            } else
-                            {
-                                dexieQuery = table.where(condition.property).equalsIgnoreCase(condition.value);
-                            }
-                        } else
-                        {
-                            dexieQuery = table.where(condition.property).equals(parsedValue);
+                    if (condition.isString) {
+                        if (condition.caseSensitive) {
+                            if (record[condition.property] !== condition.value) return false;
+                        } else {
+                            if (record[condition.property].toLowerCase() !== condition.value.toLowerCase()) return false;
                         }
-                    } else
-                    {
-                        if (condition.isString)
-                        {
-                            if (condition.caseSensitive)
-                            {
-                                dexieQuery = dexieQuery.and(item => item[condition.property] === condition.value);
-                            } else
-                            {
-                                dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() === condition.value.toLowerCase());
-                            }
-                        } else
-                        {
-                            dexieQuery = dexieQuery.and(item => item[condition.property] === parsedValue);
-                        }
+                    } else {
+                        if (record[condition.property] !== parsedValue) return false;
                     }
                     break;
                 case 'NotEqual':
-                    if (!dexieQuery)
-                    {
-                        if (condition.isString)
-                        {
-                            if (condition.caseSensitive)
-                            {
-                                dexieQuery = table.where(condition.property).notEqual(condition.value);
-                            } else
-                            {
-                                dexieQuery = table.where(condition.property).notEqualIgnoreCase(condition.value);
-                            }
-                        } else
-                        {
-                            dexieQuery = table.where(condition.property).notEqual(parsedValue);
+                    if (condition.isString) {
+                        if (condition.caseSensitive) {
+                            if (record[condition.property] === condition.value) return false;
+                        } else {
+                            if (record[condition.property].toLowerCase() === condition.value.toLowerCase()) return false;
                         }
-                    } else
-                    {
-                        if (condition.isString)
-                        {
-                            if (condition.caseSensitive)
-                            {
-                                dexieQuery = dexieQuery.and(item => item[condition.property] !== condition.value);
-                            } else
-                            {
-                                dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() !== condition.value.toLowerCase());
-                            }
-                        } else
-                        {
-                            dexieQuery = dexieQuery.and(item => item[condition.property] !== parsedValue);
-                        }
+                    } else {
+                        if (record[condition.property] === parsedValue) return false;
                     }
                     break;
                 case 'Contains':
-                    if (!dexieQuery)
-                    {
-                        if (condition.caseSensitive)
-                        {
-                            dexieQuery = table.filter(item => item[condition.property].includes(condition.value));
-                        } else
-                        {
-                            dexieQuery = table.filter(item => item[condition.property].toLowerCase().includes(condition.value.toLowerCase()));
-                        }
-                    } else
-                    {
-                        if (condition.caseSensitive)
-                        {
-                            dexieQuery = dexieQuery.and(item => item[condition.property].includes(condition.value));
-                        } else
-                        {
-                            dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase().includes(condition.value.toLowerCase()));
-                        }
-                    }
+                    if (!record[condition.property].toLowerCase().includes(condition.value.toLowerCase())) return false;
                     break;
                 case 'StartsWith':
-                    if (!dexieQuery)
-                    {
-                        if (condition.caseSensitive)
-                        {
-                            dexieQuery = table.where(condition.property).startsWith(condition.value);
-                        } else
-                        {
-                            dexieQuery = table.where(condition.property).startsWithIgnoreCase(condition.value);
-                        }
-                    } else
-                    {
-                        if (condition.caseSensitive)
-                        {
-                            dexieQuery = dexieQuery.and(item => item[condition.property].startsWith(condition.value));
-                        } else
-                        {
-                            dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase().startsWith(condition.value.toLowerCase()));
-                        }
-                    }
-                    break;
-                case 'StringEquals':
-                    if (!dexieQuery)
-                    {
-                        if (condition.caseSensitive)
-                        {
-                            dexieQuery = table.where(condition.property).equals(condition.value);
-                        } else
-                        {
-                            dexieQuery = table.where(condition.property).equalsIgnoreCase(condition.value);
-                        }
-                    } else
-                    {
-                        if (condition.caseSensitive)
-                        {
-                            dexieQuery = dexieQuery.and(item => item[condition.property] === condition.value);
-                        } else
-                        {
-                            dexieQuery = dexieQuery.and(item => item[condition.property].toLowerCase() === condition.value.toLowerCase());
-                        }
-                    }
+                    if (!record[condition.property].toLowerCase().startsWith(condition.value.toLowerCase())) return false;
                     break;
                 case 'In':
-                    if (!dexieQuery)
-                    {
-                        dexieQuery = table.where(condition.property).anyOf(condition.value);
-                    }
-                    else
-                    {
-                        dexieQuery = dexieQuery.and(item => condition.value.includes(item[condition.property]));
-                    }
+                    if (!condition.value.includes(record[condition.property])) return false;
                     break;
                 default:
                     throw new Error('Unsupported operation: ' + condition.operation);
             }
         }
-
-        return dexieQuery;
+        return true;
     }
 
-    function applyArrayQueryAdditions(results, queryAdditions)
-    {
-        if (queryAdditions != null)
-        {
-            for (let i = 0; i < queryAdditions.length; i++)
-            {
-                const queryAddition = queryAdditions[i];
+    async function processWithCursor(conditions) {
+        return new Promise((resolve, reject) => {
+            let query = table.orderBy(":id").openCursor(); // Open cursor on the table
 
-                switch (queryAddition.Name)
-                {
-                    case 'skip':
-                        results = results.slice(queryAddition.IntValue);
+            query.onsuccess = function (event) {
+                const cursor = event.target.result;
+                if (cursor) {
+                    if (applyConditionsToRecord(cursor.value, conditions)) {
+                        results.push(cursor.value);
+                    }
+                    cursor.continue(); // Move to the next record
+                } else {
+                    resolve(); // Done processing
+                }
+            };
+            query.onerror = reject;
+        });
+    }
+
+    async function processIndexedQuery(conditions) {
+        let indexQuery = null;
+
+        // Use indexed filtering if possible
+        for (const condition of conditions) {
+            if (table.schema.idxByName[condition.property]) {
+                switch (condition.operation) {
+                    case 'GreaterThan':
+                        indexQuery = table.where(condition.property).above(condition.value);
                         break;
-                    case 'take':
-                        results = results.slice(0, queryAddition.IntValue);
+                    case 'GreaterThanOrEqual':
+                        indexQuery = table.where(condition.property).aboveOrEqual(condition.value);
                         break;
-                    case 'takeLast':
-                        results = results.slice(-queryAddition.IntValue).reverse();
+                    case 'LessThan':
+                        indexQuery = table.where(condition.property).below(condition.value);
                         break;
-                    case 'orderBy':
-                        results = results.sort((a, b) => a[queryAddition.StringValue] - b[queryAddition.StringValue]);
+                    case 'LessThanOrEqual':
+                        indexQuery = table.where(condition.property).belowOrEqual(condition.value);
                         break;
-                    case 'orderByDescending':
-                        results = results.sort((a, b) => b[queryAddition.StringValue] - a[queryAddition.StringValue]);
+                    case 'Equal':
+                        indexQuery = table.where(condition.property).equals(condition.value);
+                        break;
+                    case 'In':
+                        indexQuery = table.where(condition.property).anyOf(condition.value);
                         break;
                     default:
-                        console.error('Unsupported query addition for array:', queryAddition.Name);
+                        continue;
+                }
+                break; // Stop at the first indexed query match
+            }
+        }
+
+        if (indexQuery) {
+            const indexedResults = await indexQuery.toArray();
+            results.push(...indexedResults.filter(record => applyConditionsToRecord(record, conditions)));
+        } else {
+            await processWithCursor(conditions); // Fallback to cursor-based filtering
+        }
+    }
+
+    async function combineQueries() {
+        for (const conditions of orConditionsArray) {
+            await processIndexedQuery(conditions[0]); // Process each OR condition
+        }
+
+        // Apply query additions (e.g., sorting, skipping, taking)
+        if (QueryAdditions) {
+            for (const addition of QueryAdditions) {
+                switch (addition.Name) {
+                    case 'skip':
+                        results = results.slice(addition.IntValue);
+                        break;
+                    case 'take':
+                        results = results.slice(0, addition.IntValue);
+                        break;
+                    case 'takeLast':
+                        results = results.slice(-addition.IntValue).reverse();
+                        break;
+                    case 'orderBy':
+                        results = results.sort((a, b) => a[addition.StringValue] - b[addition.StringValue]);
+                        break;
+                    case 'orderByDescending':
+                        results = results.sort((a, b) => b[addition.StringValue] - a[addition.StringValue]);
+                        break;
+                    default:
+                        console.error('Unsupported query addition:', addition.Name);
                         break;
                 }
             }
         }
+
+        if (uniqueResults) {
+            const uniqueSet = new Set(results.map(obj => JSON.stringify(obj)));
+            results = Array.from(uniqueSet).map(str => JSON.parse(str));
+        }
+
         return results;
-    }
-
-    async function combineQueries()
-    {
-        const allQueries = [];
-
-        for (const conditions of orConditionsArray)
-        {
-            const andQuery = applyConditions(conditions[0]);
-            if (andQuery)
-            {
-                allQueries.push(andQuery);
-            }
-        }
-
-        if (allQueries.length > 0)
-        {
-            // Use Dexie.Promise.all to resolve all toArray promises
-            const allResults = await Dexie.Promise.all(allQueries.map(query => query.toArray()));
-
-            // Combine all the results into one array
-            let combinedResults = [].concat(...allResults);
-
-            // Apply query additions to the combined results
-            combinedResults = applyArrayQueryAdditions(combinedResults, QueryAdditions);
-
-            if (allQueries.length > 1 && uniqueResults)
-            {
-                // Make sure the objects in the array are unique
-                const uniqueObjects = new Set(combinedResults.map(obj => JSON.stringify(obj)));
-                return Array.from(uniqueObjects).map(str => JSON.parse(str));
-            }
-            else
-            {
-                return combinedResults;
-            }
-        }
-        else
-        {
-            return [];
-        }
     }
 
     if (orConditionsArray.length > 0)
@@ -475,18 +329,14 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
         return [];
 }
 
-async function getDb(dbName)
-{
-    if (databases.find(d => d.name == dbName) === undefined)
-    {
+async function getDb(dbName) {
+    if (databases.find(d => d.name == dbName) === undefined) {
         console.warn("Blazor.IndexedDB.Framework - Database doesn't exist");
         var db1 = new Dexie(dbName);
         await db1.open();
-        if (databases.find(d => d.name == dbName) !== undefined)
-        {
+        if (databases.find(d => d.name == dbName) !== undefined) {
             databases.find(d => d.name == dbName).db = db1;
-        } else
-        {
+        } else {
             databases.push({
                 name: dbName,
                 db: db1
@@ -494,42 +344,33 @@ async function getDb(dbName)
         }
         return db1;
     }
-    else
-    {
+    else {
         return databases.find(d => d.name == dbName).db;
     }
 }
 
-async function getTable(dbName, storeName)
-{
+async function getTable(dbName, storeName) {
     let db = await getDb(dbName);
     let table = db.table(storeName);
     return table;
 }
 
-function createFilterObject(filters)
-{
+function createFilterObject(filters) {
     const jsonFilter = {};
-    for (const filter in filters)
-    {
+    for (const filter in filters) {
         if (filters.hasOwnProperty(filter))
             jsonFilter[filters[filter].indexName] = filters[filter].filterValue;
     }
     return jsonFilter;
 }
 
-function getAll(dotnetReference, transaction, dbName, storeName)
-{
-    return new Promise((resolve, reject) =>
-    {
-        getTable(dbName, storeName).then(table =>
-        {
-            table.toArray().then(items =>
-            {
+function getAll(dotnetReference, transaction, dbName, storeName) {
+    return new Promise((resolve, reject) => {
+        getTable(dbName, storeName).then(table => {
+            table.toArray().then(items => {
                 dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'getAll succeeded');
                 resolve(items);
-            }).catch(e =>
-            {
+            }).catch(e => {
                 console.error(e);
                 dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'getAll failed');
                 reject(e);
@@ -538,8 +379,7 @@ function getAll(dotnetReference, transaction, dbName, storeName)
     });
 }
 
-export function encryptString(data, key)
-{
+export function encryptString(data, key) {
     // Convert the data to an ArrayBuffer
     let dataBuffer = new TextEncoder().encode(data).buffer;
 
@@ -551,13 +391,11 @@ export function encryptString(data, key)
 
     // Create a CryptoKey object from the key buffer
     return crypto.subtle.importKey('raw', keyBuffer, { name: 'AES-CBC' }, false, ['encrypt'])
-        .then(key =>
-        {
+        .then(key => {
             // Encrypt the data with AES-CBC encryption
             return crypto.subtle.encrypt({ name: 'AES-CBC', iv }, key, dataBuffer);
         })
-        .then(encryptedDataBuffer =>
-        {
+        .then(encryptedDataBuffer => {
             // Concatenate the initialization vector and encrypted data
             let encryptedData = new Uint8Array(encryptedDataBuffer);
             let encryptedDataWithIV = new Uint8Array(encryptedData.byteLength + iv.byteLength);
@@ -569,8 +407,7 @@ export function encryptString(data, key)
         });
 }
 
-export function decryptString(encryptedData, key)
-{
+export function decryptString(encryptedData, key) {
     // Convert the base64 string to a Uint8Array
     let encryptedDataWithIV = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
     let iv = encryptedDataWithIV.slice(0, 16);
@@ -581,13 +418,11 @@ export function decryptString(encryptedData, key)
 
     // Create a CryptoKey object from the key buffer
     return crypto.subtle.importKey('raw', keyBuffer, { name: 'AES-CBC' }, false, ['decrypt'])
-        .then(key =>
-        {
+        .then(key => {
             // Decrypt the data with AES-CBC decryption
             return crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, data);
         })
-        .then(decryptedDataBuffer =>
-        {
+        .then(decryptedDataBuffer => {
             // Convert the decrypted data to a string and return it
             return new TextDecoder().decode(decryptedDataBuffer);
         });
