@@ -133,9 +133,10 @@ This documentation explains the various query capabilities available in the `Whe
 | `OrderByDescending(Expression<Func<T, object>> predicate)` | Orders the query result by the specified predicate in descending order. |
 | `Count()` | Get the number of items in the collection. |
 | `ToListAsync()` | Executes the MagicQuery and returns the results as `List<T>`. |
+| `AsAsyncEnumerable()` | Executes the `MagicQuery` and returns results as `IAsyncEnumerable<T>`. |
 | `{NOT YET SUPPORTED} AsEnumerable()` | (**FUTURE FEATURE**) Executes the MagicQuery and returns the results as `IEnumerable<T>`. |
 | `{NOT YET SUPPORTED} ToList()` | (**FUTURE FEATURE**) Executes the MagicQuery and returns the results as `List<T>`. |
-| `AsEnumerableAsync()` | Executes the MagicQuery and returns the results as `IEnumerable<T>`. |
+
 
 
 These MagicQuery methods allow you to build complex queries similar to standard LINQ in C#. Remember to call the `ToListAsync` or the `AsEnumerableAsync` method at the end of your MagicQuery to execute the query and retrieve the full results.
