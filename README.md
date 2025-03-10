@@ -5,14 +5,19 @@ This open source library provides an IndexedDb wrapper for C# and Blazor WebAsse
 **Nuget Package Link**: https://www.nuget.org/packages/Magic.IndexedDb
 
 ## Future Planned Features
+
+#### TO DO:
+- [ ] C#/Blazor side controlled database migrations.
+- [ ] Deferred execution of table joins. I want c# join abilities to properly join tables together. This will likely be an emulated strategy in C# due to IndexDB being a non relational database without true capabilities to achieve this.
 - [ ] Reset Primary Key starting Id
 - [ ] Compound Key Indexing
+- [ ] `Select(x => x.Name)` based query statements. Utilizing Cursors to emulate effecient LINQ based Select statements to grab only desired columns.
+
+#### Completed:
 - [X] Allow Any and/or All Linq statements inside the WHERE query
 - [X] Handling of Nested OR conditions in where query
 - [X] API like response protocal from JS. This will allow better debugging and make it easier to expand the code. I left the original weak reference system build by nwestfall, but I will be removing that code for a system I believe is easier to tame and more appropriate for the project goals.
-- [ ] Superior & easy version handling and table altering. Current form handles changes easily but it'd take some work to do serious data migrations. I want data migrations to be built in c#, translated to clients, and automatically handled with extreme ease. I have some really interesting protocals I've brainstormed and would like to experiment with.
-- [ ] Deferred execution of table joins. I want c# join abilities to properly join tables together. 
-- [X] **Completely custom serializer implmented. This isn't just system reflections, this is as fast as you get.** ~~Superior reflections. The current version of reflections is fine, but I've not spent much time optimizing. I need to convert more into hash sets, dictionaries, and more. This wrapper is meant to be a very expandable version that will engulf indexedDb with a great deal of capabilities. Fine tuning and perfecting the protocal I'm working on will allow some very cool features in the future.~~
+- [X] **Completely custom serializer implmented. This isn't just system reflections, this is as fast as you get.**
 - [X] **Long Term** - NET 8 provides AOT features that I think could be extremely abusive in a good way for this project. I believe with future NET 8 possibilites and AOT, I can move IndexedDB into being a multi thread monster and various other performance improvements. Obviously I'd make this optional. But I believe there's some very interesting possibilities I'd like to experiment with in the future.
 
 ## Table of Contents
