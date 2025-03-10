@@ -8,7 +8,7 @@ This open source library provides an IndexedDb wrapper for C# and Blazor WebAsse
 - [ ] Reset Primary Key starting Id
 - [ ] Compound Key Indexing
 - [X] Allow Any and/or All Linq statements inside the WHERE query
-- [ ] Handling of Nested OR conditions in where query
+- [X] Handling of Nested OR conditions in where query
 - [ ] API like response protocal from JS. This will allow better debugging and make it easier to expand the code. I left the original weak reference system build by nwestfall, but I will be removing that code for a system I believe is easier to tame and more appropriate for the project goals.
 - [ ] Superior & easy version handling and table altering. Current form handles changes easily but it'd take some work to do serious data migrations. I want data migrations to be built in c#, translated to clients, and automatically handled with extreme ease. I have some really interesting protocals I've brainstormed and would like to experiment with.
 - [ ] Deferred execution of table joins. I want c# join abilities to properly join tables together. 
