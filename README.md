@@ -132,7 +132,8 @@ I highly suggest you always add the string parameters as that sets the IndexedDb
 - `MagicUniqueIndex(string)`: Creates a unique index for the property. The parameter is the column name in IndexedDb.
 - `MagicEncrypt`: Encrypts the string property when it's stored in IndexedDb.
 - `MagicNotMapped`: Excludes the property from being mapped to IndexedDb.
-
+- `MagicName`: Renames the column in IndexDB
+- 
 ### Using the DbManager
 
 1. Get the `DbManager` for your database:
