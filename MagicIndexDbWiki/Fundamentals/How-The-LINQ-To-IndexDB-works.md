@@ -177,4 +177,5 @@ I am actually not an IndexDB expert! Want to make this project better? Be a hero
 
 ### Current Goals
 1.) Move more of the unsupported conditions to the cursor to provide better performance.
+
 2.) More emulation in general utilizing cursors.
