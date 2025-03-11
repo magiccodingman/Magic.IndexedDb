@@ -36,6 +36,8 @@ namespace Magic.IndexedDb.Extensions
 
 #if DEBUG
             package.IsDebug = true;
+#else
+            package.IsDebug = false;
 #endif
 
             using var stream = new MemoryStream();

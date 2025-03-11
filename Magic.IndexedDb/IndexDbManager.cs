@@ -209,24 +209,11 @@ namespace Magic.IndexedDb
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName), new TypedArgument<object>(key) });
         }
 
-        public MagicQuery<T> Where<T>(Expression<Func<T, bool>> predicate) where T : class
+        public MagicQuery<T> Query<T>() where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
             MagicQuery<T> query = new MagicQuery<T>(schemaName, this);
-
-            // Preprocess the predicate to break down Any and All expressions
-            var preprocessedPredicate = PreprocessPredicate(predicate);
-            CollectBinaryExpressions(preprocessedPredicate.Body, preprocessedPredicate, query.JsonQueries);
-
             return query;
-        }
-
-        private Expression<Func<T, bool>> PreprocessPredicate<T>(Expression<Func<T, bool>> predicate)
-        {
-            var visitor = new PredicateVisitor<T>();
-            var newExpression = visitor.Visit(predicate.Body);
-
-            return Expression.Lambda<Func<T, bool>>(newExpression, predicate.Parameters);
         }
 
         internal async Task<IEnumerable<T>?> WhereV2Async<T>(
@@ -234,9 +221,9 @@ namespace Magic.IndexedDb
             CancellationToken cancellationToken) where T : class
         {
             string? jsonQueryAdditions = null;
-            if (query != null && query.storedMagicQueries != null && query.storedMagicQueries.Count > 0)
+            if (query != null && query.StoredMagicQueries != null && query.StoredMagicQueries.Count > 0)
             {
-                jsonQueryAdditions = MagicSerializationHelper.SerializeObject(query.storedMagicQueries.ToArray());
+                jsonQueryAdditions = MagicSerializationHelper.SerializeObject(query.StoredMagicQueries.ToArray());
             }
 
             var args = new ITypedArgument[] {
@@ -252,26 +239,7 @@ namespace Magic.IndexedDb
                 args);
         }
 
-        private void CollectBinaryExpressions<T>(Expression expression, Expression<Func<T, bool>> predicate, List<string> jsonQueries) where T : class
-        {
-            var binaryExpr = expression as BinaryExpression;
-
-            if (binaryExpr != null && binaryExpr.NodeType == ExpressionType.OrElse)
-            {
-                // Split the OR condition into separate expressions
-                var left = binaryExpr.Left;
-                var right = binaryExpr.Right;
-
-                // Process left and right expressions recursively
-                CollectBinaryExpressions(left, predicate, jsonQueries);
-                CollectBinaryExpressions(right, predicate, jsonQueries);
-            }
-            else
-            {
-                string jsonQuery = GetJsonQueryFromExpression(Expression.Lambda<Func<T, bool>>(expression, predicate.Parameters));
-                jsonQueries.Add(jsonQuery);
-            }
-        }
+       
 
         private object ConvertValueToType(object value, Type targetType)
         {
@@ -296,183 +264,7 @@ namespace Magic.IndexedDb
             return Convert.ChangeType(value, targetType);
         }
 
-        private string GetJsonQueryFromExpression<T>(Expression<Func<T, bool>> predicate) where T : class
-        {
-            var serializerSettings = new MagicJsonSerializationSettings
-            {
-                UseCamelCase = true // Equivalent to setting CamelCasePropertyNamesContractResolver
-            };
-
-            var conditions = new List<JsonObject>();
-            var orConditions = new List<List<JsonObject>>();
-
-            void TraverseExpression(Expression expression, bool inOrBranch = false)
-            {
-                if (expression is BinaryExpression binaryExpression)
-                {
-                    if (binaryExpression.NodeType == ExpressionType.AndAlso)
-                    {
-                        TraverseExpression(binaryExpression.Left, inOrBranch);
-                        TraverseExpression(binaryExpression.Right, inOrBranch);
-                    }
-                    else if (binaryExpression.NodeType == ExpressionType.OrElse)
-                    {
-                        if (inOrBranch)
-                        {
-                            throw new InvalidOperationException("Nested OR conditions are not supported.");
-                        }
-
-                        TraverseExpression(binaryExpression.Left, !inOrBranch);
-                        TraverseExpression(binaryExpression.Right, !inOrBranch);
-                    }
-                    else
-                    {
-                        AddCondition(binaryExpression, inOrBranch);
-                    }
-                }
-                else if (expression is MethodCallExpression methodCallExpression)
-                {
-                    AddCondition(methodCallExpression, inOrBranch);
-                }
-            }
-
-            bool IsParameterMember(Expression expression) => expression is MemberExpression { Expression: ParameterExpression };
-
-            ConstantExpression ToConstantExpression(Expression expression) =>
-                expression switch
-                {
-                    ConstantExpression constantExpression => constantExpression,
-                    MemberExpression memberExpression => Expression.Constant(Expression.Lambda(memberExpression).Compile().DynamicInvoke()),
-                    _ => throw new InvalidOperationException($"Unsupported expression type. Expression: {expression}")
-                };
-
-            void AddCondition(Expression expression, bool inOrBranch)
-            {
-                if (expression is BinaryExpression binaryExpression)
-                {
-                    var operation = binaryExpression.NodeType.ToString();
-
-                    if (IsParameterMember(binaryExpression.Left) && !IsParameterMember(binaryExpression.Right))
-                    {
-                        AddConditionInternal(
-                            binaryExpression.Left as MemberExpression,
-                            ToConstantExpression(binaryExpression.Right),
-                            operation,
-                            inOrBranch);
-                    }
-                    else if (!IsParameterMember(binaryExpression.Left) && IsParameterMember(binaryExpression.Right))
-                    {
-                        // Swap the order of the left and right expressions and the operation
-                        operation = operation switch
-                        {
-                            "GreaterThan" => "LessThan",
-                            "LessThan" => "GreaterThan",
-                            "GreaterThanOrEqual" => "LessThanOrEqual",
-                            "LessThanOrEqual" => "GreaterThanOrEqual",
-                            _ => operation
-                        };
-
-                        AddConditionInternal(
-                            binaryExpression.Right as MemberExpression,
-                            ToConstantExpression(binaryExpression.Left),
-                            operation,
-                            inOrBranch);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Unsupported binary expression. Expression: {expression}");
-                    }
-                }
-                else if (expression is MethodCallExpression methodCallExpression)
-                {
-                    if (methodCallExpression.Method.DeclaringType == typeof(string) &&
-                        (methodCallExpression.Method.Name == "Equals" || methodCallExpression.Method.Name == "Contains" || methodCallExpression.Method.Name == "StartsWith"))
-                    {
-                        var left = methodCallExpression.Object as MemberExpression;
-                        var right = ToConstantExpression(methodCallExpression.Arguments[0]);
-                        var operation = methodCallExpression.Method.Name;
-                        var caseSensitive = true;
-
-                        if (methodCallExpression.Arguments.Count > 1)
-                        {
-                            var stringComparison = methodCallExpression.Arguments[1] as ConstantExpression;
-                            if (stringComparison != null && stringComparison.Value is StringComparison comparisonValue)
-                            {
-                                caseSensitive = comparisonValue == StringComparison.Ordinal || comparisonValue == StringComparison.CurrentCulture;
-                            }
-                        }
-
-                        AddConditionInternal(left, right, operation == "Equals" ? "StringEquals" : operation, inOrBranch, caseSensitive);
-                    }
-                    else if (methodCallExpression.Method.DeclaringType == typeof(List<string>) &&
-                        methodCallExpression.Method.Name == "Contains")
-                    {
-                        var collection = ToConstantExpression(methodCallExpression.Object!);
-                        var property = methodCallExpression.Arguments[0] as MemberExpression;
-                        AddConditionInternal(property, collection, "In", inOrBranch);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Unsupported method call expression. Expression: {expression}");
-                    }
-                }
-                else
-                {
-                    throw new InvalidOperationException($"Unsupported expression type. Expression: {expression}");
-                }
-            }
-
-            void AddConditionInternal(MemberExpression? left, ConstantExpression? right, string operation, bool inOrBranch, bool caseSensitive = false)
-            {
-                if (left != null && right != null)
-                {
-                    var propertyInfo = typeof(T).GetProperty(left.Member.Name);
-                    if (propertyInfo != null)
-                    {
-                        bool _isString = false;
-                        JsonNode? valSend = null;
-                        if (right != null && right.Value != null)
-                        {
-                            valSend = JsonValue.Create(right.Value);
-                            _isString = right.Value is string;
-                        }
-
-                        var jsonCondition = new JsonObject
-            {
-                { "property", PropertyMappingCache.GetJsPropertyName<T>(propertyInfo) },
-                { "operation", operation },
-                { "value", valSend },
-                { "isString", _isString },
-                { "caseSensitive", caseSensitive }
-                        };
-
-                        if (inOrBranch)
-                        {
-                            var currentOrConditions = orConditions.LastOrDefault();
-                            if (currentOrConditions == null)
-                            {
-                                currentOrConditions = new List<JsonObject>();
-                                orConditions.Add(currentOrConditions);
-                            }
-                            currentOrConditions.Add(jsonCondition);
-                        }
-                        else
-                        {
-                            conditions.Add(jsonCondition);
-                        }
-                    }
-                }
-            }
-
-            TraverseExpression(predicate.Body);
-
-            if (conditions.Any())
-            {
-                orConditions.Add(conditions);
-            }
-
-            return MagicSerializationHelper.SerializeObject(orConditions, serializerSettings);
-        }
+        
 
         /// <summary>
         /// Returns Mb
