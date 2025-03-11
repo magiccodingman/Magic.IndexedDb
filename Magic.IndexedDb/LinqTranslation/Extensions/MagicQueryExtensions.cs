@@ -152,7 +152,10 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         {
             List<string> jsonBinaryExpresions = new List<string>();
             var preprocessedPredicate = PreprocessPredicate();
-            CollectBinaryExpressions(preprocessedPredicate.Body, preprocessedPredicate, jsonBinaryExpresions);
+
+            // FLATTEN OR CONDITIONS because they are annoying and IndexDB doesn't support that!
+            var flattenedPredicate = FlattenOrElse(preprocessedPredicate); 
+            CollectBinaryExpressions(flattenedPredicate.Body, flattenedPredicate, jsonBinaryExpresions);
             return jsonBinaryExpresions;
         }
 
@@ -183,7 +186,8 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             }
             else
             {
-                string jsonQuery = GetJsonQueryFromExpression(Expression.Lambda<Func<T, bool>>(expression, predicate.Parameters));
+                string jsonQuery = 
+                    GetJsonQueryFromExpression(Expression.Lambda<Func<T, bool>>(expression, predicate.Parameters));
                 jsonQueries.Add(jsonQuery);
             }
         }
@@ -365,5 +369,104 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             return MagicSerializationHelper.SerializeObject(orConditions, serializerSettings);
         }
+
+        private Expression<Func<T, bool>> FlattenOrElse(Expression<Func<T, bool>> expr)
+        {
+            var body = FlattenOrElseRecursive(expr.Body);
+            return Expression.Lambda<Func<T, bool>>(body, expr.Parameters);
+        }
+
+        private Expression FlattenOrElseRecursive(Expression expr)
+        {
+            if (expr is BinaryExpression binaryExpr)
+            {
+                if (binaryExpr.NodeType == ExpressionType.OrElse)
+                {
+                    var leftFlattened = FlattenOrElseRecursive(binaryExpr.Left);
+                    var rightFlattened = FlattenOrElseRecursive(binaryExpr.Right);
+
+                    // Collect all OR terms into a flat list
+                    var orTerms = new List<Expression>();
+                    CollectOrTerms(leftFlattened, orTerms);
+                    CollectOrTerms(rightFlattened, orTerms);
+
+                    // Build as a balanced OR chain
+                    return BuildOrChain(orTerms);
+                }
+                else if (binaryExpr.NodeType == ExpressionType.AndAlso)
+                {
+                    // Ensure left and right don't contain problematic OrElse structures
+                    var leftFlattened = FlattenOrElseRecursive(binaryExpr.Left);
+                    var rightFlattened = FlattenOrElseRecursive(binaryExpr.Right);
+
+                    // If either side contains OrElse, distribute across AndAlso
+                    if (ContainsOrElse(leftFlattened) || ContainsOrElse(rightFlattened))
+                    {
+                        return DistributeAndOverOr(leftFlattened, rightFlattened);
+                    }
+
+                    return Expression.AndAlso(leftFlattened, rightFlattened);
+                }
+            }
+            return expr; // Return unchanged if not BinaryExpression
+        }
+
+        private bool ContainsOrElse(Expression expr)
+        {
+            if (expr is BinaryExpression binaryExpr)
+            {
+                return binaryExpr.NodeType == ExpressionType.OrElse || ContainsOrElse(binaryExpr.Left) || ContainsOrElse(binaryExpr.Right);
+            }
+            return false;
+        }
+
+        private Expression DistributeAndOverOr(Expression left, Expression right)
+        {
+            var leftOrTerms = new List<Expression>();
+            var rightOrTerms = new List<Expression>();
+
+            CollectOrTerms(left, leftOrTerms);
+            CollectOrTerms(right, rightOrTerms);
+
+            // Apply distributive law: (A OR B) AND (C OR D) → (A AND C) OR (A AND D) OR (B AND C) OR (B AND D)
+            var newOrTerms = new List<Expression>();
+            foreach (var l in leftOrTerms)
+            {
+                foreach (var r in rightOrTerms)
+                {
+                    newOrTerms.Add(Expression.AndAlso(l, r));
+                }
+            }
+
+            return BuildOrChain(newOrTerms);
+        }
+
+        private void CollectOrTerms(Expression expr, List<Expression> terms)
+        {
+            if (expr is BinaryExpression binaryExpr && binaryExpr.NodeType == ExpressionType.OrElse)
+            {
+                CollectOrTerms(binaryExpr.Left, terms);
+                CollectOrTerms(binaryExpr.Right, terms);
+            }
+            else
+            {
+                terms.Add(expr);
+            }
+        }
+
+        private Expression BuildOrChain(List<Expression> terms)
+        {
+            if (terms.Count == 0) return Expression.Constant(false);
+            if (terms.Count == 1) return terms[0];
+
+            Expression orChain = terms[0];
+            for (int i = 1; i < terms.Count; i++)
+            {
+                orChain = Expression.OrElse(orChain, terms[i]);
+            }
+            return orChain;
+        }
+
+
     }
 }

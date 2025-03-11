@@ -1,5 +1,8 @@
 ﻿@page "/"
 @using Magic.IndexedDb
+@using Magic.IndexedDb.Testing.Helpers
+@using System.Text.Json
+@using Magic.IndexedDb.Testing.Models
 @using TestWasm.Models
 
 @inject IMagicDbFactory _MagicDb
@@ -86,12 +89,46 @@
     </code>
 </pre>
 
+<h3>Chosen Results</h3>
 @foreach (Person person in WhereExample)
 {
     <p><b>Name:</b> @person.Name - <b>Age:</b> @person._Age</p>
 }
 
+<h3>Correct Results</h3>
+@foreach (Person person in allPeopleCorrect)
+{
+    <p><b>Name:</b> @person.Name - <b>Age:</b> @person._Age</p>
+}
+
+
+
+<h3>Unit Tests</h3>
+@foreach (var (testName, response) in TestResults)
+{
+    <div>
+        @if (response.Success)
+        {
+            <strong>✅ @testName</strong>
+        }
+        else
+        {
+            <strong>❌ @testName</strong>
+
+            @if (!string.IsNullOrWhiteSpace(response.Message))
+            {
+                var messages = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var message in messages)
+                {
+                    <div style="margin-left: 20px;">🔍 @message</div>
+                }
+            }
+        }
+    </div>
+}
+
 @code {
+    public List<(string, TestResponse)> TestResults = new();
 
     private static readonly Random _random = new Random();
 
@@ -106,8 +143,15 @@
         return new DateTime(year, today.Month, today.Day);
     }
 
+    private void RunTest<T>(string testName, 
+        IEnumerable<T> indexDbResults, IEnumerable<T> correctResults) where T : class
+    {
+        var result = TestValidator.ValidateLists(allPeopleCorrect, WhereExample);
+        TestResults.Add((testName, result));
+    }
 
     private List<Person> allPeople { get; set; } = new List<Person>();
+    private List<Person> allPeopleCorrect { get; set; } = new List<Person>();
     private IEnumerable<Person> WhereExample { get; set; } = Enumerable.Empty<Person>();
     private double storageQuota { get; set; }
     private double storageUsage { get; set; }
@@ -121,6 +165,7 @@
 
                 await manager.ClearTableAsync<Person>();
 
+
                 if (!(await manager.GetAllAsync<Person>()).Any())
                 {
                     Person[] persons = new Person[] {
@@ -133,8 +178,7 @@
                         new Person { Name = "Bob", TestInt = 3 , DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 69, GUIY = Guid.NewGuid(), DoNotMapTest = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
                         new Person { Name = "Alex", TestInt = 3 , DateOfBirth = null, _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" },
                         new Person { Name = "Zapoo", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
-
-            };
+     };
                     await manager.AddRangeAsync(persons);
                 }
 
@@ -144,21 +188,52 @@
 
                 allPeople = (await manager.GetAllAsync<Person>()).ToList();
 
-                
+
                 // WhereExample = await (manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                 // || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
                 // || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
                 // || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
                 // ).OrderBy(x => x._Id).Skip(1).AsAsyncEnumerable()).ToListAsync();
 
-                WhereExample = (await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                var personQuery = manager.Query<Person>();
+
+
+
+                WhereExample = (await personQuery.Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
                 || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                //|| (x.DateOfBirth != null && x.DateOfBirth.GetValueOrDefault().Year < 1980)
-                //|| x.DateOfBirth == null
                 ).OrderBy(x => x._Id).Skip(1).ToListAsync());
 
+                WhereExample = (await personQuery.Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
+                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
+                ).OrderBy(x => x._Id).Skip(1).ToListAsync());
+
+                allPeopleCorrect = allPeople.ToList().Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
+                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
+                ).OrderBy(x => x._Id).Skip(1).ToList();
+
+                var correctMultiNestedIndexDB = allPeople.ToList().Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
+                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
+                ).OrderBy(x => x._Id).Skip(1);
+
+
+                WhereExample = await personQuery.Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
+                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
+                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
+                ).OrderBy(x => x._Id).Skip(1).ToListAsync();
+
+                RunTest("Nested || and &&", WhereExample, correctMultiNestedIndexDB);
+
+
+               
                 //   WhereExample = (await manager.Where<Person>(x => x.DateOfBirth != null
                 //   ).ToListAsync());
 
@@ -166,13 +241,13 @@
                 // ).ToListAsync());
 
 
-               //    WhereExample = (await manager.Where<Person>(x => x.TestInt > 0
-               // ).OrderBy(x => x._Id).Skip(1).Take(1).ToListAsync());
+                //    WhereExample = (await manager.Where<Person>(x => x.TestInt > 0
+                // ).OrderBy(x => x._Id).Skip(1).Take(1).ToListAsync());
 
 
                 /*
-                 * Still working on allowing nested
-                 */
+                * Still working on allowing nested
+                     */
                 //// Should return "Zack"
                 //var NestedResult = await manager.Where<Person>(p => (p.Name == "Zack" || p.Name == "Luna") && (p._Age >= 35 && p._Age <= 45)).Execute();
 

@@ -13,6 +13,7 @@ namespace Magic.IndexedDb
     {
         IMagicQuery<T> Where(Expression<Func<T, bool>> predicate);
 
+        // Working on supporting these operations without the Where
         IMagicQueryStage<T> Take(int amount);
         IMagicQueryStage<T> TakeLast(int amount);
         IMagicQueryStage<T> Skip(int amount);

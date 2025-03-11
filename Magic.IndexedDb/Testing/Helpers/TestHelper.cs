@@ -52,6 +52,7 @@ namespace Magic.IndexedDb.Testing.Helpers
         }
 
 
+
         private static List<string> CompareObjects(object expected, object actual, PropertyInfo[] properties, string path)
         {
             var differences = new List<string>();
