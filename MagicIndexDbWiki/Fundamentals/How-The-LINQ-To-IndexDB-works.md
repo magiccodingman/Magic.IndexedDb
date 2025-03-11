@@ -1,4 +1,4 @@
-# How The LINQ to IndexDB works
+# How The LINQ To IndexDB works
 ### **Bridging the Gap Between C# and IndexedDB**
 
 C# developers are accustomed to **relational databases** where LINQ allows seamless **querying, filtering, sorting, and pagination** directly at the database level. However, **IndexedDB is a non-relational key-value store**, meaning that **not all LINQ operations have a direct IndexedDB equivalent**.
