@@ -10,7 +10,7 @@ function consoleLog(message, isDebug) {
 }
 
 export async function streamedJsHandler(streamRef) {
-    consoleLog("Received streamRef", true);
+    //consoleLog("Received streamRef", true);
 
     if (!streamRef || typeof streamRef.arrayBuffer !== "function") {
         console.error("Invalid stream reference received.");
@@ -28,9 +28,9 @@ export async function streamedJsHandler(streamRef) {
         jsonText = null; // Free memory
 
         let { methodName, isVoid, parameters = [], isDebug } = parsedData;
-        consoleLog(`Parsed Data: ${JSON.stringify(parsedData)}`, isDebug);
+        //consoleLog(`Parsed Data: ${JSON.stringify(parsedData)}`, isDebug);
         let safeParameters = parameters.map(param => JSON.parse(param));
-        consoleLog(`Fixed Parameters (Deserialized): ${JSON.stringify(safeParameters)}`, isDebug);
+        //consoleLog(`Fixed Parameters (Deserialized): ${JSON.stringify(safeParameters)}`, isDebug);
         parameters = null; // Free memory
 
         // Free parsedData reference
@@ -41,7 +41,7 @@ export async function streamedJsHandler(streamRef) {
             safeParameters = null; // Free memory after function call
 
             if (isVoid) {
-                consoleLog(`Void method '${methodName}' executed successfully.`, isDebug);
+               // consoleLog(`Void method '${methodName}' executed successfully.`, isDebug);
                 return new Uint8Array(new TextEncoder().encode("true"));
             }
 
