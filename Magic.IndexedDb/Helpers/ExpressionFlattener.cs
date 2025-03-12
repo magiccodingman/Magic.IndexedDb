@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
@@ -17,18 +16,11 @@ namespace Magic.IndexedDb.Helpers
     {
         public static Expression<Func<T, bool>> FlattenAndOptimize<T>(Expression<Func<T, bool>> expr)
         {
-            var timer = new Stopwatch();
-            timer.Start();
             // Step 1: Flatten OrElse structures
             var flattenedBody = FlattenOrElseRecursive(expr.Body);
 
             // Step 2: Optimize the expression (deduplicate and simplify)
             var optimizedBody = OptimizeExpression(flattenedBody);
-            //B: Run stuff you want timed
-            timer.Stop();
-
-            TimeSpan timeTaken = timer.Elapsed;
-            string foo = "Time taken: " + timeTaken.ToString(@"m\:ss\.fff");
 
             return Expression.Lambda<Func<T, bool>>(optimizedBody, expr.Parameters);
         }
