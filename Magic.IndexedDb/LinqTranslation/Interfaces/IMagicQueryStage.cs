@@ -16,19 +16,13 @@ namespace Magic.IndexedDb.LinqTranslation.Interfaces
         IMagicQueryStage<T> OrderBy(Expression<Func<T, object>> predicate);
         IMagicQueryStage<T> OrderByDescending(Expression<Func<T, object>> predicate);
 
-
-        // supporting syncrounous operations coming!
         /// <summary>
-        /// Utilized to enforce an executed Where returning IEnumerable<T>
+        /// In memory processing from this point forward! IndexDB 
+        /// does not support complex query WHERE statements after appended 
+        /// queries like, 'Take', 'Skip', 'OrderBy', and others are utilized.
         /// </summary>
         /// <param name="predicate"></param>
-        /// <returns></returns>
-        //IEnumerable<T> Where(Expression<Func<T, bool>> predicate);
-
-        /// <summary>
-        /// Utilized to enforce an executed Where returning IEnumerable<T>
-        /// </summary>
-        /// <param name="predicate"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
         Task<IEnumerable<T>> WhereAsync(Expression<Func<T, bool>> predicate, [EnumeratorCancellation] CancellationToken cancellationToken = default);
     }

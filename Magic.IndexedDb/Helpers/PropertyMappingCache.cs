@@ -65,9 +65,26 @@ namespace Magic.IndexedDb.Helpers
             }
             else
             {
-                // 🚀 Use default constructor if no valid parameterized constructor is found
-                InstanceCreator = (_) => IsInstantiable(type) ? Activator.CreateInstance(type) : throw new InvalidOperationException($"Cannot instantiate abstract/interface type {type.FullName}");
+                InstanceCreator = (_) =>
+                {
+                    if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                    {
+                        // Instantiate a List<T> when an IEnumerable<T> is requested
+                        Type listType = typeof(List<>).MakeGenericType(type.GetGenericArguments());
+                        return Activator.CreateInstance(listType);
+                    }
+
+                    if (IsInstantiable(type))
+                    {
+                        return Activator.CreateInstance(type);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Cannot instantiate abstract/interface type {type.FullName}");
+                    }
+                };
             }
+
         }
 
         public string EffectiveTableName { get; } // ✅ Stores the final name (SchemaName or C# class name)
@@ -86,8 +103,24 @@ namespace Magic.IndexedDb.Helpers
         /// </summary>
         private static bool IsInstantiable(Type type)
         {
-            return !(type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition);
+            if (type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition)
+                return false;
+
+            // Handle generic collection interfaces like IEnumerable<T>, ICollection<T>, etc.
+            if (type.IsGenericType)
+            {
+                Type genericTypeDef = type.GetGenericTypeDefinition();
+                if (genericTypeDef == typeof(IEnumerable<>) ||
+                    genericTypeDef == typeof(ICollection<>) ||
+                    genericTypeDef == typeof(IList<>))
+                {
+                    return true; // Can instantiate List<T>
+                }
+            }
+
+            return true;
         }
+
     }
 
 

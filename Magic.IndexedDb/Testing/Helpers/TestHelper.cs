@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Testing.Helpers
@@ -24,8 +25,10 @@ namespace Magic.IndexedDb.Testing.Helpers
             if (correctList.Count != testList.Count)
                 return new TestResponse
                 {
+                    Success = false,  // ❗️ Ensure failure is registered
                     Message = $"List size mismatch:\nExpected count: {correctList.Count}\nActual count: {testList.Count}"
                 };
+
 
             var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Where(prop => !Attribute.IsDefined(prop, typeof(MagicNotMappedAttribute)))

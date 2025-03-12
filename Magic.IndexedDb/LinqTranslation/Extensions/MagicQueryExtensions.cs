@@ -26,7 +26,11 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         /// <summary>
         /// EXPERIMENTAL FEATURE: 
         /// True IAsyncEnumerable between C# Blazor and JS. How?! 
-        /// It's god damn magic!
+        /// It's god damn magic! IMPORTANT NOTE: the order in which items 
+        /// are returned may not be the order you specified. Your ordering 
+        /// is properly utilized inside of IndexDB, but the returned process 
+        /// due to IndexDB limitations can't return the same order. Please re-apply 
+        /// your desired ordering after your results are brought back if order is important.
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
@@ -41,6 +45,15 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             }
         }
 
+        /// <summary>
+        /// The order you apply does get applied correctly in the query, 
+        /// but the returned results will not be in the same order. 
+        /// If order matters, you must apply the order again on return. 
+        /// This is a fundemental limitation of IndexDB. 
+        /// </summary>
+        /// <param name="predicate"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         public async Task<IEnumerable<T>> WhereAsync(
     Expression<Func<T, bool>> predicate,
     CancellationToken cancellationToken = default)
@@ -51,7 +64,13 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
         private List<string> JsonQueries { get => GetCollectedBinaryJsonExpressions(); }
 
-
+        /// <summary>
+        /// The order you apply does get applied correctly in the query, 
+        /// but the returned results will not be in the same order. 
+        /// If order matters, you must apply the order again on return. 
+        /// This is a fundemental limitation of IndexDB. 
+        /// </summary>
+        /// <returns></returns>
         public async Task<List<T>> ToListAsync()
         {
             return (await MagicQuery.Manager.LinqToIndedDb<T>(MagicQuery.SchemaName, 
@@ -103,7 +122,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             if (!mpe.PrimaryKey && !mpe.Indexed && !mpe.UniqueIndex)
             {
-                throw new ArgumentException("The selected property must have either MagicIndexAttribute, MagicUniqueIndexAttribute, or MagicPrimaryKeyAttribute.");
+                //throw new ArgumentException("The selected property must have either MagicIndexAttribute, MagicUniqueIndexAttribute, or MagicPrimaryKeyAttribute.");
             }
 
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);

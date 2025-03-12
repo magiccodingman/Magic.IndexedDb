@@ -219,6 +219,15 @@ namespace Magic.IndexedDb
             return query;
         }
 
+        /// <summary>
+        /// Results do not come back in the same order.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storeName"></param>
+        /// <param name="jsonQuery"></param>
+        /// <param name="query"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         internal async Task<IEnumerable<T>?> LinqToIndedDb<T>(
             string storeName, List<string> jsonQuery, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
@@ -242,6 +251,18 @@ namespace Magic.IndexedDb
                 args);
         }
 
+        /// <summary>
+        /// Applying the returned ordering on this isn't possible to be guarenteed. 
+        /// Developer must be informed that ordering is correct in the IndexDB response 
+        /// but that the returned values may not be in the same order, so they must 
+        /// manually re-apply the ordering desired.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storeName"></param>
+        /// <param name="jsonQuery"></param>
+        /// <param name="query"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         internal async IAsyncEnumerable<T?> LinqToIndedDbYield<T>(
     string storeName, List<string> jsonQuery, MagicQuery<T> query,
     [EnumeratorCancellation] CancellationToken cancellationToken) where T : class

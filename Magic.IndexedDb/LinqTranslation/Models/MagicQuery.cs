@@ -83,7 +83,7 @@ namespace Magic.IndexedDb
             => new MagicQueryExtensions<T>(this).Skip(amount);
 
         public IMagicQueryStage<T> OrderBy(Expression<Func<T, object>> predicate)
-            => new MagicQueryExtensions<T>(this).OrderBy(predicate);
+            =>  new MagicQueryExtensions<T>(this).OrderBy(predicate);
 
         public IMagicQueryStage<T> OrderByDescending(Expression<Func<T, object>> predicate)
             => new MagicQueryExtensions<T>(this).OrderByDescending(predicate);

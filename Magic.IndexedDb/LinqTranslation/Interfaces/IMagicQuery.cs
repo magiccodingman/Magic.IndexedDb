@@ -11,9 +11,16 @@ namespace Magic.IndexedDb
 {
     public interface IMagicQuery<T> : IMagicExecute<T> where T : class
     {
+        /// <summary>
+        /// The order you apply does get applied correctly in the query, 
+        /// but the returned results will not be in the same order. 
+        /// If order matters, you must apply the order again on return. 
+        /// This is a fundemental limitation of IndexDB. 
+        /// </summary>
+        /// <param name="predicate"></param>
+        /// <returns></returns>
         IMagicQuery<T> Where(Expression<Func<T, bool>> predicate);
 
-        // Working on supporting these operations without the Where
         IMagicQueryStage<T> Take(int amount);
         IMagicQueryStage<T> TakeLast(int amount);
         IMagicQueryStage<T> Skip(int amount);
