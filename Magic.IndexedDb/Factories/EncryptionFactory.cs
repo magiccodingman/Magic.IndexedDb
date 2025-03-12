@@ -21,7 +21,7 @@ namespace Magic.IndexedDb.Factories
         {
             
 
-            return indexDbManager.CallJsAsync<string>(
+            return indexDbManager.CallJsAsync<string>(Cache.MagicDbJsImportPath,
                 "encryptString", cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(data), new TypedArgument<string>(key) }
                 );
@@ -32,7 +32,7 @@ namespace Magic.IndexedDb.Factories
             string encryptedData, string key, 
             CancellationToken cancellationToken = default)
         {
-            return indexDbManager.CallJsAsync<string>(
+            return indexDbManager.CallJsAsync<string>(Cache.MagicDbJsImportPath,
                 "decryptString", cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(encryptedData), new TypedArgument<string>(key) }
                 );

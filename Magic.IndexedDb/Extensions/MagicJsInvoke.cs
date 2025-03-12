@@ -3,6 +3,7 @@ using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Models;
 using Microsoft.JSInterop;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -19,20 +20,25 @@ namespace Magic.IndexedDb.Extensions
             _jsModule = jsModule;
         }
 
-        internal async Task<T?> MagicStreamJsAsync<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
+        internal async Task<T?> MagicStreamJsAsync<T>(string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
         {
-            return await TrueMagicStreamJsAsync<T>(functionName, token, false, args);
+            return await TrueMagicStreamJsAsync<T>(modulePath, functionName, token, false, args);
         }
-        private async Task<T?> TrueMagicStreamJsAsync<T>(string functionName, CancellationToken token, bool isVoid, params ITypedArgument[] args)
+        private async Task<T?> TrueMagicStreamJsAsync<T>(string modulePath, string functionName,
+            CancellationToken token, bool isVoid, params ITypedArgument[] args)
         {
             var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
 
             var package = new MagicJsPackage
             {
+                YieldResults = false,
+                ModulePath = modulePath,
                 MethodName = functionName,
                 Parameters = MagicSerializationHelper.SerializeObjectsToString(args, settings),
                 IsVoid = isVoid
             };
+
+            string instanceId = Guid.NewGuid().ToString();
 
 #if DEBUG
             package.IsDebug = true;
@@ -56,7 +62,8 @@ namespace Magic.IndexedDb.Extensions
             var streamRef = new DotNetStreamReference(stream);
 
             // Send to JS
-            var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler", token, streamRef);
+            var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler", token,
+                streamRef, instanceId, DotNetObjectReference.Create(this));
 
             // 🚀 Convert the stream reference back to JSON in C#
             await using var responseStream = await responseStreamRef.OpenReadStreamAsync(long.MaxValue, token);
@@ -66,9 +73,109 @@ namespace Magic.IndexedDb.Extensions
             return MagicSerializationHelper.DeserializeObject<T>(jsonResponse, settings);
         }
 
-        internal async Task MagicVoidStreamJsAsync(string functionName, CancellationToken token, params ITypedArgument[] args)
+        public async IAsyncEnumerable<T?> MagicYieldJsAsync<T>(
+    string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
         {
-            await TrueMagicStreamJsAsync<bool>(functionName, token, true, args);
+            var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+
+            var package = new MagicJsPackage
+            {
+                ModulePath = modulePath,
+                MethodName = functionName,
+                Parameters = MagicSerializationHelper.SerializeObjectsToString(args, settings),
+                IsVoid = false,
+                YieldResults = true
+            };
+
+            string instanceId = Guid.NewGuid().ToString();
+
+            using var stream = new MemoryStream();
+            await using (var writer = new StreamWriter(stream, leaveOpen: true))
+            {
+                await MagicSerializationHelper.SerializeObjectToStreamAsync(writer, package, settings);
+            }
+
+            stream.Position = 0;
+            var streamRef = new DotNetStreamReference(stream);
+
+            // Call JS with our instanceId
+            await _jsModule.InvokeVoidAsync("streamedJsHandler", token, streamRef, instanceId, DotNetObjectReference.Create(this));
+
+            MagicJsChunkProcessor.RegisterInstance(instanceId);
+
+            bool isCompleted = false;
+
+            try
+            {
+                while (!isCompleted)
+                {
+                    string? completedItem;
+                    try
+                    {
+                        completedItem = MagicJsChunkProcessor.GetCompletedItem(instanceId);
+                    }
+                    catch (Exception queueError)
+                    {
+                        MagicJsChunkProcessor.RemoveInstance(instanceId);
+                        throw new InvalidOperationException($"Failed to retrieve chunk for instance {instanceId}.", queueError);
+                    }
+
+                    if (completedItem != null)
+                    {
+                        if (completedItem == "STREAM_COMPLETE")
+                        {
+                            isCompleted = true;
+                            break;
+                        }
+
+                        T? deserializedItem;
+                        try
+                        {
+                            deserializedItem = MagicSerializationHelper.DeserializeObject<T>(completedItem, settings);
+                        }
+                        catch (Exception deserializationError)
+                        {
+                            MagicJsChunkProcessor.RemoveInstance(instanceId);
+                            throw new InvalidOperationException($"Failed to deserialize chunk for instance {instanceId}.", deserializationError);
+                        }
+
+                        yield return deserializedItem;
+                    }
+                    else
+                    {
+                        await Task.Delay(15, token);
+                    }
+                }
+            }
+            finally
+            {
+                // Ensure cleanup happens even if an error occurs
+                MagicJsChunkProcessor.RemoveInstance(instanceId);
+            }
+        }
+
+
+
+        [JSInvokable("ProcessJsChunk")]
+        public Task ProcessJsChunk(string instanceId, string chunkInstanceId, int yieldOrderIndex, string chunk, int chunkIndex, int totalChunks)
+        {
+            if (chunkInstanceId == "STREAM_COMPLETE")
+            {
+                MagicJsChunkProcessor.AddChunk(instanceId, "STREAM_COMPLETE", -1, "", 0, 1);
+                return Task.CompletedTask;
+            }
+
+            MagicJsChunkProcessor.AddChunk(instanceId, chunkInstanceId, yieldOrderIndex, chunk, chunkIndex, totalChunks);
+            return Task.CompletedTask;
+        }
+
+
+
+
+
+        internal async Task MagicVoidStreamJsAsync(string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
+        {
+            await TrueMagicStreamJsAsync<bool>(modulePath, functionName, token, true, args);
         }
     }
 

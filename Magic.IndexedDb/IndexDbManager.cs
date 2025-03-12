@@ -12,6 +12,7 @@ using Magic.IndexedDb.Interfaces;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using Microsoft.Extensions.Options;
 using Magic.IndexedDb.Extensions;
+using System.Runtime.CompilerServices;
 
 namespace Magic.IndexedDb
 {
@@ -25,7 +26,8 @@ namespace Magic.IndexedDb
             CancellationToken cancellationToken = default)
         {
             var result = new IndexedDbManager(dbStore, jsRuntime);
-            await result.CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, new TypedArgument<DbStore>(dbStore));
+            await result.CallJsAsync(Cache.MagicDbJsImportPath, 
+                IndexedDbFunctions.CREATE_DB, cancellationToken, new TypedArgument<DbStore>(dbStore));
             return result;
         }
 
@@ -59,7 +61,7 @@ namespace Magic.IndexedDb
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return CallJsAsync(IndexedDbFunctions.DELETE_DB, cancellationToken, new TypedArgument<string>(dbName));
+            return CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_DB, cancellationToken, new TypedArgument<string>(dbName));
         }
 
         public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
@@ -77,7 +79,7 @@ namespace Magic.IndexedDb
                 StoreName = schemaName,
                 Record = record
             };
-            return await CallJsAsync<TKey>(IndexedDbFunctions.ADD_ITEM, cancellationToken, new TypedArgument<StoreRecord<T?>>(RecordToSend));
+            return await CallJsAsync<TKey>(Cache.MagicDbJsImportPath, IndexedDbFunctions.ADD_ITEM, cancellationToken, new TypedArgument<StoreRecord<T?>>(RecordToSend));
         }
 
         [Obsolete]
@@ -136,7 +138,7 @@ namespace Magic.IndexedDb
         {
             // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
-            return CallJsAsync(IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
+            return CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(DbName),
                     new TypedArgument<string>(storeName),
                     new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
@@ -166,7 +168,8 @@ namespace Magic.IndexedDb
                 Record = item
             };
 
-            return await CallJsAsync<int>(IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
+            return await CallJsAsync<int>(Cache.MagicDbJsImportPath, 
+                IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
         public async Task<int> UpdateRangeAsync<T>(
@@ -190,7 +193,7 @@ namespace Magic.IndexedDb
                 };
             });
 
-            return await CallJsAsync<int>(
+            return await CallJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, new TypedArgument<IEnumerable<UpdateRecord<T>>>(recordsToUpdate));
         }
 
@@ -204,7 +207,7 @@ namespace Magic.IndexedDb
             // Validate key type
             AttributeHelpers.ValidatePrimaryKey<T>(key);
 
-            return await CallJsAsync<T>(
+            return await CallJsAsync<T>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.FIND_ITEM, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName), new TypedArgument<object>(key) });
         }
@@ -216,7 +219,7 @@ namespace Magic.IndexedDb
             return query;
         }
 
-        internal async Task<IEnumerable<T>?> WhereV2Async<T>(
+        internal async Task<IEnumerable<T>?> LinqToIndedDb<T>(
             string storeName, List<string> jsonQuery, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
@@ -235,11 +238,36 @@ namespace Magic.IndexedDb
             };
 
             return await CallJsAsync<IEnumerable<T>>
-                (IndexedDbFunctions.WHERE, cancellationToken,
+                (Cache.MagicDbJsImportPath, IndexedDbFunctions.WHERE, cancellationToken,
                 args);
         }
 
-       
+        internal async IAsyncEnumerable<T?> LinqToIndedDbYield<T>(
+    string storeName, List<string> jsonQuery, MagicQuery<T> query,
+    [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
+        {
+            string? jsonQueryAdditions = null;
+            if (query != null && query.StoredMagicQueries != null && query.StoredMagicQueries.Count > 0)
+            {
+                jsonQueryAdditions = MagicSerializationHelper.SerializeObject(query.StoredMagicQueries.ToArray());
+            }
+
+            var args = new ITypedArgument[] {
+        new TypedArgument<string>(DbName),
+        new TypedArgument<string>(storeName),
+        new TypedArgument<string[]>(jsonQuery.ToArray()),
+        new TypedArgument<string>(jsonQueryAdditions!),
+        new TypedArgument<bool?>(query?.ResultsUnique!),
+    };
+
+            // Yield results **as they arrive** from JS
+            await foreach (var item in CallYieldJsAsync<T>(Cache.MagicDbJsImportPath, IndexedDbFunctions.WHERE_YIELD, cancellationToken, args))
+            {
+                yield return item; // Stream each item immediately
+            }
+        }
+
+
 
         private object ConvertValueToType(object value, Type targetType)
         {
@@ -272,13 +300,13 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         public Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default)
         {
-            return CallJsAsync<QuotaUsage>(IndexedDbFunctions.GET_STORAGE_ESTIMATE, cancellationToken, []);
+            return CallJsAsync<QuotaUsage>(Cache.MagicDbJsImportPath, IndexedDbFunctions.GET_STORAGE_ESTIMATE, cancellationToken, []);
         }
 
         public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            return await CallJsAsync<IList<T>>(
+            return await CallJsAsync<IList<T>>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.TOARRAY, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName) });
         }
@@ -297,7 +325,7 @@ namespace Magic.IndexedDb
                 Record = item
             };
 
-            await CallJsAsync(IndexedDbFunctions.DELETE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
+            await CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
         public async Task<int> DeleteRangeAsync<T>(
@@ -318,7 +346,7 @@ namespace Magic.IndexedDb
                 new TypedArgument<string>(schemaName),
                 new TypedArgument<IEnumerable<object>?>(keys) };
 
-            return await CallJsAsync<int>(
+            return await CallJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.BULK_DELETE, cancellationToken,
                 args);
         }
@@ -332,7 +360,7 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         public Task ClearTableAsync(string storeName, CancellationToken cancellationToken = default)
         {
-            return CallJsAsync(IndexedDbFunctions.CLEAR_TABLE, cancellationToken,
+            return CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.CLEAR_TABLE, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(storeName) });
         }
 
@@ -346,19 +374,38 @@ namespace Magic.IndexedDb
             return ClearTableAsync(SchemaHelper.GetSchemaName<T>(), cancellationToken);
         }
 
-        internal async Task CallJsAsync(string functionName, CancellationToken token, params ITypedArgument[] args)
+        internal async Task CallJsAsync(string modulePath, string functionName, 
+            CancellationToken token, params ITypedArgument[] args)
         {
             var magicJsInvoke = new MagicJsInvoke(_jsModule);
 
-            await magicJsInvoke.MagicVoidStreamJsAsync(functionName, token, args);
+            await magicJsInvoke.MagicVoidStreamJsAsync(modulePath, functionName, token, args);
         }
 
-        internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
+        internal async Task<T> CallJsAsync<T>(string modulePath, string functionName, 
+            CancellationToken token, params ITypedArgument[] args)
         {
 
             var magicJsInvoke = new MagicJsInvoke(_jsModule);
 
-            return await magicJsInvoke.MagicStreamJsAsync<T>(functionName, token, args) ?? default;
+            return await magicJsInvoke.MagicStreamJsAsync<T>(modulePath, functionName, token, args) ?? default;
         }
+
+        internal async IAsyncEnumerable<T?> CallYieldJsAsync<T>(
+    string modulePath,
+    string functionName,
+    [EnumeratorCancellation] CancellationToken token,
+    params ITypedArgument[] args)
+        {
+            var magicJsInvoke = new MagicJsInvoke(_jsModule);
+
+            await foreach (var item in magicJsInvoke.MagicYieldJsAsync<T>(modulePath, functionName, token, args)
+                .WithCancellation(token)) // Ensure cancellation works in the async stream
+            {
+                yield return item; // Yield items as they arrive
+            }
+        }
+
+
     }
 }

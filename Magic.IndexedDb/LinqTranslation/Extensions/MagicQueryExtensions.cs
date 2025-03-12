@@ -24,20 +24,19 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         }
 
         /// <summary>
-        /// safe to use, but emulates an IAsync until future implementation
+        /// EXPERIMENTAL FEATURE: 
+        /// True IAsyncEnumerable between C# Blazor and JS. How?! 
+        /// It's god damn magic!
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         public async IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            var results = await MagicQuery.Manager.WhereV2Async<T>(MagicQuery.SchemaName, 
-                JsonQueries, MagicQuery, cancellationToken);
-
-            if (results != null)
+            await foreach (var item in MagicQuery.Manager.LinqToIndedDbYield<T>(MagicQuery.SchemaName, JsonQueries, MagicQuery, cancellationToken))
             {
-                foreach (var item in results)
+                if (item is not null) // ✅ Ensure non-null items
                 {
-                    yield return item; // ✅ Stream results one at a time
+                    yield return item;
                 }
             }
         }
@@ -55,7 +54,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
         public async Task<List<T>> ToListAsync()
         {
-            return (await MagicQuery.Manager.WhereV2Async<T>(MagicQuery.SchemaName, 
+            return (await MagicQuery.Manager.LinqToIndedDb<T>(MagicQuery.SchemaName, 
                 JsonQueries, MagicQuery, default))?.ToList() ?? new List<T>();
         }
 
@@ -152,7 +151,6 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             }
         }
 
-
         private List<string> GetCollectedBinaryJsonExpressions()
         {
             List<string> jsonBinaryExpresions = new List<string>();
@@ -160,6 +158,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             // FLATTEN OR CONDITIONS because they are annoying and IndexDB doesn't support that!
             var flattenedPredicate = ExpressionFlattener.FlattenAndOptimize(preprocessedPredicate);
+
             CollectBinaryExpressions(flattenedPredicate.Body, flattenedPredicate, jsonBinaryExpresions);
             return jsonBinaryExpresions;
         }

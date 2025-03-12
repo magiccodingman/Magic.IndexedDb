@@ -165,13 +165,27 @@ export function getStorageEstimate() {
     return navigator.storage.estimate();
 }
 
+export async function* whereYield(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
+    var results = await where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults);
+
+    yield* yieldAndReleaseReverse(results);
+}
+
+async function* yieldAndReleaseReverse(collection) {
+    if (!Array.isArray(collection) || collection.length === 0) {
+        return; // Now returns an empty generator instead of `null`
+    }
+
+    while (collection.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, 0)); // Prevents blocking main thread
+        yield collection.pop(); // Correctly yields asynchronously
+    }
+}
+
+
 export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
-    console.log('or condition array')
-    console.log(jsonQueries)
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
-    console.log('jsonQueryAdditions')
-    console.log(jsonQueryAdditions)
 
     let db = await getDb(dbName);
     let table = db.table(storeName);
@@ -330,11 +344,6 @@ export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, 
         return [];
     }
 }
-
-
-
-
-
 
 async function getDb(dbName) {
     if (databases.find(d => d.name == dbName) === undefined) {
