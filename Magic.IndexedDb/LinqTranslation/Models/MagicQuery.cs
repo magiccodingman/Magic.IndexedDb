@@ -14,10 +14,14 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
-    public class MagicQuery<T> : IMagicQuery<T> where T : class
+    internal class MagicQuery<T> : IMagicQuery<T> where T : class
     {
         internal string SchemaName { get; }
         internal IndexedDbManager Manager { get; }
+        internal List<StoredMagicQuery> StoredMagicQueries { get; set; } = new List<StoredMagicQuery>();
+
+        internal bool ResultsUnique { get; set; } = true;
+        private List<Expression<Func<T, bool>>> Predicates { get; } = new List<Expression<Func<T, bool>>>();
 
         public MagicQuery(string schemaName, IndexedDbManager manager)
         {
@@ -25,18 +29,20 @@ namespace Magic.IndexedDb
             SchemaName = schemaName;
         }
 
-
-        public List<StoredMagicQuery> StoredMagicQueries { get; set; } = new List<StoredMagicQuery>();
-
-        public bool ResultsUnique { get; set; } = true;
-
-        
-        private List<Expression<Func<T, bool>>> Predicates { get; } = new List<Expression<Func<T, bool>>>();
+        public MagicQuery(MagicQuery<T> _MagicQuery)
+        {
+            SchemaName = _MagicQuery.SchemaName;  // Keep reference
+            Manager = _MagicQuery.Manager;        // Keep reference
+            StoredMagicQueries = new List<StoredMagicQuery>(_MagicQuery.StoredMagicQueries); // Deep copy
+            ResultsUnique = _MagicQuery.ResultsUnique;
+            Predicates = new List<Expression<Func<T, bool>>>(_MagicQuery.Predicates); // Deep copy
+        }
 
         public IMagicQuery<T> Where(Expression<Func<T, bool>> predicate)
         {
-            Predicates.Add(predicate);
-            return this; // Enable method chaining
+            var _MagicQuery = new MagicQuery<T>(this);
+            _MagicQuery.Predicates.Add(predicate);
+            return _MagicQuery; // Enable method chaining
         }
 
         internal Expression<Func<T, bool>> GetFinalPredicate()

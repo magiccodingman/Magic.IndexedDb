@@ -167,7 +167,11 @@ export function getStorageEstimate() {
 
 export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
+    console.log('or condition array')
+    console.log(jsonQueries)
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
+    console.log('jsonQueryAdditions')
+    console.log(jsonQueryAdditions)
 
     let db = await getDb(dbName);
     let table = db.table(storeName);

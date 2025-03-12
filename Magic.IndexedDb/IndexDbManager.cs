@@ -209,7 +209,7 @@ namespace Magic.IndexedDb
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName), new TypedArgument<object>(key) });
         }
 
-        public MagicQuery<T> Query<T>() where T : class
+        public IMagicQuery<T> Query<T>() where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
             MagicQuery<T> query = new MagicQuery<T>(schemaName, this);
