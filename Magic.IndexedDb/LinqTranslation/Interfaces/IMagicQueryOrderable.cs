@@ -1,26 +1,25 @@
-﻿using Magic.IndexedDb.LinqTranslation.Interfaces;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using Magic.IndexedDb.LinqTranslation.Interfaces;
 
 namespace Magic.IndexedDb
 {
     /// <summary>
     /// You are in the staging phase. This is still a fully supported query that 
-    /// has the potential of utilizing indexes.
+    /// has the potential of utilizing indexes. But you can apply only a few more 
+    /// operations.
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public interface IMagicQueryStage<T> : IMagicExecute<T> where T : class
+    public interface IMagicQueryOrderable<T> : IMagicExecute<T> where T : class
     {
         IMagicQueryPaginationTake<T> Take(int amount);
         IMagicQueryPaginationTake<T> TakeLast(int amount);
         IMagicQueryFinal<T> Skip(int amount);
-        IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate);
-        IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate);
 
         /// <summary>
         /// In memory processing from this point forward! IndexDB 

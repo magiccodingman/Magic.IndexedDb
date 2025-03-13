@@ -227,7 +227,69 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             void TraverseExpression(Expression expression, bool inOrBranch = false)
             {
-                if (expression is BinaryExpression binaryExpression)
+                if (expression is UnaryExpression unaryExpression && unaryExpression.NodeType == ExpressionType.Not)
+                {
+                    // Invert the expression inside NOT
+                    if (unaryExpression.Operand is BinaryExpression binaryExpression)
+                    {
+                        string invertedOperation = binaryExpression.NodeType switch
+                        {
+                            ExpressionType.GreaterThan => "LessThanOrEqual",
+                            ExpressionType.LessThan => "GreaterThanOrEqual",
+                            ExpressionType.GreaterThanOrEqual => "LessThan",
+                            ExpressionType.LessThanOrEqual => "GreaterThan",
+                            _ => throw new InvalidOperationException($"Unsupported NOT binary expression: {binaryExpression}")
+                        };
+
+                        AddConditionInternal(
+                            binaryExpression.Left as MemberExpression,
+                            ToConstantExpression(binaryExpression.Right),
+                            invertedOperation,
+                            inOrBranch);
+                    }
+                    else if (unaryExpression.Operand is MethodCallExpression methodCallExpression)
+                    {
+                        // Handle NotContains, NotStartsWith, NotEquals
+                        if (methodCallExpression.Method.DeclaringType == typeof(string) &&
+                            (methodCallExpression.Method.Name == "Contains" ||
+                             methodCallExpression.Method.Name == "StartsWith" ||
+                             methodCallExpression.Method.Name == "Equals"))
+                        {
+                            var left = methodCallExpression.Object as MemberExpression;
+                            var right = ToConstantExpression(methodCallExpression.Arguments[0]);
+                            var operation = methodCallExpression.Method.Name;
+
+                            bool caseSensitive = true;
+                            if (methodCallExpression.Arguments.Count > 1)
+                            {
+                                if (methodCallExpression.Arguments[1] is ConstantExpression comparison &&
+                                    comparison.Value is StringComparison comparisonValue)
+                                {
+                                    caseSensitive = comparisonValue == StringComparison.Ordinal || comparisonValue == StringComparison.CurrentCulture;
+                                }
+                            }
+
+                            string invertedOperation = operation switch
+                            {
+                                "Contains" => "NotContains",
+                                "StartsWith" => "NotStartsWith",
+                                "Equals" => "NotEquals",
+                                _ => throw new InvalidOperationException($"Unsupported NOT method call expression: {methodCallExpression}")
+                            };
+
+                            AddConditionInternal(left, right, invertedOperation, inOrBranch, caseSensitive);
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException($"Unsupported NOT operation on method call: {methodCallExpression}");
+                        }
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unsupported NOT operation: {unaryExpression}");
+                    }
+                }
+                else if (expression is BinaryExpression binaryExpression)
                 {
                     if (binaryExpression.NodeType == ExpressionType.AndAlso)
                     {
@@ -254,6 +316,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                     AddCondition(methodCallExpression, inOrBranch);
                 }
             }
+
 
             bool IsParameterMember(Expression expression) => expression is MemberExpression { Expression: ParameterExpression };
 

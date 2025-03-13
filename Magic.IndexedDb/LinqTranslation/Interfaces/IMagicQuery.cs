@@ -21,10 +21,10 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         IMagicQuery<T> Where(Expression<Func<T, bool>> predicate);
 
-        IMagicQueryStage<T> Take(int amount);
-        IMagicQueryStage<T> TakeLast(int amount);
-        IMagicQueryStage<T> Skip(int amount);
-        IMagicQueryStage<T> OrderBy(Expression<Func<T, object>> predicate);
-        IMagicQueryStage<T> OrderByDescending(Expression<Func<T, object>> predicate);
+        IMagicQueryPaginationTake<T> Take(int amount);
+        IMagicQueryPaginationTake<T> TakeLast(int amount);
+        IMagicQueryFinal<T> Skip(int amount);
+        IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate);
+        IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate);
     }
 }

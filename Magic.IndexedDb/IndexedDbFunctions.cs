@@ -19,7 +19,7 @@ namespace Magic.IndexedDb
         public const string FIND_ITEM = "findItem";
         public const string TOARRAY = "toArray";
         public const string GET_STORAGE_ESTIMATE = "getStorageEstimate";
-        public const string WHERE = "where";
-        public const string WHERE_YIELD = "whereYield";
+        public const string WHERE = "whereJson";
+        public const string WHERE_YIELD = "whereJsonYield";
     }
 }

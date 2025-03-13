@@ -165,185 +165,644 @@ export function getStorageEstimate() {
     return navigator.storage.estimate();
 }
 
-export async function* whereYield(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
-    var results = await where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults);
+const DEBUG_MODE = true; // Set to false before release
 
-    yield* yieldAndReleaseReverse(results);
-}
-
-async function* yieldAndReleaseReverse(collection) {
-    if (!Array.isArray(collection) || collection.length === 0) {
-        return; // Now returns an empty generator instead of `null`
-    }
-
-    while (collection.length > 0) {
-        await new Promise(resolve => setTimeout(resolve, 0)); // Prevents blocking main thread
-        yield collection.pop(); // Correctly yields asynchronously
+function debugLog(...args) {
+    if (DEBUG_MODE) {
+        console.log("[DEBUG]", ...args);
     }
 }
 
 
-export async function where(dbName, storeName, jsonQueries, jsonQueryAdditions, uniqueResults = true) {
+//  Query Operations
+const QUERY_OPERATIONS = {
+    EQUAL: "Equal",
+    NOT_EQUAL: "NotEqual",
+    GREATER_THAN: "GreaterThan",
+    GREATER_THAN_OR_EQUAL: "GreaterThanOrEqual",
+    LESS_THAN: "LessThan",
+    LESS_THAN_OR_EQUAL: "LessThanOrEqual",
+    STARTS_WITH: "StartsWith",
+    CONTAINS: "Contains",
+    NOT_CONTAINS: "NotContains",
+    IN: "In",
+};
+
+
+//  Query Additions (Sorting & Pagination)
+const QUERY_ADDITIONS = {
+    ORDER_BY: "orderBy",
+    ORDER_BY_DESCENDING: "orderByDescending",
+    FIRST: "first",
+    LAST: "last",
+    SKIP: "skip",
+    TAKE: "take",
+    TAKE_LAST: "takeLast",
+};
+
+//  Query Combination Ruleset (What Can Be Combined in AND `&&`)
+const QUERY_COMBINATION_RULES = {
+    [QUERY_OPERATIONS.EQUAL]: [QUERY_OPERATIONS.EQUAL, QUERY_OPERATIONS.IN],
+    [QUERY_OPERATIONS.GREATER_THAN]: [QUERY_OPERATIONS.LESS_THAN, QUERY_OPERATIONS.LESS_THAN_OR_EQUAL],
+    [QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL]: [QUERY_OPERATIONS.LESS_THAN, QUERY_OPERATIONS.LESS_THAN_OR_EQUAL],
+    [QUERY_OPERATIONS.LESS_THAN]: [QUERY_OPERATIONS.GREATER_THAN, QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL],
+    [QUERY_OPERATIONS.LESS_THAN_OR_EQUAL]: [QUERY_OPERATIONS.GREATER_THAN, QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL],
+    [QUERY_OPERATIONS.STARTS_WITH]: [], //  Cannot combine StartsWith with anything
+    [QUERY_OPERATIONS.IN]: [QUERY_OPERATIONS.EQUAL],
+    [QUERY_OPERATIONS.CONTAINS]: [], //  Must always go to a cursor
+};
+
+//  Query Addition Ruleset (Which Operations Can Be Stacked)
+const QUERY_ADDITION_RULES = {
+    [QUERY_ADDITIONS.ORDER_BY]: [QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE],
+    [QUERY_ADDITIONS.ORDER_BY_DESCENDING]: [QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE],
+    [QUERY_ADDITIONS.FIRST]: [],
+    [QUERY_ADDITIONS.LAST]: [],
+    [QUERY_ADDITIONS.SKIP]: [QUERY_ADDITIONS.ORDER_BY, QUERY_ADDITIONS.ORDER_BY_DESCENDING],
+    [QUERY_ADDITIONS.TAKE]: [QUERY_ADDITIONS.ORDER_BY, QUERY_ADDITIONS.ORDER_BY_DESCENDING],
+    [QUERY_ADDITIONS.TAKE_LAST]: [],
+};
+
+
+const indexCache = {}; //  Cache indexed properties per DB+Store
+
+export async function* whereYield(dbName, storeName, jsonQueries, jsonQueryAdditions) {
+    yield* where(dbName, storeName, JSON.parse(jsonQueries), JSON.parse(jsonQueryAdditions));
+}
+
+export async function* whereJsonYield(dbName, storeName, jsonQueries, jsonQueryAdditions) {
     const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
+    yield* whereJson(dbName, storeName, orConditionsArray, QueryAdditions);
+}
+
+export async function whereJson(dbName, storeName, jsonQueries, jsonQueryAdditions) {
+    debugLog("whereJson called");
+
+    const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
+    const QueryAdditions = JSON.parse(jsonQueryAdditions);
+
+    let results = []; // Collect results here
+
+    for await (let record of where(dbName, storeName, orConditionsArray, QueryAdditions)) {
+        results.push(record);
+    }
+
+    debugLog("whereJson returning results", { count: results.length, results });
+
+    return results; // Return all results at once
+}
+
+
+export async function* where(dbName, storeName, orConditionsArray, queryAdditions = []) {
+    debugLog("Starting where function", { dbName, storeName, orConditionsArray, queryAdditions });
 
     let db = await getDb(dbName);
     let table = db.table(storeName);
 
-    let results = [];
+    if (!indexCache[dbName]) indexCache[dbName] = {};
+    if (!indexCache[dbName][storeName]) {
+        const schema = table.schema;
+        indexCache[dbName][storeName] = { indexes: {}, primaryKey: schema.primKey.name };
 
-    function applyConditionsToRecord(record, conditions) {
-        for (const condition of conditions) {
-            const parsedValue = condition.isString ? condition.value : parseInt(condition.value);
-            switch (condition.operation) {
-                case 'GreaterThan':
-                    if (!(record[condition.property] > parsedValue)) return false;
-                    break;
-                case 'GreaterThanOrEqual':
-                    if (!(record[condition.property] >= parsedValue)) return false;
-                    break;
-                case 'LessThan':
-                    if (!(record[condition.property] < parsedValue)) return false;
-                    break;
-                case 'LessThanOrEqual':
-                    if (!(record[condition.property] <= parsedValue)) return false;
-                    break;
-                case 'Equal':
-                    if (record[condition.property] === null && condition.value === null) {
-                        return true;
-                    }
-                    if (condition.isString) {
-                        if (condition.caseSensitive) {
-                            if (record[condition.property] !== condition.value) return false;
-                        } else {
-                            if (record[condition.property]?.toLowerCase() !== condition.value?.toLowerCase()) return false;
-                        }
-                    } else {
-                        if (record[condition.property] !== parsedValue) return false;
-                    }
-                    break;
-                case 'NotEqual':
-                    if (record[condition.property] === null && condition.value === null) {
-                        return false;
-                    }
-                    if (condition.isString) {
-                        if (condition.caseSensitive) {
-                            if (record[condition.property] === condition.value) return false;
-                        } else {
-                            if (record[condition.property]?.toLowerCase() === condition.value?.toLowerCase()) return false;
-                        }
-                    } else {
-                        if (record[condition.property] === parsedValue) return false;
-                    }
-                    break;
-                case 'Contains':
-                    if (!record[condition.property]?.toLowerCase().includes(condition.value.toLowerCase())) return false;
-                    break;
-                case 'StartsWith':
-                    if (!record[condition.property]?.toLowerCase().startsWith(condition.value.toLowerCase())) return false;
-                    break;
-                case 'In':
-                    if (!condition.value.includes(record[condition.property])) return false;
-                    break;
-                default:
-                    throw new Error('Unsupported operation: ' + condition.operation);
+        for (const index of schema.indexes) {
+            indexCache[dbName][storeName].indexes[index.name] = true;
+        }
+    }
+
+    let primaryKey = indexCache[dbName][storeName].primaryKey;
+    let yieldedPrimaryKeys = new Set(); // Track already returned records
+
+    debugLog("Validated schema & cached indexes", { primaryKey, indexes: indexCache[dbName][storeName].indexes });
+
+    let requiresCursor = validateQueryAdditions(queryAdditions) || validateQueryCombinations(orConditionsArray);
+    debugLog("Determined if query requires cursor", { requiresCursor });
+
+    if (!orConditionsArray || orConditionsArray.length === 0) {
+        debugLog("No filtering conditions detected. Fetching entire table.");
+        let allRecords = await table.toArray();
+        for (let record of applyIndexedQueryAdditions(table, allRecords, queryAdditions)) {
+            if (!yieldedPrimaryKeys.has(record[primaryKey])) {
+                yieldedPrimaryKeys.add(record[primaryKey]);
+                debugLog("Yielding record", record);
+                yield record;
             }
         }
-        return true;
+        return;
     }
 
-    async function processWithCursor(conditions) {
-        return new Promise((resolve, reject) => {
-            let primaryKey = table.schema.primKey.name;
-            let cursorResults = [];
-            let request = table.orderBy(primaryKey).each((record) => {
-                if (applyConditionsToRecord(record, conditions)) {
-                    cursorResults.push(record);
-                }
-            });
-            request.then(() => resolve(cursorResults)).catch(reject);
-        });
-    }
+    // Indexed Queries will store fully indexed AND groups that can be optimized with IndexedDB
+    let indexedQueries = [];
 
-    async function processIndexedQuery(conditions) {
-        let localResults = [];
-        for (const condition of conditions) {
-            if (table.schema.idxByName[condition.property]) {
-                let indexQuery = null;
-                switch (condition.operation) {
-                    case 'GreaterThan':
-                        indexQuery = table.where(condition.property).above(condition.value);
-                        break;
-                    case 'GreaterThanOrEqual':
-                        indexQuery = table.where(condition.property).aboveOrEqual(condition.value);
-                        break;
-                    case 'LessThan':
-                        indexQuery = table.where(condition.property).below(condition.value);
-                        break;
-                    case 'LessThanOrEqual':
-                        indexQuery = table.where(condition.property).belowOrEqual(condition.value);
-                        break;
-                    case 'Equal':
-                        indexQuery = table.where(condition.property).equals(condition.value);
-                        break;
-                    case 'In':
-                        indexQuery = table.where(condition.property).anyOf(condition.value);
-                        break;
+    // Cursor Conditions will store AND groups that must be processed manually in JavaScript
+    let cursorConditions = [];
+
+    /**
+     * The orConditionsArray is structured as an array of arrays:
+     * 
+     * - The **outer array** represents multiple OR (`||`) conditions.
+     * - Each **inner array** represents a group of AND (`&&`) conditions.
+     * 
+     * Example:
+     * [
+     *    [ // First OR Group (connected by AND `&&`)
+     *        { property: 'Age', operation: 'GreaterThan', value: 35 },
+     *        { property: 'TestInt', operation: 'Equal', value: 9 }
+     *    ],
+     *    [ // Second OR Group (separate from the first group, connected by OR `||`)
+     *        { property: 'Name', operation: 'Contains', value: 'bo' }
+     *    ]
+     * ]
+     * 
+     * This means:
+     * - The first OR group says: `Age > 35 AND TestInt == 9`
+     * - The second OR group says: `Name CONTAINS "bo"`
+     * - The entire query is `(Age > 35 && TestInt == 9) || (Name CONTAINS "bo")`
+     * 
+     * The goal here is:
+     * 1. **Identify which groups can be run as optimized IndexedDB queries.**
+     * 2. **Identify which groups require JavaScript filtering via cursors.**
+     * 3. **Ensure we correctly separate AND (`&&`) and OR (`||`) logic.**
+     */
+    for (const orGroup of orConditionsArray) {
+        // This represents a single OR group (set of AND conditions)
+        let indexedConditions = [];
+        let needsCursor = false;
+
+        for (const andAndOperatorConditions of orGroup) { // Each OR group contains multiple AND conditions
+            let indexedConditions = [];
+            let needsCursor = false;
+
+            for (const condition of andAndOperatorConditions) { // Each condition within the AND group
+                // Ensure the condition is valid
+                if (!condition || typeof condition !== "object" || !condition.operation) {
+                    debugLog("Skipping invalid condition", { condition });
+                    continue;
                 }
-                if (indexQuery) {
-                    let indexedResults = await indexQuery.toArray();
-                    localResults.push(...indexedResults.filter(record => applyConditionsToRecord(record, conditions)));
+
+                // Determine if this condition is indexed
+                const isIndexed = indexCache[dbName][storeName].indexes[condition.property] || false;
+                condition.isIndex = isIndexed;
+
+                /**
+                 * If even **one** condition in an AND group is not indexed,
+                 * we **must** process the entire AND group using a cursor.
+                 */
+                if (!isIndexed || !isSupportedIndexedOperation([condition])) {
+                    needsCursor = true;
+                    break; // Stop processing and mark this entire AND group for cursors
+                } else {
+                    indexedConditions.push(condition);
                 }
             }
+
+            /**
+             * If **any condition in an AND group** requires a cursor, 
+             * we push the **entire AND group** to `cursorConditions`.
+             * 
+             * Otherwise, if **all conditions were indexed**, we push 
+             * them to `indexedQueries` for optimized IndexedDB execution.
+             */
+            if (needsCursor) {
+                cursorConditions.push(andAndOperatorConditions); // Push entire AND group to cursor
+            } else {
+                indexedQueries.push(indexedConditions); // Push fully indexed AND group
+            }
         }
-        if (localResults.length === 0) {
-            localResults = await processWithCursor(conditions);
-        }
-        results.push(...localResults);
     }
 
-    function applyArrayQueryAdditions(results, queryAdditions) {
-        if (queryAdditions) {
-            if (queryAdditions.some(q => q.Name === 'orderBy')) {
-                const orderBy = queryAdditions.find(q => q.Name === 'orderBy');
-                results.sort((a, b) => a[orderBy.StringValue] - b[orderBy.StringValue]);
-            }
-            if (queryAdditions.some(q => q.Name === 'orderByDescending')) {
-                const orderByDescending = queryAdditions.find(q => q.Name === 'orderByDescending');
-                results.sort((a, b) => b[orderByDescending.StringValue] - a[orderByDescending.StringValue]);
-            }
-            if (queryAdditions.some(q => q.Name === 'skip')) {
-                results = results.slice(queryAdditions.find(q => q.Name === 'skip').IntValue);
-            }
-            if (queryAdditions.some(q => q.Name === 'take')) {
-                results = results.slice(0, queryAdditions.find(q => q.Name === 'take').IntValue);
-            }
-            if (queryAdditions.some(q => q.Name === 'takeLast')) {
-                const takeLastValue = queryAdditions.find(q => q.Name === 'takeLast').IntValue;
-                results = results.slice(-takeLastValue).reverse();
+    /**
+     * Summary of Logic:
+     * - **Indexed Queries (`indexedQueries`)**  Fully indexed AND groups that can be run efficiently.
+     * - **Cursor Conditions (`cursorConditions`)**  Groups requiring JavaScript-based filtering.
+     * - **OR (`||`) relationships remain intact** because we handle indexed queries separately 
+     *   from cursor-based queries and later merge their results.
+     */
+
+
+
+    debugLog("Indexed Queries vs Cursor Queries", { indexedQueries, cursorConditions });
+
+    let optimizedIndexedQueries = optimizeIndexedQueries(indexedQueries);
+    debugLog("Optimized Indexed Queries", { optimizedIndexedQueries });
+
+    // Process Indexed Queries First
+    for (let query of optimizedIndexedQueries) {
+        for await (let record of runIndexedQuery(table, query)) {
+            if (!yieldedPrimaryKeys.has(record[primaryKey])) {
+                yieldedPrimaryKeys.add(record[primaryKey]);
+                debugLog("Yielding record from IndexedDB", record);
+                yield record;
             }
         }
-        return results;
     }
 
-    async function combineQueries() {
-        for (const conditions of orConditionsArray) {
-            await processIndexedQuery(conditions[0]);
-        }
-        results = applyArrayQueryAdditions(results, QueryAdditions);
-        if (uniqueResults) {
-            const uniqueObjects = new Set(results.map(obj => JSON.stringify(obj)));
-            results = Array.from(uniqueObjects).map(str => JSON.parse(str));
-        }
-        return results;
-    }
+    // Pass yielded primary keys into cursor query to **skip already processed results**
+    let cursorResults = await runCursorQuery(table, cursorConditions, yieldedPrimaryKeys);
+    debugLog("Cursor Query Results Count", { count: cursorResults.length });
 
-    if (orConditionsArray.length > 0) {
-        return await combineQueries();
-    } else {
-        return [];
+    // Apply query additions (sorting, skipping, taking, etc.)
+    cursorResults = applyCursorQueryAdditions(cursorResults, queryAdditions);
+
+    // Yield final cursor-based records
+    for (let record of cursorResults) {
+        yieldedPrimaryKeys.add(record[primaryKey]); // **Ensure it's tracked**
+        debugLog("Yielding final cursor-based record", record);
+        yield record;
     }
 }
+
+function validateQueryAdditions(queryAdditions) {
+    queryAdditions = queryAdditions || []; // Ensure it's always an array
+    let seenAdditions = new Set();
+    let requiresCursor = false;
+
+    for (const addition of queryAdditions) {
+        let validCombos = QUERY_ADDITION_RULES[addition.Name];
+
+        if (!validCombos) {
+            throw new Error(`Unsupported query addition: ${addition.Name}`);
+        }
+
+        for (const seen of seenAdditions) {
+            if (!validCombos.includes(seen)) {
+                requiresCursor = true;
+                break;
+            }
+        }
+        seenAdditions.add(addition.Name);
+    }
+
+    return requiresCursor;
+}
+
+function validateQueryCombinations(orGroups) {
+    debugLog("Validating Query Combinations", { orGroups });
+
+    for (const orGroup of orGroups) {
+        // Ensure `orGroup` is a valid array and contains at least one condition
+        if (!Array.isArray(orGroup) || orGroup.length === 0) {
+            debugLog("Skipping empty or improperly formatted OR group", { orGroup });
+            continue; // Skip empty or malformed groups
+        }
+
+        let needsCursor = false;
+        let seenOperations = new Set();
+
+        for (const condition of orGroup) { // Iterate through the AND-connected conditions properly
+            if (!condition || typeof condition !== 'object' || !condition.operation) {
+                debugLog("Skipping invalid condition", { condition });
+                continue;
+            }
+
+            debugLog("Checking condition for IndexedDB compatibility", { condition });
+
+            if (!QUERY_COMBINATION_RULES[condition.operation]) {
+                debugLog(`Condition operation not supported: ${condition.operation}`, { condition });
+                needsCursor = true;
+                break;
+            }
+
+            for (const seenOp of seenOperations) {
+                if (!QUERY_COMBINATION_RULES[seenOp]?.includes(condition.operation)) {
+                    debugLog(`Incompatible combination detected: ${seenOp} with ${condition.operation}`, { condition });
+                    needsCursor = true;
+                    break;
+                }
+            }
+
+            seenOperations.add(condition.operation);
+        }
+
+        if (needsCursor) {
+            debugLog("Query requires cursor processing due to invalid operation combination.", { orGroup });
+            return true; // Forces cursor fallback if AND/OR mix isn't possible
+        }
+    }
+
+    debugLog("Query can be fully indexed!", { orGroups });
+    return false; // Can use IndexedDB directly
+}
+
+
+
+
+
+
+
+
+
+
+/**
+ *  Determines if an indexed operation is supported.
+ */
+function isSupportedIndexedOperation(conditions) {
+    for (const condition of conditions) {
+        switch (condition.operation) {
+            case QUERY_OPERATIONS.EQUAL:
+            case QUERY_OPERATIONS.GREATER_THAN:
+            case QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL:
+            case QUERY_OPERATIONS.LESS_THAN:
+            case QUERY_OPERATIONS.LESS_THAN_OR_EQUAL:
+            case QUERY_OPERATIONS.IN:
+                break; //  Supported
+            case QUERY_OPERATIONS.STARTS_WITH:
+                if (condition.caseSensitive) return false; //  Needs Cursor
+                break;
+            default:
+                return false; //  Unsupported operation
+        }
+    }
+    return true;
+}
+
+/**
+ * Executes an indexed query using IndexedDB.
+ * @param {Object} table - The Dexie table instance.
+ * @param {Array} indexedConditions - The array of indexed conditions.
+ * @returns {AsyncGenerator} - A generator that yields query results.
+ */
+async function* runIndexedQuery(table, indexedConditions) {
+    debugLog("Executing runIndexedQuery", { indexedConditions });
+
+    if (indexedConditions.length === 0) {
+        debugLog("No indexed conditions provided, returning entire table.");
+        yield* table.toArray(); // If no indexed conditions, return full table.
+        return;
+    }
+
+    let query;
+
+    // **Process the first condition as the main query**
+    let firstCondition = indexedConditions[0];
+
+    switch (firstCondition.operation) {
+        case QUERY_OPERATIONS.EQUAL:
+            query = table.where(firstCondition.property).equals(firstCondition.value);
+            break;
+        case QUERY_OPERATIONS.IN:
+            query = table.where(firstCondition.property).anyOf(firstCondition.value);
+            break;
+        case QUERY_OPERATIONS.GREATER_THAN:
+            query = table.where(firstCondition.property).above(firstCondition.value);
+            break;
+        case QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL:
+            query = table.where(firstCondition.property).aboveOrEqual(firstCondition.value);
+            break;
+        case QUERY_OPERATIONS.LESS_THAN:
+            query = table.where(firstCondition.property).below(firstCondition.value);
+            break;
+        case QUERY_OPERATIONS.LESS_THAN_OR_EQUAL:
+            query = table.where(firstCondition.property).belowOrEqual(firstCondition.value);
+            break;
+        case QUERY_OPERATIONS.STARTS_WITH:
+            query = table.where(firstCondition.property).startsWith(firstCondition.value);
+            break;
+        default:
+            throw new Error(`Unsupported indexed query operation: ${firstCondition.operation}`);
+    }
+
+    // **Apply additional indexed filters (if any)**
+    for (let i = 1; i < indexedConditions.length; i++) {
+        let condition = indexedConditions[i];
+
+        switch (condition.operation) {
+            case QUERY_OPERATIONS.EQUAL:
+                query = query.and(record => record[condition.property] === condition.value);
+                break;
+            case QUERY_OPERATIONS.GREATER_THAN:
+                query = query.and(record => record[condition.property] > condition.value);
+                break;
+            case QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL:
+                query = query.and(record => record[condition.property] >= condition.value);
+                break;
+            case QUERY_OPERATIONS.LESS_THAN:
+                query = query.and(record => record[condition.property] < condition.value);
+                break;
+            case QUERY_OPERATIONS.LESS_THAN_OR_EQUAL:
+                query = query.and(record => record[condition.property] <= condition.value);
+                break;
+            case QUERY_OPERATIONS.STARTS_WITH:
+                query = query.and(record => record[condition.property].startsWith(condition.value));
+                break;
+            default:
+                throw new Error(`Unsupported indexed query operation: ${condition.operation}`);
+        }
+    }
+
+    // **Execute the query & yield results**
+    const results = await query.toArray();
+    debugLog("runIndexedQuery results count", results.length);
+
+    for (let record of results) {
+        yield record;
+    }
+}
+
+
+/**
+ *  Optimizes indexed queries by merging `anyOf()` conditions.
+ */
+function optimizeIndexedQueries(indexedQueries) {
+    if (!indexedQueries || indexedQueries.length === 0) {
+        return [];
+    }
+
+    let optimized = [];
+    let groupedByProperty = {};
+
+    // Group conditions by property for better optimization
+    for (let query of indexedQueries) {
+        for (let condition of query) {
+            if (!groupedByProperty[condition.property]) {
+                groupedByProperty[condition.property] = [];
+            }
+            groupedByProperty[condition.property].push(condition);
+        }
+    }
+
+    for (let [property, conditions] of Object.entries(groupedByProperty)) {
+        if (conditions.length > 1) {
+            // Convert multiple `.Equal` conditions into `.anyOf()`
+            if (conditions.every(c => c.operation === QUERY_OPERATIONS.EQUAL)) {
+                optimized.push([{
+                    property,
+                    operation: QUERY_OPERATIONS.IN,
+                    value: conditions.map(c => c.value)
+                }]);
+            }
+            // Convert multiple `.StartsWith()` conditions into `.anyOf()`
+            else if (conditions.every(c => c.operation === QUERY_OPERATIONS.STARTS_WITH)) {
+                optimized.push([{
+                    property,
+                    operation: QUERY_OPERATIONS.IN,
+                    value: conditions.map(c => c.value)
+                }]);
+            }
+            // Combine range conditions into `.between()` if possible
+            else if (
+                conditions.some(c => c.operation === QUERY_OPERATIONS.GREATER_THAN || c.operation === QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL) &&
+                conditions.some(c => c.operation === QUERY_OPERATIONS.LESS_THAN || c.operation === QUERY_OPERATIONS.LESS_THAN_OR_EQUAL)
+            ) {
+                let min = conditions.find(c => c.operation.includes("Greater")).value;
+                let max = conditions.find(c => c.operation.includes("Less")).value;
+                optimized.push([{
+                    property,
+                    operation: "between",
+                    value: [min, max]
+                }]);
+            }
+            else {
+                optimized.push(conditions);
+            }
+        } else {
+            optimized.push(conditions);
+        }
+    }
+
+    if (optimized.length === 0) {
+        throw new Error("OptimizeIndexedQueries failed—No indexed queries were produced! Investigate input conditions.");
+    }
+
+    debugLog("Optimized Indexed Queries", { optimized });
+
+    return optimized;
+}
+
+/**
+ * Executes a cursor-based query using Dexie's `each()` for efficient iteration.
+ * This ensures that records are not duplicated if they match multiple OR conditions.
+ *
+ * @param {Object} table - The Dexie table instance.
+ * @param {Array} conditionsArray - Array of OR groups containing AND conditions.
+ * @returns {Promise<Array>} - Filtered results based on conditions.
+ */
+async function runCursorQuery(table, conditions, yieldedPrimaryKeys) {
+    debugLog("Running Cursor Query with Conditions", { conditions });
+
+    let results = [];
+
+    await table.each(record => {
+        if (yieldedPrimaryKeys.has(record.id)) return; // Skip if already yielded
+
+        if (conditions.some(andConditions => andConditions.every(condition => applyCondition(record, condition)))) {
+            debugLog("Adding record from Cursor Query", record);
+            results.push(record);
+        }
+    });
+
+    debugLog("Cursor Query Completed", { count: results.length });
+    return results;
+}
+
+
+
+/**
+ *  Applies a single filtering condition on a record.
+ */
+function applyCondition(record, condition) {
+    let recordValue = record[condition.property];
+    let queryValue = condition.value;
+
+    if (typeof recordValue === "string" && typeof queryValue === "string") {
+        if (!condition.caseSensitive) {
+            recordValue = recordValue.toLowerCase();
+            queryValue = queryValue.toLowerCase();
+        }
+    }
+
+    switch (condition.operation) {
+        case QUERY_OPERATIONS.EQUAL:
+            return recordValue === queryValue;
+        case QUERY_OPERATIONS.NOT_EQUAL:
+            return recordValue !== queryValue;
+        case QUERY_OPERATIONS.GREATER_THAN:
+            return recordValue > queryValue;
+        case QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL:
+            return recordValue >= queryValue;
+        case QUERY_OPERATIONS.LESS_THAN:
+            return recordValue < queryValue;
+        case QUERY_OPERATIONS.LESS_THAN_OR_EQUAL:
+            return recordValue <= queryValue;
+        case QUERY_OPERATIONS.STARTS_WITH:
+            return typeof recordValue === "string" && recordValue.startsWith(queryValue);
+        case QUERY_OPERATIONS.CONTAINS:
+            return typeof recordValue === "string" && recordValue.includes(queryValue);
+        case QUERY_OPERATIONS.NOT_CONTAINS:
+            return typeof recordValue === "string" && !recordValue.includes(queryValue);
+        case QUERY_OPERATIONS.IN:
+            return Array.isArray(queryValue) && queryValue.includes(recordValue);
+        default:
+            throw new Error(`Unsupported condition: ${condition.operation}`);
+    }
+}
+
+
+
+
+
+function applyIndexedQueryAdditions(table, results, queryAdditions) {
+    if (!queryAdditions || queryAdditions.length === 0) return results;
+
+    debugLog("Applying indexed query additions in given order", { queryAdditions });
+
+    for (const addition of queryAdditions) {
+        switch (addition.Name) {
+            case QUERY_ADDITIONS.ORDER_BY:
+                results = results.orderBy(addition.StringValue);
+                break;
+            case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
+                results = results.orderBy(addition.StringValue).reverse();
+                break;
+            case QUERY_ADDITIONS.SKIP:
+                results = results.offset(addition.IntValue);
+                break;
+            case QUERY_ADDITIONS.TAKE:
+                results = results.limit(addition.IntValue);
+                break;
+            case QUERY_ADDITIONS.TAKE_LAST:
+                results = results.reverse().limit(addition.IntValue).reverse(); // Ensures last `n` items are taken in order
+                break;
+            default:
+                throw new Error(`Unsupported query addition: ${addition.Name}`);
+        }
+    }
+
+    return results;
+}
+
+
+function applyCursorQueryAdditions(results, queryAdditions) {
+    if (!queryAdditions || queryAdditions.length === 0) return results;
+
+    debugLog("Applying cursor query additions in given order", { queryAdditions });
+
+    for (const addition of queryAdditions) {
+        switch (addition.Name) {
+            case QUERY_ADDITIONS.ORDER_BY:
+                results.sort((a, b) => a[addition.StringValue] - b[addition.StringValue]);
+                break;
+            case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
+                results.sort((a, b) => b[addition.StringValue] - a[addition.StringValue]);
+                break;
+            case QUERY_ADDITIONS.SKIP:
+                results = results.slice(addition.IntValue);
+                break;
+            case QUERY_ADDITIONS.TAKE:
+                results = results.slice(0, addition.IntValue);
+                break;
+            case QUERY_ADDITIONS.TAKE_LAST:
+                results = results.slice(-addition.IntValue);
+                break;
+            default:
+                throw new Error(`Unsupported query addition: ${addition.Name}`);
+        }
+    }
+
+    return results;
+}
+
+
 
 async function getDb(dbName) {
     if (databases.find(d => d.name == dbName) === undefined) {

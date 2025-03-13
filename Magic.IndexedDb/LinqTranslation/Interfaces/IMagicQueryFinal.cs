@@ -10,17 +10,13 @@ using System.Threading.Tasks;
 namespace Magic.IndexedDb
 {
     /// <summary>
-    /// You are in the staging phase. This is still a fully supported query that 
+    /// You did it, you've found the end! There's no more IndexDB operations 
+    /// you can append. Anything else is memory based. So off, venture forth!
     /// has the potential of utilizing indexes.
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public interface IMagicQueryStage<T> : IMagicExecute<T> where T : class
+    public interface IMagicQueryFinal<T> : IMagicExecute<T> where T : class
     {
-        IMagicQueryPaginationTake<T> Take(int amount);
-        IMagicQueryPaginationTake<T> TakeLast(int amount);
-        IMagicQueryFinal<T> Skip(int amount);
-        IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate);
-        IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate);
 
         /// <summary>
         /// In memory processing from this point forward! IndexDB 
