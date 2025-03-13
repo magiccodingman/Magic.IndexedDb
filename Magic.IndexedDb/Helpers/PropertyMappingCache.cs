@@ -156,24 +156,65 @@ namespace Magic.IndexedDb.Helpers
             throw new Exception("Something went very wrong getting GetTypeOfTProperties");
         }
 
+
         private static readonly HashSet<Type> _simpleTypes = new()
-        {
-            typeof(string), typeof(decimal), typeof(DateTime), typeof(DateTimeOffset),
-            typeof(Guid), typeof(Uri), typeof(TimeSpan)
-        };
+{
+    typeof(string), typeof(decimal), typeof(DateTime), typeof(DateTimeOffset),
+    typeof(Guid), typeof(Uri), typeof(TimeSpan)
+};
+
+        // Cache lookups for extreme performance
+        private static readonly ConcurrentDictionary<Type, bool> _typeCache = new();
+        private static readonly Type ObjectType = typeof(object); // ✅ Cached for performance
 
         public static bool IsSimpleType(Type type)
         {
             if (type == null)
                 return false;
 
-            // Handle Nullable<T> types (e.g., Nullable<DateTime> -> DateTime)
+            // First, check cache
+            if (_typeCache.TryGetValue(type, out bool cachedResult))
+                return cachedResult;
+
+            // If the type is Nullable<T>, extract T.
             if (Nullable.GetUnderlyingType(type) is Type underlyingType)
                 type = underlyingType;
 
-            // Check if primitive, enum, or explicitly in our list
-            return type.IsPrimitive || type.IsEnum || _simpleTypes.Contains(type);
+            // Unwrap System.Text.Json.Nodes.JsonValueCustomized<T> (avoiding .FullName for perf)
+            if (type.IsGenericType)
+            {
+                var genericType = type.GetGenericTypeDefinition();
+                if (genericType.Namespace == "System.Text.Json.Nodes" && genericType.Name.StartsWith("JsonValueCustomized"))
+                {
+                    type = type.GetGenericArguments()[0]; // Extract T from JsonValueCustomized<T>
+
+                    // If T is still just object, force serialization as a simple type
+                    if (type == ObjectType)
+                    {
+                        _typeCache.TryAdd(type, true);
+                        return true;
+                    }
+                }
+            }
+
+            // If the final unwrapped type is still object, force serialization as-is
+            if (type == ObjectType)
+            {
+                _typeCache.TryAdd(type, true);
+                return true;
+            }
+
+            // Check if the final unwrapped type is simple
+            bool result = type.IsPrimitive || type.IsEnum || _simpleTypes.Contains(type);
+
+            // Store result in cache
+            _typeCache.TryAdd(type, result);
+
+            return result;
         }
+
+
+
 
 
         /*

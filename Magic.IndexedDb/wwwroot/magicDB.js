@@ -226,25 +226,23 @@ const QUERY_ADDITION_RULES = {
 
 const indexCache = {}; //  Cache indexed properties per DB+Store
 
-export async function* whereYield(dbName, storeName, jsonQueries, jsonQueryAdditions) {
-    yield* where(dbName, storeName, JSON.parse(jsonQueries), JSON.parse(jsonQueryAdditions));
+export async function* whereYield(dbName, storeName, nestedOrFilter, jsonQueryAdditions) {
+    yield* where(dbName, storeName, nestedOrFilter, JSON.parse(jsonQueryAdditions));
 }
 
-export async function* whereJsonYield(dbName, storeName, jsonQueries, jsonQueryAdditions) {
-    const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
+export async function* whereJsonYield(dbName, storeName, nestedOrFilter, jsonQueryAdditions) {
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
-    yield* whereJson(dbName, storeName, orConditionsArray, QueryAdditions);
+    yield* whereJson(dbName, storeName, nestedOrFilter, QueryAdditions);
 }
 
-export async function whereJson(dbName, storeName, jsonQueries, jsonQueryAdditions) {
+export async function whereJson(dbName, storeName, nestedOrFilter, jsonQueryAdditions) {
     debugLog("whereJson called");
 
-    const orConditionsArray = jsonQueries.map(query => JSON.parse(query));
     const QueryAdditions = JSON.parse(jsonQueryAdditions);
 
     let results = []; // Collect results here
 
-    for await (let record of where(dbName, storeName, orConditionsArray, QueryAdditions)) {
+    for await (let record of where(dbName, storeName, nestedOrFilter, QueryAdditions)) {
         results.push(record);
     }
 
@@ -272,16 +270,12 @@ function isValidFilterObject(obj) {
     );
 }
 
-// Example Usage:
-const data = {/* your deserialized object here */ };
-if (!isValidFilterObject(data)) {
-    throw new Error("Invalid filter object structure");
-}
+export async function* where(dbName, storeName, nestedOrFilter, queryAdditions = []) {
+    debugLog("Starting where function", { dbName, storeName, nestedOrFilter, queryAdditions });
 
-export async function* where(dbName, storeName, orConditionsArray, queryAdditions = []) {
-    debugLog("Starting where function", { dbName, storeName, orConditionsArray, queryAdditions });
-
-    isValidFilterObject(orConditionsArray);
+    if (!isValidFilterObject(nestedOrFilter)) {
+        throw new Error("Invalid filter object provided to where function.");
+    }
 
     let db = await getDb(dbName);
     let table = db.table(storeName);
@@ -301,10 +295,10 @@ export async function* where(dbName, storeName, orConditionsArray, queryAddition
 
     debugLog("Validated schema & cached indexes", { primaryKey, indexes: indexCache[dbName][storeName].indexes });
 
-    let requiresCursor = validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) || validateQueryCombinations(orConditionsArray);
+    let requiresCursor = validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) || validateQueryCombinations(nestedOrFilter);
     debugLog("Determined if query requires cursor", { requiresCursor });
 
-    if (!orConditionsArray || orConditionsArray.length === 0) {
+    if (!nestedOrFilter.orGroups || nestedOrFilter.orGroups.length === 0) {
         debugLog("No filtering conditions detected. Fetching entire table.");
         let allRecords = await table.toArray();
         for (let record of applyIndexedQueryAdditions(table, allRecords, queryAdditions)) {
@@ -324,42 +318,18 @@ export async function* where(dbName, storeName, orConditionsArray, queryAddition
     let cursorConditions = [];
 
     /**
-     * The orConditionsArray is structured as an array of arrays:
-     * 
-     * - The **outer array** represents multiple OR (`||`) conditions.
-     * - Each **inner array** represents a group of AND (`&&`) conditions.
-     * 
-     * Example:
-     * [
-     *    [ // First OR Group (connected by AND `&&`)
-     *        { property: 'Age', operation: 'GreaterThan', value: 35 },
-     *        { property: 'TestInt', operation: 'Equal', value: 9 }
-     *    ],
-     *    [ // Second OR Group (separate from the first group, connected by OR `||`)
-     *        { property: 'Name', operation: 'Contains', value: 'bo' }
-     *    ]
-     * ]
-     * 
-     * This means:
-     * - The first OR group says: `Age > 35 AND TestInt == 9`
-     * - The second OR group says: `Name CONTAINS "bo"`
-     * - The entire query is `(Age > 35 && TestInt == 9) || (Name CONTAINS "bo")`
-     * 
-     * The goal here is:
-     * 1. **Identify which groups can be run as optimized IndexedDB queries.**
-     * 2. **Identify which groups require JavaScript filtering via cursors.**
-     * 3. **Ensure we correctly separate AND (`&&`) and OR (`||`) logic.**
+     * Iterate over the structured OR groups (|| logic)
      */
-    for (const orGroup of orConditionsArray) {
-        // This represents a single OR group (set of AND conditions)
-        let indexedConditions = [];
-        let needsCursor = false;
+    for (const orGroup of nestedOrFilter.orGroups) {
+        if (!orGroup.andGroups || orGroup.andGroups.length === 0) continue;
 
-        for (const andAndOperatorConditions of orGroup) { // Each OR group contains multiple AND conditions
+        for (const andGroup of orGroup.andGroups) { // Each OR group contains multiple AND conditions
+            if (!andGroup.conditions || andGroup.conditions.length === 0) continue;
+
             let indexedConditions = [];
             let needsCursor = false;
 
-            for (const condition of andAndOperatorConditions) { // Each condition within the AND group
+            for (const condition of andGroup.conditions) { // Each condition within the AND group
                 // Ensure the condition is valid
                 if (!condition || typeof condition !== "object" || !condition.operation) {
                     debugLog("Skipping invalid condition", { condition });
@@ -390,7 +360,7 @@ export async function* where(dbName, storeName, orConditionsArray, queryAddition
              * them to `indexedQueries` for optimized IndexedDB execution.
              */
             if (needsCursor) {
-                cursorConditions.push(andAndOperatorConditions); // Push entire AND group to cursor
+                cursorConditions.push(andGroup.conditions); // Push entire AND group to cursor
             } else {
                 indexedQueries.push(indexedConditions); // Push fully indexed AND group
             }
@@ -404,9 +374,6 @@ export async function* where(dbName, storeName, orConditionsArray, queryAddition
      * - **OR (`||`) relationships remain intact** because we handle indexed queries separately 
      *   from cursor-based queries and later merge their results.
      */
-
-
-
     debugLog("Indexed Queries vs Cursor Queries", { indexedQueries, cursorConditions });
 
     let optimizedIndexedQueries = optimizeIndexedQueries(indexedQueries);
@@ -437,6 +404,7 @@ export async function* where(dbName, storeName, orConditionsArray, queryAddition
         yield record;
     }
 }
+
 
 function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
     queryAdditions = queryAdditions || []; // Ensure it's always an array
@@ -474,53 +442,66 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
 }
 
 
-function validateQueryCombinations(orGroups) {
-    debugLog("Validating Query Combinations", { orGroups });
+function validateQueryCombinations(nestedOrFilter) {
+    debugLog("Validating Query Combinations", { nestedOrFilter });
 
-    for (const orGroup of orGroups) {
-        // Ensure `orGroup` is a valid array and contains at least one condition
-        if (!Array.isArray(orGroup) || orGroup.length === 0) {
+    if (!nestedOrFilter || !Array.isArray(nestedOrFilter.orGroups)) {
+        debugLog("Skipping validation: Filter object is invalid or missing OR groups.", { nestedOrFilter });
+        return true; // Default to cursor processing if invalid
+    }
+
+    for (const orGroup of nestedOrFilter.orGroups) {
+        if (!orGroup || !Array.isArray(orGroup.andGroups) || orGroup.andGroups.length === 0) {
             debugLog("Skipping empty or improperly formatted OR group", { orGroup });
             continue; // Skip empty or malformed groups
         }
 
         let needsCursor = false;
-        let seenOperations = new Set();
 
-        for (const condition of orGroup) { // Iterate through the AND-connected conditions properly
-            if (!condition || typeof condition !== 'object' || !condition.operation) {
-                debugLog("Skipping invalid condition", { condition });
+        for (const andGroup of orGroup.andGroups) {
+            if (!andGroup || !Array.isArray(andGroup.conditions) || andGroup.conditions.length === 0) {
+                debugLog("Skipping empty or improperly formatted AND group", { andGroup });
                 continue;
             }
 
-            debugLog("Checking condition for IndexedDB compatibility", { condition });
+            let seenOperations = new Set();
 
-            if (!QUERY_COMBINATION_RULES[condition.operation]) {
-                debugLog(`Condition operation not supported: ${condition.operation}`, { condition });
-                needsCursor = true;
-                break;
-            }
+            for (const condition of andGroup.conditions) {
+                if (!condition || typeof condition !== 'object' || !condition.operation) {
+                    debugLog("Skipping invalid condition", { condition });
+                    continue;
+                }
 
-            for (const seenOp of seenOperations) {
-                if (!QUERY_COMBINATION_RULES[seenOp]?.includes(condition.operation)) {
-                    debugLog(`Incompatible combination detected: ${seenOp} with ${condition.operation}`, { condition });
+                debugLog("Checking condition for IndexedDB compatibility", { condition });
+
+                if (!QUERY_COMBINATION_RULES[condition.operation]) {
+                    debugLog(`Condition operation not supported: ${condition.operation}`, { condition });
                     needsCursor = true;
                     break;
                 }
+
+                for (const seenOp of seenOperations) {
+                    if (!QUERY_COMBINATION_RULES[seenOp]?.includes(condition.operation)) {
+                        debugLog(`Incompatible combination detected: ${seenOp} with ${condition.operation}`, { condition });
+                        needsCursor = true;
+                        break;
+                    }
+                }
+
+                seenOperations.add(condition.operation);
             }
 
-            seenOperations.add(condition.operation);
-        }
-
-        if (needsCursor) {
-            debugLog("Query requires cursor processing due to invalid operation combination.", { orGroup });
-            return true; // Forces cursor fallback if AND/OR mix isn't possible
+            if (needsCursor) {
+                debugLog("Query requires cursor processing due to invalid operation combination.", { andGroup });
+                return true; // Forces cursor fallback if AND/OR mix isn't possible
+            }
         }
     }
 
-    debugLog("Query can be fully indexed!", { orGroups });
+    debugLog("Query can be fully indexed!", { nestedOrFilter });
     return false; // Can use IndexedDB directly
 }
+
 
 
 

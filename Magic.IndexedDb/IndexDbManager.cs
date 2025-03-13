@@ -238,7 +238,7 @@ namespace Magic.IndexedDb
             {
                 jsonQueryAdditions = MagicSerializationHelper.SerializeObject(query.StoredMagicQueries.ToArray());
             }
-
+            
             var args = new ITypedArgument[] {
                 new TypedArgument<string>(DbName),
                 new TypedArgument<string>(storeName),
