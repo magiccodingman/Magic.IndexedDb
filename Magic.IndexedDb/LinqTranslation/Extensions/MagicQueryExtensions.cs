@@ -14,7 +14,8 @@ using System.Collections;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
-    internal class MagicQueryExtensions<T> : IMagicQueryStage<T> where T : class
+    internal class MagicQueryExtensions<T> : 
+        IMagicQueryPaginationTake<T>, IMagicQueryOrderable<T>, IMagicQueryFinal<T> where T : class
     {
         public MagicQuery<T> MagicQuery { get; set; }
         public MagicQueryExtensions(MagicQuery<T> _magicQuery)
@@ -77,7 +78,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                 JsonQueries, MagicQuery, default))?.ToList() ?? new List<T>();
         }
 
-        public IMagicQueryStage<T> Take(int amount)
+        public IMagicQueryPaginationTake<T> Take(int amount)
         {
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
@@ -87,7 +88,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             return new MagicQueryExtensions<T>(_MagicQuery);
         }
 
-        public IMagicQueryStage<T> TakeLast(int amount)
+        public IMagicQueryPaginationTake<T> TakeLast(int amount)
         {
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
@@ -97,7 +98,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             return new MagicQueryExtensions<T>(_MagicQuery);
         }
 
-        public IMagicQueryStage<T> Skip(int amount)
+        public IMagicQueryFinal<T> Skip(int amount)
         {
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
@@ -108,7 +109,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         }
 
         // Not currently available in Dexie version 1,2, or 3
-        public IMagicQueryStage<T> OrderBy(Expression<Func<T, object>> predicate)
+        public IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate)
         {
             var memberExpression = GetMemberExpressionFromLambda(predicate);
             var propertyInfo = memberExpression.Member as PropertyInfo;
@@ -134,7 +135,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         }
 
         // Not currently available in Dexie version 1,2, or 3
-        public IMagicQueryStage<T> OrderByDescending(Expression<Func<T, object>> predicate)
+        public IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate)
         {
             var memberExpression = GetMemberExpressionFromLambda(predicate);
             var propertyInfo = memberExpression.Member as PropertyInfo;

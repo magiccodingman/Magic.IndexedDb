@@ -73,19 +73,19 @@ namespace Magic.IndexedDb
         }
 
 
-        public IMagicQueryStage<T> Take(int amount)
+        public IMagicQueryPaginationTake<T> Take(int amount)
+            => new MagicQueryExtensions<T>(this).Take(amount);
+
+        public IMagicQueryPaginationTake<T> TakeLast(int amount)
+            => new MagicQueryExtensions<T>(this).TakeLast(amount);
+
+        public IMagicQueryFinal<T> Skip(int amount)
             => new MagicQueryExtensions<T>(this).Skip(amount);
 
-        public IMagicQueryStage<T> TakeLast(int amount)
-            => new MagicQueryExtensions<T>(this).Skip(amount);
-
-        public IMagicQueryStage<T> Skip(int amount)
-            => new MagicQueryExtensions<T>(this).Skip(amount);
-
-        public IMagicQueryStage<T> OrderBy(Expression<Func<T, object>> predicate)
+        public IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate)
             =>  new MagicQueryExtensions<T>(this).OrderBy(predicate);
 
-        public IMagicQueryStage<T> OrderByDescending(Expression<Func<T, object>> predicate)
+        public IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate)
             => new MagicQueryExtensions<T>(this).OrderByDescending(predicate);
 
         public async IAsyncEnumerable<T> AsAsyncEnumerable(
