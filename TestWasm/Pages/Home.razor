@@ -46,6 +46,33 @@
 
 <PageTitle>Example</PageTitle>
 
+<h3>Unit Tests</h3>
+@foreach (var (testName, response, countResults) in TestResults)
+{
+    <div>
+        @if (response.Success)
+        {
+            <strong>✅ @testName</strong> @($" - {countResults}")
+        }
+        else
+        {
+            <strong>❌ @testName</strong> @($"- {countResults}")
+
+            @if (!string.IsNullOrWhiteSpace(response.Message))
+            {
+                var messages = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var message in messages)
+                {
+                    <div style="margin-left: 20px;">🔍 @message</div>
+                }
+            }
+        }
+    </div>
+}
+
+<br />
+<br />
+
 <h3>People In IndexedDb!</h3>
 
 <table class="table">
@@ -81,54 +108,16 @@
 <br />
 <h3>Complex query capabilities!</h3>
 <pre>
-    <code>
-        <span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
-        <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
-        <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
+<code>
+<span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
+<span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
+<span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
         ).<span style="color: #2A56C6;">OrderBy</span>(x =&gt; x._Id).<span style="color: #2A56C6;">Skip</span>(<span style="color: #2A56C6;">1</span>).<span style="color: #2A56C6;">ToListAsync</span>();
     </code>
 </pre>
 
-<h3>Chosen Results</h3>
-@foreach (Person person in WhereExample)
-{
-    <p><b>Name:</b> @person.Name - <b>Age:</b> @person._Age</p>
-}
-
-<h3>Correct Results</h3>
-@foreach (Person person in allPeopleCorrect)
-{
-    <p><b>Name:</b> @person.Name - <b>Age:</b> @person._Age</p>
-}
-
-
-
-<h3>Unit Tests</h3>
-@foreach (var (testName, response) in TestResults)
-{
-    <div>
-        @if (response.Success)
-        {
-            <strong>✅ @testName</strong>
-        }
-        else
-        {
-            <strong>❌ @testName</strong>
-
-            @if (!string.IsNullOrWhiteSpace(response.Message))
-            {
-                var messages = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                foreach (var message in messages)
-                {
-                    <div style="margin-left: 20px;">🔍 @message</div>
-                }
-            }
-        }
-    </div>
-}
-
 @code {
-    public List<(string, TestResponse)> TestResults = new();
+    public List<(string, TestResponse, string)> TestResults = new();
 
     private static readonly Random _random = new Random();
 
@@ -143,11 +132,18 @@
         return new DateTime(year, today.Month, today.Day);
     }
 
-    private void RunTest<T>(string testName, 
+    private void RunTest<T>(string testName,
         IEnumerable<T> indexDbResults, IEnumerable<T> correctResults) where T : class
     {
-        var result = TestValidator.ValidateLists(allPeopleCorrect, WhereExample);
-        TestResults.Add((testName, result));
+        var result = TestValidator.ValidateLists(correctResults, indexDbResults);
+
+        string countResults = $"Results: {indexDbResults.Count()}";
+        if (result.Success == false)
+        {
+            countResults = $"IndexDB Results: {indexDbResults.Count()} / Correct Results: {correctResults.Count()}";
+        }
+        TestResults.Add((testName, result, countResults));
+        StateHasChanged();
     }
 
     private List<Person> allPeople { get; set; } = new List<Person>();
@@ -178,6 +174,41 @@
                         new Person { Name = "Bob", TestInt = 3 , DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 69, GUIY = Guid.NewGuid(), DoNotMapTest = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
                         new Person { Name = "Alex", TestInt = 3 , DateOfBirth = null, _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" },
                         new Person { Name = "Zapoo", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
+
+                        new Person { Name = "Sarah", TestInt = -1, _Age = 30, GUIY = Guid.NewGuid(), DoNotMapTest = "I hate my job", Access=Person.Permissions.CanRead},
+        new Person { Name = "Michael", TestInt = 15, _Age = 50, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm hiding a big secret", Access=Person.Permissions.CanRead | Person.Permissions.CanWrite},
+        new Person { Name = "Tommy", TestInt = 7, _Age = 12, GUIY = Guid.NewGuid(), DoNotMapTest = "I am just a kid" },
+        new Person { Name = "Grace", TestInt = 3, _Age = 90, GUIY = Guid.NewGuid(), DoNotMapTest = "I have seen the world" },
+        new Person { Name = "Xylophone", TestInt = 9, _Age = 27, GUIY = Guid.NewGuid(), DoNotMapTest = "I have the weirdest name" },
+        new Person { Name = "Yasmine", TestInt = 9, _Age = 40, GUIY = Guid.NewGuid(), DoNotMapTest = null },
+            // Additional test case persons to stress-test LINQ validation
+    new Person { Name = "Alicia", TestInt = 42, _Age = 16, GUIY = Guid.NewGuid(), DoNotMapTest = "I just got my driver's license" },
+    new Person { Name = "Ben", TestInt = 0, _Age = 25, GUIY = Guid.NewGuid(), DoNotMapTest = "I have no TestInt value" },
+    new Person { Name = "Clara", TestInt = 100, _Age = 65, GUIY = Guid.NewGuid(), DoNotMapTest = "I retired last week", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite },
+    new Person { Name = "Danny", TestInt = 9, _Age = 40, GUIY = Guid.NewGuid(), DoNotMapTest = null }, // Null handling
+    new Person { Name = "Elliot", TestInt = -20, _Age = 55, GUIY = Guid.NewGuid(), DoNotMapTest = "My test int is negative" },
+    new Person { Name = "Fiona", TestInt = 11, _Age = 33, GUIY = Guid.NewGuid(), DoNotMapTest = "I like puzzles" },
+    new Person { Name = "George", TestInt = 8, _Age = 72, GUIY = Guid.NewGuid(), DoNotMapTest = "I fought in a war", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite | Person.Permissions.CanCreate },
+    new Person { Name = "Henry", TestInt = 99, _Age = 29, GUIY = Guid.NewGuid(), DoNotMapTest = "I almost made it to 100 TestInt" },
+    new Person { Name = "Isla", TestInt = 2, _Age = 18, GUIY = Guid.NewGuid(), DoNotMapTest = "I just turned into an adult" },
+    new Person { Name = "Jackie", TestInt = 75, _Age = 60, GUIY = Guid.NewGuid(), DoNotMapTest = "I love cooking" },
+    new Person { Name = "Kevin", TestInt = 5, _Age = 48, GUIY = Guid.NewGuid(), DoNotMapTest = "I own a small business" },
+    new Person { Name = "Liam", TestInt = 9, _Age = 55, GUIY = Guid.NewGuid(), DoNotMapTest = "I just became a grandfather" },
+    new Person { Name = "Mona", TestInt = 88, _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "I am a detective", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite },
+    new Person { Name = "Nathan", TestInt = 7, _Age = 27, GUIY = Guid.NewGuid(), DoNotMapTest = "I play guitar" },
+    new Person { Name = "Olivia", TestInt = 13, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I run marathons" },
+    new Person { Name = "Patrick", TestInt = 3, _Age = 52, GUIY = Guid.NewGuid(), DoNotMapTest = "I work in IT" },
+    new Person { Name = "Quinn", TestInt = 22, _Age = 42, GUIY = Guid.NewGuid(), DoNotMapTest = "I design board games" },
+    new Person { Name = "Rachel", TestInt = 77, _Age = 36, GUIY = Guid.NewGuid(), DoNotMapTest = "I am a pilot" },
+    new Person { Name = "Steve", TestInt = 9, _Age = 38, GUIY = Guid.NewGuid(), DoNotMapTest = "I am an engineer" },
+    new Person { Name = "Tina", TestInt = 3, _Age = 68, GUIY = Guid.NewGuid(), DoNotMapTest = "I just got my pension" },
+    new Person { Name = "Uma", TestInt = 14, _Age = 39, GUIY = Guid.NewGuid(), DoNotMapTest = "I teach yoga" },
+    new Person { Name = "Victor", TestInt = 6, _Age = 31, GUIY = Guid.NewGuid(), DoNotMapTest = "I am an artist" },
+    new Person { Name = "Wendy", TestInt = 50, _Age = 50, GUIY = Guid.NewGuid(), DoNotMapTest = "My age matches my test int" },
+    new Person { Name = "Xander", TestInt = 19, _Age = 21, GUIY = Guid.NewGuid(), DoNotMapTest = "I am a college student" },
+    new Person { Name = "Yara", TestInt = 90, _Age = 32, GUIY = Guid.NewGuid(), DoNotMapTest = "I work in finance" },
+    new Person { Name = "Zane", TestInt = 101, _Age = 47, GUIY = Guid.NewGuid(), DoNotMapTest = "I love motorcycles" },
+
      };
                     await manager.AddRangeAsync(persons);
                 }
@@ -196,63 +227,201 @@
                 // ).OrderBy(x => x._Id).Skip(1).AsAsyncEnumerable()).ToListAsync();
 
                 var personQuery = manager.Query<Person>();
+                StateHasChanged();
+
+
+                RunTest("Basic Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
+           allPeople.Where(x => x.Name == "Zack"));
+
+                RunTest("Greater Than Age Test", await personQuery.Where(x => x._Age > 40).ToListAsync(),
+                    allPeople.Where(x => x._Age > 40));
+
+                RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).ToListAsync(),
+                    allPeople.Where(x => x._Age <= 35));
+
+                RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                    allPeople.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+                RunTest("StartsWith Test", await personQuery.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                    allPeople.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
+
+                RunTest("Multiple Conditions AND", await personQuery.Where(x => x._Age > 30 && x.TestInt == 9).ToListAsync(),
+                    allPeople.Where(x => x._Age > 30 && x.TestInt == 9));
+
+                RunTest("Multiple Conditions OR", await personQuery.Where(x => x._Age > 50 || x.TestInt == 3).ToListAsync(),
+                    allPeople.Where(x => x._Age > 50 || x.TestInt == 3));
+
+                RunTest("Nested AND/OR", await personQuery.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                    allPeople.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+                RunTest("Ordering Test", await personQuery.OrderBy(x => x._Age).ToListAsync(),
+                    allPeople.OrderBy(x => x._Age));
+
+                RunTest("Order Descending Test", await personQuery.OrderByDescending(x => x._Age).ToListAsync(),
+                    allPeople.OrderByDescending(x => x._Age));
+
+                RunTest("Skip Test", await personQuery.OrderBy(x => x._Age).Skip(3).ToListAsync(),
+                    allPeople.OrderBy(x => x._Age).Skip(3));
+
+                RunTest("Take Test", await personQuery.OrderBy(x => x._Age).Take(2).ToListAsync(),
+                    allPeople.OrderBy(x => x._Age).Take(2));
+
+                RunTest("TakeLast Test", await personQuery.OrderBy(x => x._Age).TakeLast(2).ToListAsync(),
+                    allPeople.OrderBy(x => x._Age).TakeLast(2));
+
+
+                // 🛠️ Chaining Multiple Where Statements
+                RunTest("Chained Where Conditions",
+                    await personQuery.Where(x => x._Age > 30)
+                                     .Where(x => x.TestInt == 9)
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age > 30).Where(x => x.TestInt == 9));
+
+                RunTest("Chained Where with AND/OR",
+                    await personQuery.Where(x => x._Age > 30)
+                                     .Where(x => x.TestInt == 9 || x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase))
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age > 30).Where(x => x.TestInt == 9 || x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
+
+                // 🔄 Mixing Where, OrderBy, Skip, and Take
+                RunTest("Where + OrderBy + Skip + Take",
+                    await personQuery.Where(x => x._Age > 30)
+                                     .OrderBy(x => x._Age)
+                                     .Skip(2)
+                                     .Take(3)
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age > 30).OrderBy(x => x._Age).Skip(2).Take(3));
+
+                RunTest("Where + OrderByDescending + TakeLast",
+                    await personQuery.Where(x => x._Age < 60)
+                                     .OrderByDescending(x => x._Age)
+                                     .TakeLast(2)
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age < 60).OrderByDescending(x => x._Age).TakeLast(2));
+
+                RunTest("Where + Multiple OrderBy",
+                    await personQuery.Where(x => x._Age > 20)
+                                     .OrderBy(x => x.Name)
+                                     .OrderByDescending(x => x._Age)
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age > 20).OrderBy(x => x.Name).OrderByDescending(x => x._Age));
+
+                // 🧩 Complex Nested Conditions
+                RunTest("Nested OR within AND",
+                    await personQuery.Where(x => x._Age > 30 && (x.Name.StartsWith("J") || x.TestInt == 3))
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age > 30 && (x.Name.StartsWith("J") || x.TestInt == 3)));
+
+                RunTest("Nested AND within OR",
+                    await personQuery.Where(x => (x._Age > 40 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase))
+                                     .ToListAsync(),
+                    allPeople.Where(x => (x._Age > 40 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+                // 🚀 Edge Cases
+                RunTest("No Matching Records",
+                    await personQuery.Where(x => x.Name == "NonExistentPerson").ToListAsync(),
+                    allPeople.Where(x => x.Name == "NonExistentPerson"));
+
+                RunTest("Null DateOfBirth Handling",
+                    await personQuery.Where(x => x.DateOfBirth == null).ToListAsync(),
+                    allPeople.Where(x => x.DateOfBirth == null));
+
+                RunTest("Null Field with OR",
+                    await personQuery.Where(x => x.DateOfBirth == null || x._Age > 50).ToListAsync(),
+                    allPeople.Where(x => x.DateOfBirth == null || x._Age > 50));
+
+                // 📊 Pagination Stress Test
+                RunTest("Skip and Take Across Boundaries",
+                    await personQuery.OrderBy(x => x._Age)
+                                     .Skip(3)
+                                     .Take(5)
+                                     .ToListAsync(),
+                    allPeople.OrderBy(x => x._Age).Skip(3).Take(5));
+
+                RunTest("Large Take Last Test",
+                    await personQuery.OrderByDescending(x => x._Age)
+                                     .TakeLast(5)
+                                     .ToListAsync(),
+                    allPeople.OrderByDescending(x => x._Age).TakeLast(5));
+
+
+                // Return ToListAsync
+                RunTest("Return ToListAsync",
+                    await personQuery.ToListAsync(),
+                    allPeople.ToList());
+
+                // ✅ Universal Truth Test (Always Returns Everything)
+                RunTest("Universal Truth Where Condition",
+                    await personQuery.Where(x => true).ToListAsync(),
+                    allPeople.Where(x => true));
+
+                // ❌ Universal False Test (Always Returns Nothing)
+                RunTest("Universal False Where Condition",
+                    await personQuery.Where(x => false).ToListAsync(),
+                    allPeople.Where(x => false));
+
+                // 🤯 Negation Tests
+                RunTest("Negation Test (NOT EQUAL)",
+                    await personQuery.Where(x => x.Name != "Zack").ToListAsync(),
+                    allPeople.Where(x => x.Name != "Zack"));
+
+                RunTest("Negation Test (NOT Contains)",
+                    await personQuery.Where(x => !x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                    allPeople.Where(x => !x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+                RunTest("Negation Test (NOT Greater Than)",
+                    await personQuery.Where(x => !(x._Age > 40)).ToListAsync(),
+                    allPeople.Where(x => !(x._Age > 40)));
+
+                RunTest("Deeply Nested OR within AND",
+                    await personQuery.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null))
+                                     .ToListAsync(),
+                    allPeople.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null)));
+
+                // 📌 Edge Case: Querying on a Property That Doesn't Exist in Some Objects
+                RunTest("Query on Optional Property (Some Missing Values)",
+                    await personQuery.Where(x => x.DoNotMapTest.Contains("diary")).ToListAsync(),
+                    allPeople.Where(x => x.DoNotMapTest != null && x.DoNotMapTest.Contains("diary")));
+
+                // 🎯 Mixing Multiple Conditions & Sorting
+                RunTest("Where + OrderBy + OrderByDescending + Take",
+                    await personQuery.Where(x => x._Age > 20)
+                                     .OrderBy(x => x.Name)
+                                     .OrderByDescending(x => x._Age)
+                                     .Take(3)
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age > 20).OrderBy(x => x.Name).OrderByDescending(x => x._Age).Take(3));
+
+                RunTest("Where + OrderBy + Skip + TakeLast",
+                    await personQuery.Where(x => x._Age > 20)
+                                     .OrderBy(x => x._Age)
+                                     .Skip(2)
+                                     .TakeLast(2)
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age > 20).OrderBy(x => x._Age).Skip(2).TakeLast(2));
+
+                // 🔄 Complex Pagination with Condition
+                RunTest("Paginated Query with AND Condition",
+                    await personQuery.Where(x => x._Age > 30 && x.TestInt == 9)
+                                     .OrderBy(x => x._Age)
+                                     .Skip(1)
+                                     .Take(3)
+                                     .ToListAsync(),
+                    allPeople.Where(x => x._Age > 30 && x.TestInt == 9).OrderBy(x => x._Age).Skip(1).Take(3));
 
 
 
-                WhereExample = (await personQuery.Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                ).OrderBy(x => x._Id).Skip(1).ToListAsync());
-
-                WhereExample = (await personQuery.Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                ).OrderBy(x => x._Id).Skip(1).ToListAsync());
-
-                allPeopleCorrect = allPeople.ToList().Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                ).OrderBy(x => x._Id).Skip(1).ToList();
-
-                var correctMultiNestedIndexDB = allPeople.ToList().Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                ).OrderBy(x => x._Id).Skip(1);
 
 
-                WhereExample = await personQuery.Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
-                || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
-                ).OrderBy(x => x._Id).Skip(1).ToListAsync();
-
-                RunTest("Nested || and &&", WhereExample, correctMultiNestedIndexDB);
-
-
-               
-                //   WhereExample = (await manager.Where<Person>(x => x.DateOfBirth != null
-                //   ).ToListAsync());
-
-                // WhereExample = (await manager.Where<Person>(x => x.DateOfBirth != null
-                // ).ToListAsync());
+                // not yet supported
+                // // 🔀 Complex AND/OR Mix (Nested Multiple Layers)
+                // RunTest("Deeply Nested AND within OR",
+                //     await personQuery.Where(x => (x._Age > 30 && (x.TestInt == 9 || x.Name.StartsWith("J"))) || (x.TestInt == 3 && x.Name.EndsWith("b", StringComparison.OrdinalIgnoreCase)))
+                //                      .ToListAsync(),
+                //     allPeople.Where(x => (x._Age > 30 && (x.TestInt == 9 || x.Name.StartsWith("J"))) || (x.TestInt == 3 && x.Name.EndsWith("b", StringComparison.OrdinalIgnoreCase))));
 
 
-                //    WhereExample = (await manager.Where<Person>(x => x.TestInt > 0
-                // ).OrderBy(x => x._Id).Skip(1).Take(1).ToListAsync());
-
-
-                /*
-                * Still working on allowing nested
-                     */
-                //// Should return "Zack"
-                //var NestedResult = await manager.Where<Person>(p => (p.Name == "Zack" || p.Name == "Luna") && (p._Age >= 35 && p._Age <= 45)).Execute();
-
-                //// should return "Luna", "Jerry" and "Jon"
-                //var NonNestedResult = await manager.Where<Person>(p => p.TestInt == 9 && p._Age >= 35 && p._Age <= 45).Execute();
+                var asdf = allPeople.Where(x => 1 == 1);
                 StateHasChanged();
             }
             catch (Exception ex)

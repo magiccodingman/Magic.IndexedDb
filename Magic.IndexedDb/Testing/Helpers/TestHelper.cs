@@ -1,4 +1,5 @@
 ﻿using Magic.IndexedDb.Helpers;
+using Magic.IndexedDb.Models;
 using Magic.IndexedDb.SchemaAnnotations;
 using Magic.IndexedDb.Testing.Models;
 using System;
@@ -17,7 +18,7 @@ namespace Magic.IndexedDb.Testing.Helpers
         public static TestResponse ValidateLists<T>(IEnumerable<T> correctResults, IEnumerable<T> testResults)
         {
             if (correctResults == null || testResults == null)
-                return new TestResponse { Message = "Error: One or both input lists are null." };
+                return new TestResponse { Success = false, Message = "Error: One or both input lists are null." };
 
             var correctList = correctResults.ToList();
             var testList = testResults.ToList();
@@ -25,37 +26,49 @@ namespace Magic.IndexedDb.Testing.Helpers
             if (correctList.Count != testList.Count)
                 return new TestResponse
                 {
-                    Success = false,  // ❗️ Ensure failure is registered
+                    Success = false,
                     Message = $"List size mismatch:\nExpected count: {correctList.Count}\nActual count: {testList.Count}"
                 };
 
+            // 🔑 Get the primary key property dynamically
+            MagicPropertyEntry mpe = PropertyMappingCache.GetPrimaryKeyOfType(typeof(T));
+            PropertyInfo primaryKeyProp = mpe.Property;
 
-            var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(prop => !Attribute.IsDefined(prop, typeof(MagicNotMappedAttribute)))
-                .ToArray();
+            if (primaryKeyProp == null)
+                return new TestResponse { Success = false, Message = "Error: No primary key found for type." };
 
             var failureDetails = new List<string>();
 
-            for (int i = 0; i < correctList.Count; i++)
-            {
-                var expectedItem = correctList[i];
-                var actualItem = testList[i];
+            // Convert correct results into a dictionary for fast lookup by primary key
+            var correctDictionary = correctList.ToDictionary(item => primaryKeyProp.GetValue(item));
 
-                var propertyDifferences = CompareObjects(expectedItem, actualItem, properties, $"Item[{i}]");
+            foreach (var actualItem in testList)
+            {
+                var actualKey = primaryKeyProp.GetValue(actualItem);
+
+                if (actualKey == null || !correctDictionary.TryGetValue(actualKey, out var expectedItem))
+                {
+                    failureDetails.Add($"❌ No matching item found for Primary Key [{actualKey}].");
+                    continue;
+                }
+
+                // Deeply compare the expected and actual item
+                var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(prop => !Attribute.IsDefined(prop, typeof(MagicNotMappedAttribute)))
+                    .ToArray();
+
+                var propertyDifferences = CompareObjects(expectedItem, actualItem, properties, $"Item[{actualKey}]");
 
                 if (propertyDifferences.Any())
                 {
-                    failureDetails.Add($"Mismatch at index {i}:\n" + string.Join("\n", propertyDifferences));
+                    failureDetails.Add($"Mismatch in object with Primary Key [{actualKey}]:\n" + string.Join("\n", propertyDifferences));
                 }
             }
 
             return failureDetails.Any()
-                ? new TestResponse { Message = string.Join("\n\n", failureDetails) }
+                ? new TestResponse { Success = false, Message = string.Join("\n\n", failureDetails) }
                 : new TestResponse { Success = true };
         }
-
-
-
         private static List<string> CompareObjects(object expected, object actual, PropertyInfo[] properties, string path)
         {
             var differences = new List<string>();
