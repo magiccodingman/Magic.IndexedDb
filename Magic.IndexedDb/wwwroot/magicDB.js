@@ -325,7 +325,51 @@ export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditi
 
     debugLog("Validated schema & cached indexes", { primaryKey, indexes: indexCache[dbName][storeName].indexes });
 
-    let requiresCursor = validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) || validateQueryCombinations(nestedOrFilter);
+    // **Step 1: Clean up `nestedOrFilter` to remove empty structures**
+    nestedOrFilter = cleanNestedOrFilter(nestedOrFilter);
+    debugLog("Cleaned Filter Object", { nestedOrFilter });
+
+    // **Step 2: Check if filter is now empty**
+    let isFilterEmpty = !nestedOrFilter || !nestedOrFilter.orGroups || nestedOrFilter.orGroups.length === 0;
+
+    debugLog("Filter Check After Cleaning", { isFilterEmpty });
+
+    // **Step 3: Handle empty filter cases**
+    if (isFilterEmpty) {
+        if (!queryAdditions || queryAdditions.length === 0) {
+            // **Case 1: No filter & No Query Additions -> Fetch Entire Table**
+            debugLog("No filtering or query additions. Fetching entire table.");
+
+            let allRecords = await table.toArray();
+            while (allRecords.length > 0) {
+                let record = allRecords.shift(); // Remove first item (Frees memory)
+                if (!yieldedPrimaryKeys.has(record[primaryKey])) {
+                    yieldedPrimaryKeys.add(record[primaryKey]);
+                    yield record;
+                }
+            }
+            return;
+        } else {
+            // **Case 2: No Filter but Query Additions Exist -> Trick Indexed Query**
+            debugLog("Empty filter but query additions exist. Applying primary key GREATER_THAN_OR_EQUAL trick.");
+
+            nestedOrFilter = {
+                orGroups: [{
+                    andGroups: [{
+                        conditions: [{
+                            property: primaryKey,
+                            operation: QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL,
+                            value: -Infinity // Trick Dexie into fetching everything
+                        }]
+                    }]
+                }]
+            };
+        }
+    }
+
+
+    let requiresCursor = validateQueryAdditions(queryAdditions, indexCache, dbName, storeName)
+        || validateQueryCombinations(nestedOrFilter);
     debugLog("Determined if query requires cursor", { requiresCursor });
 
     if (!nestedOrFilter.orGroups || nestedOrFilter.orGroups.length === 0) {
@@ -341,16 +385,98 @@ export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditi
         return;
     }
 
+    // partition function to correctly separate IndexedDB vs. Cursor**
+    let { indexedQueries, cursorConditions } =
+        partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, dbName, storeName, requiresCursor);
+
+    debugLog("Final Indexed Queries vs. Cursor Queries", { indexedQueries, cursorConditions });
+
+    let optimizedIndexedQueries = optimizeIndexedQueries(indexedQueries);
+    debugLog("Optimized Indexed Queries", { optimizedIndexedQueries });
+
+    // Process Indexed Queries First
+    // Memory safe by removing from memory as we send back to prevent double memory at any one point
+    for (let query of optimizedIndexedQueries) {
+        let records = await runIndexedQuery(table, query); // Load records first
+
+        while (records.length > 0) {
+            let record = records.shift(); // Remove first item (Frees memory)
+            if (!yieldedPrimaryKeys.has(record[primaryKey])) {
+                yieldedPrimaryKeys.add(record[primaryKey]);
+                yield record;
+            }
+        }
+    }
+
+
+    // Pass yielded primary keys into cursor query to **skip already processed results**
+    let cursorResults = await runCursorQuery(table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKey);
+    debugLog("Cursor Query Results Count", { count: cursorResults.length });
+
+    // Efficiently yield results and free memory
+    while (cursorResults.length > 0) {
+        let record = cursorResults.shift(); // Remove from array to free memory
+        yieldedPrimaryKeys.add(record[primaryKey]);
+        yield record;
+    }
+
+}
+
+function cleanNestedOrFilter(filter) {
+    if (!filter || !Array.isArray(filter.orGroups)) return null;
+
+    let cleanedOrGroups = filter.orGroups.map(orGroup => {
+        if (!Array.isArray(orGroup.andGroups)) return null;
+
+        // Remove empty AND groups
+        let cleanedAndGroups = orGroup.andGroups.filter(andGroup =>
+            Array.isArray(andGroup.conditions) && andGroup.conditions.length > 0
+        );
+
+        return cleanedAndGroups.length > 0 ? { andGroups: cleanedAndGroups } : null;
+    }).filter(orGroup => orGroup !== null); // Remove any fully empty OR groups
+
+    return cleanedOrGroups.length > 0 ? { orGroups: cleanedOrGroups } : null;
+}
+
+
+/**
+ * Partitions query conditions into IndexedDB-optimized and cursor-based conditions.
+ *
+ * @param {Object} nestedOrFilter - The structured query filter containing OR and AND conditions.
+ * @param {Array} queryAdditions - Additional sorting, pagination (TAKE, SKIP).
+ * @param {Object} indexCache - Cached index metadata for the database and table.
+ * @param {string} dbName - The database name.
+ * @param {string} storeName - The store/table name.
+ * @param {boolean} requiresCursor - Whether the entire query must use a cursor.
+ * @returns {Object} - Returns `{ indexedQueries, cursorConditions }`
+ */
+function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, dbName, storeName, requiresCursor) {
+    debugLog("Partitioning query conditions", { nestedOrFilter, queryAdditions, requiresCursor });
+
     // Indexed Queries will store fully indexed AND groups that can be optimized with IndexedDB
     let indexedQueries = [];
 
     // Cursor Conditions will store AND groups that must be processed manually in JavaScript
     let cursorConditions = [];
 
+    // If requiresCursor is true, skip processing and send everything to cursor-based execution
+    if (requiresCursor) {
+        debugLog("Forcing all conditions to use cursor due to validation.");
+        for (const orGroup of nestedOrFilter.orGroups || []) {
+            for (const andGroup of orGroup.andGroups || []) {
+                if (andGroup.conditions && andGroup.conditions.length > 0) {
+                    cursorConditions.push(andGroup.conditions);
+                }
+            }
+        }
+        return { indexedQueries: [], cursorConditions }; // Ensure all goes to cursor
+    }
+
     /**
      * Iterate over the structured OR groups (|| logic)
      */
-    for (const orGroup of nestedOrFilter.orGroups) {
+    for (const orGroup of nestedOrFilter.orGroups || []) {
         if (!orGroup.andGroups || orGroup.andGroups.length === 0) continue;
 
         for (const andGroup of orGroup.andGroups) { // Each OR group contains multiple AND conditions
@@ -390,53 +516,32 @@ export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditi
              * them to `indexedQueries` for optimized IndexedDB execution.
              */
             if (needsCursor) {
-                cursorConditions.push(andGroup.conditions); // Push entire AND group to cursor
+                cursorConditions.push(andGroup.conditions);
             } else {
-                indexedQueries.push(indexedConditions); // Push fully indexed AND group
+                indexedQueries.push(indexedConditions);
             }
         }
     }
 
     /**
-     * Summary of Logic:
-     * - **Indexed Queries (`indexedQueries`)**  Fully indexed AND groups that can be run efficiently.
-     * - **Cursor Conditions (`cursorConditions`)**  Groups requiring JavaScript-based filtering.
-     * - **OR (`||`) relationships remain intact** because we handle indexed queries separately 
-     *   from cursor-based queries and later merge their results.
+     * **Final Check:** If any of the query additions (`TAKE`, `SKIP`, `TAKE_LAST`) exist,
+     * we must ensure there is only **one** indexed query. If multiple exist, we force everything to cursor.
      */
-    debugLog("Indexed Queries vs Cursor Queries", { indexedQueries, cursorConditions });
+    const hasTakeOrSkip = queryAdditions.some(addition =>
+        [QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE_LAST].includes(addition.additionFunction)
+    );
 
-    let optimizedIndexedQueries = optimizeIndexedQueries(indexedQueries);
-    debugLog("Optimized Indexed Queries", { optimizedIndexedQueries });
-
-    // Process Indexed Queries First
-    // Memory safe by removing from memory as we send back to prevent double memory at any one point
-    for (let query of optimizedIndexedQueries) {
-        let records = await runIndexedQuery(table, query); // Load records first
-
-        while (records.length > 0) {
-            let record = records.shift(); // Remove first item (Frees memory)
-            if (!yieldedPrimaryKeys.has(record[primaryKey])) {
-                yieldedPrimaryKeys.add(record[primaryKey]);
-                yield record;
-            }
-        }
+    if (hasTakeOrSkip && indexedQueries.length !== 1) {
+        debugLog("Multiple indexed queries or cursor usage detected with TAKE/SKIP, forcing all to cursor.");
+        cursorConditions = [...cursorConditions, ...indexedQueries]; // Move all indexed queries to cursor
+        indexedQueries = []; // Clear indexed queries since we can't trust multiple indexes with take/skip
     }
 
+    debugLog("Partitioned Queries", { indexedQueries, cursorConditions });
 
-    // Pass yielded primary keys into cursor query to **skip already processed results**
-    let cursorResults = await runCursorQuery(table, cursorConditions, yieldedPrimaryKeys);
-    debugLog("Cursor Query Results Count", { count: cursorResults.length });
-
-    // Apply query additions (sorting, skipping, taking, etc.)
-    cursorResults = applyCursorQueryAdditions(cursorResults, queryAdditions);
-
-    // Yield final cursor-based records
-    for (let record of cursorResults) {
-        yieldedPrimaryKeys.add(record[primaryKey]); // **Ensure it's tracked**
-        yield record;
-    }
+    return { indexedQueries, cursorConditions };
 }
+
 
 
 function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
@@ -451,11 +556,11 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
             throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
         }
 
-        // **New Validation: ORDER_BY & ORDER_BY_DESCENDING Must Target Indexed Properties**
+        // **Ensure ORDER_BY targets an indexed property**
         if (addition.additionFunction === QUERY_ADDITIONS.ORDER_BY || addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
-            const isIndexed = indexCache[dbName]?.[storeName]?.indexes?.[addition.StringValue] || false;
+            const isIndexed = indexCache[dbName]?.[storeName]?.indexes?.[addition.property] || false;
             if (!isIndexed) {
-                debugLog(`Query requires cursor: ORDER_BY on non-indexed property ${addition.StringValue}`);
+                debugLog(`Query requires cursor: ORDER_BY on non-indexed property ${addition.property}`);
                 requiresCursor = true; // Forces cursor usage
             }
         }
@@ -473,6 +578,7 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
 
     return requiresCursor;
 }
+
 
 
 function validateQueryCombinations(nestedOrFilter) {
@@ -534,15 +640,6 @@ function validateQueryCombinations(nestedOrFilter) {
     debugLog("Query can be fully indexed!", { nestedOrFilter });
     return false; // Can use IndexedDB directly
 }
-
-
-
-
-
-
-
-
-
 
 
 /**
@@ -722,23 +819,76 @@ function optimizeIndexedQueries(indexedQueries) {
  * @param {Array} conditionsArray - Array of OR groups containing AND conditions.
  * @returns {Promise<Array>} - Filtered results based on conditions.
  */
-async function runCursorQuery(table, conditions, yieldedPrimaryKeys) {
-    debugLog("Running Cursor Query with Conditions", { conditions });
+async function runCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, primaryKey) {
+    debugLog("Running Cursor Query with Conditions", { conditions, queryAdditions });
 
-    let results = [];
+    // **Extract metadata (primary keys & sorting properties)**
+    let primaryKeyList = await runMetaDataCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, primaryKey);
 
+    // **Apply sorting, take, and skip operations**
+    let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, primaryKey);
+
+    // **Fetch only the required records from IndexedDB**
+    let finalRecords = await fetchRecordsByPrimaryKeys(table, finalPrimaryKeys, primaryKey);
+
+    debugLog("Final Cursor Query Records Retrieved", { count: finalRecords.length });
+    return finalRecords; // Ready for yielding
+}
+
+/**
+ * Extracts only the necessary metadata for cursor-based queries.
+ * Returns an array of objects containing the primary key and only the required properties.
+ */
+async function runMetaDataCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, primaryKey) {
+    debugLog("Extracting Metadata for Cursor Query", { conditions, queryAdditions });
+
+    let primaryKeyList = []; // Store only necessary metadata
+    let requiredProperties = new Set();
+
+    // Extract properties used in filtering (conditions)
+    for (const andGroup of conditions) {
+        for (const condition of andGroup) {
+            if (condition.property) requiredProperties.add(condition.property);
+        }
+    }
+
+    // Extract properties needed for sorting (ORDER_BY, ORDER_BY_DESCENDING)
+    for (const addition of queryAdditions) {
+        if ((addition.additionFunction === QUERY_ADDITIONS.ORDER_BY || addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) &&
+            addition.property) {
+            requiredProperties.add(addition.property);
+        }
+    }
+
+    // **Always ensure the primary key is included**
+    requiredProperties.add(primaryKey);
+
+    debugLog("Properties needed for cursor processing", { requiredProperties: [...requiredProperties] });
+
+    // Iterate over each record, storing only required properties
     await table.each(record => {
-        if (yieldedPrimaryKeys.has(record.id)) return; // Skip if already yielded
+        if (yieldedPrimaryKeys.has(record[primaryKey])) return; // Use correct primary key
 
         if (conditions.some(andConditions => andConditions.every(condition => applyCondition(record, condition)))) {
-            debugLog("Adding record from Cursor Query", record);
-            results.push(record);
+            let sortingProperties = {};
+
+            // Store only necessary properties
+            for (const prop of requiredProperties) {
+                sortingProperties[prop] = record[prop];
+            }
+
+            primaryKeyList.push({
+                primaryKey: record[primaryKey], // Use correct primary key
+                sortingProperties
+            });
         }
     });
 
-    debugLog("Cursor Query Completed", { count: results.length });
-    return results;
+    debugLog("Primary Key List Collected", { count: primaryKeyList.length });
+    return primaryKeyList;
 }
+
+
 
 
 
@@ -783,30 +933,42 @@ function applyCondition(record, condition) {
 }
 
 
-
-
-
 function applyIndexedQueryAdditions(table, results, queryAdditions) {
     if (!queryAdditions || queryAdditions.length === 0) return results;
 
     debugLog("Applying indexed query additions in given order", { queryAdditions });
 
-    for (const addition of queryAdditions) {
+    let additions = [...queryAdditions];
+
+    // Ensure SKIP comes before TAKE in IndexedDB, same as we do for cursor
+    let takeIndex = additions.findIndex(a => a.additionFunction === QUERY_ADDITIONS.TAKE);
+    let skipIndex = additions.findIndex(a => a.additionFunction === QUERY_ADDITIONS.SKIP);
+
+    if (takeIndex !== -1 && skipIndex !== -1 && takeIndex < skipIndex) {
+        debugLog("Flipping TAKE and SKIP order for IndexedDB consistency");
+        [additions[takeIndex], additions[skipIndex]] = [additions[skipIndex], additions[takeIndex]];
+    }
+
+    for (const addition of additions) {
         switch (addition.additionFunction) {
             case QUERY_ADDITIONS.ORDER_BY:
-                results = results.orderBy(addition.StringValue);
+                if (addition.property) {
+                    results = results.orderBy(addition.property);
+                }
                 break;
             case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
-                results = results.orderBy(addition.StringValue).reverse();
+                if (addition.property) {
+                    results = results.orderBy(addition.property).reverse();
+                }
                 break;
             case QUERY_ADDITIONS.SKIP:
-                results = results.offset(addition.IntValue);
+                results = results.offset(addition.intValue);
                 break;
             case QUERY_ADDITIONS.TAKE:
-                results = results.limit(addition.IntValue);
+                results = results.limit(addition.intValue);
                 break;
             case QUERY_ADDITIONS.TAKE_LAST:
-                results = results.reverse().limit(addition.IntValue).reverse(); // Ensures last `n` items are taken in order
+                results = results.reverse().limit(addition.intValue).reverse();
                 break;
             default:
                 throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
@@ -816,36 +978,96 @@ function applyIndexedQueryAdditions(table, results, queryAdditions) {
     return results;
 }
 
+async function fetchRecordsByPrimaryKeys(table, primaryKeys, primaryKeyName, batchSize = 500) {
+    if (!primaryKeys || primaryKeys.length === 0) return [];
 
-function applyCursorQueryAdditions(results, queryAdditions) {
-    if (!queryAdditions || queryAdditions.length === 0) return results;
+    debugLog(`Fetching ${primaryKeys.length} final objects in parallel batches of ${batchSize}`, { primaryKeys });
+
+    let batchPromises = [];
+
+    for (let i = 0; i < primaryKeys.length; i += batchSize) {
+        let batch = primaryKeys.slice(i, i + batchSize);
+        batchPromises.push(table.where(primaryKeyName).anyOf(batch).toArray()); // Uses correct primary key
+    }
+
+    // Execute all batches in parallel and wait for the slowest one
+    let batchResults = await Promise.all(batchPromises);
+
+    // Flatten the results into a single array
+    return batchResults.flat();
+}
+
+
+function applyCursorQueryAdditions(primaryKeyList, queryAdditions, primaryKey, flipSkipTakeOrder = true) {
+    if (!queryAdditions || queryAdditions.length === 0) {
+        return primaryKeyList.map(item => item.primaryKey);
+    }
 
     debugLog("Applying cursor query additions in given order", { queryAdditions });
 
-    for (const addition of queryAdditions) {
+    let additions = [...queryAdditions];
+
+    if (flipSkipTakeOrder) {
+        let takeIndex = additions.findIndex(a => a.additionFunction === QUERY_ADDITIONS.TAKE);
+        let skipIndex = additions.findIndex(a => a.additionFunction === QUERY_ADDITIONS.SKIP);
+
+        if (takeIndex !== -1 && skipIndex !== -1 && takeIndex < skipIndex) {
+            debugLog("Flipping TAKE and SKIP order for cursor consistency");
+            [additions[takeIndex], additions[skipIndex]] = [additions[skipIndex], additions[takeIndex]];
+        }
+    }
+
+    // **Step 1: Process Query Additions in Sequence**
+    for (const addition of additions) {
         switch (addition.additionFunction) {
             case QUERY_ADDITIONS.ORDER_BY:
-                results.sort((a, b) => a[addition.StringValue] - b[addition.StringValue]);
-                break;
             case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
-                results.sort((a, b) => b[addition.StringValue] - a[addition.StringValue]);
+                primaryKeyList.sort((a, b) => {
+                    let prop = addition.property;
+                    let valueA = a.sortingProperties[prop];
+                    let valueB = b.sortingProperties[prop];
+
+                    // Sort primary key last as a tiebreaker
+                    if (valueA === valueB) {
+                        valueA = a.sortingProperties[primaryKey];
+                        valueB = b.sortingProperties[primaryKey];
+                    }
+
+                    return addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING
+                        ? valueB - valueA
+                        : valueA - valueB;
+                });
                 break;
-            case QUERY_ADDITIONS.SKIP:
-                results = results.slice(addition.IntValue);
-                break;
+
             case QUERY_ADDITIONS.TAKE:
-                results = results.slice(0, addition.IntValue);
+                primaryKeyList = primaryKeyList.slice(0, addition.intValue);
                 break;
+
             case QUERY_ADDITIONS.TAKE_LAST:
-                results = results.slice(-addition.IntValue);
+                primaryKeyList = primaryKeyList.slice(-addition.intValue);
                 break;
+
+            case QUERY_ADDITIONS.SKIP:
+                primaryKeyList = primaryKeyList.slice(addition.intValue);
+                break;
+
             default:
                 throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
         }
     }
 
-    return results;
+    debugLog("Final Ordered Primary Key List", primaryKeyList);
+
+    // **Step 2: Return Only Primary Keys**
+    return primaryKeyList.map(item => item.primaryKey);
 }
+
+
+
+
+
+
+
 
 
 

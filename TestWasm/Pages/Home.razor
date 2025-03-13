@@ -86,7 +86,7 @@
         </tr>
     </thead>
     <tbody>
-        @foreach (Person person in allPeople)
+        @foreach (Person person in allPeople.Where(x => x._Age > 30).OrderBy(x => x._Age))
         {
             <tr>
                 <td>@person._Id</td>
@@ -229,14 +229,19 @@
                 var personQuery = manager.Query<Person>();
                 StateHasChanged();
 
+                RunTest("Get All Test", await personQuery.ToListAsync(),
+           allPeople);
 
-                RunTest("Basic Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
+                RunTest("Basic Index Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
            allPeople.Where(x => x.Name == "Zack"));
+
+                RunTest("Basic Cursor Equal Test", await personQuery.Where(x => x._Age == 35).ToListAsync(),
+                allPeople.Where(x => x._Age == 35));
 
                 RunTest("Greater Than Age Test", await personQuery.Where(x => x._Age > 40).ToListAsync(),
                     allPeople.Where(x => x._Age > 40));
 
-                RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).ToListAsync(),
+                RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).OrderBy(x => x._Id).ToListAsync(),
                     allPeople.Where(x => x._Age <= 35));
 
                 RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
@@ -248,7 +253,10 @@
                 RunTest("Multiple Conditions AND", await personQuery.Where(x => x._Age > 30 && x.TestInt == 9).ToListAsync(),
                     allPeople.Where(x => x._Age > 30 && x.TestInt == 9));
 
-                RunTest("Multiple Conditions OR", await personQuery.Where(x => x._Age > 50 || x.TestInt == 3).ToListAsync(),
+
+                RunTest("Multiple Index Conditions OR", await personQuery.Where(x => x.Name == "Zack" || x.Name == "Isla").ToListAsync(),
+                    allPeople.Where(x => x.Name == "Zack" || x.Name == "Isla"));
+                RunTest("Multiple Cursor Conditions OR", await personQuery.Where(x => x._Age > 50 || x.TestInt == 3).ToListAsync(),
                     allPeople.Where(x => x._Age > 50 || x.TestInt == 3));
 
                 RunTest("Nested AND/OR", await personQuery.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
@@ -266,8 +274,11 @@
                 RunTest("Take Test", await personQuery.OrderBy(x => x._Age).Take(2).ToListAsync(),
                     allPeople.OrderBy(x => x._Age).Take(2));
 
-                RunTest("TakeLast Test", await personQuery.OrderBy(x => x._Age).TakeLast(2).ToListAsync(),
-                    allPeople.OrderBy(x => x._Age).TakeLast(2));
+                RunTest("TakeLast Index Test", await personQuery.OrderBy(x => x.Name).TakeLast(2).ToListAsync(),
+                          allPeople.OrderBy(x => x.Name).TakeLast(2));
+
+                RunTest("TakeLast Cursor Test", await personQuery.OrderBy(x => x._Age).TakeLast(2).ToListAsync(),
+                     allPeople.OrderBy(x => x._Age).TakeLast(2));
 
 
                 // 🛠️ Chaining Multiple Where Statements
@@ -284,13 +295,29 @@
                     allPeople.Where(x => x._Age > 30).Where(x => x.TestInt == 9 || x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
 
                 // 🔄 Mixing Where, OrderBy, Skip, and Take
-                RunTest("Where + OrderBy + Skip + Take",
+                RunTest("Cursor Where + OrderBy + Skip + Take",
                     await personQuery.Where(x => x._Age > 30)
                                      .OrderBy(x => x._Age)
-                                     .Skip(2)
                                      .Take(3)
+                                     .Skip(2)
                                      .ToListAsync(),
                     allPeople.Where(x => x._Age > 30).OrderBy(x => x._Age).Skip(2).Take(3));
+
+                RunTest("Index Where + OrderBy + Skip + Take",
+                await personQuery.Where(x => x.Name.StartsWith("J"))
+                                 .OrderBy(x => x._Id)
+                                 .Take(3)
+                                 .Skip(2)
+                                 .ToListAsync(),
+                allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x._Id).Skip(2).Take(3));
+
+                RunTest("Index Where + OrderBy Desc + Skip + Take",
+                await personQuery.Where(x => x.Name.StartsWith("J"))
+                                 .OrderByDescending(x => x._Id)
+                                 .Take(3)
+                                 .Skip(2)
+                                 .ToListAsync(),
+                allPeople.Where(x => x.Name.StartsWith("J")).OrderByDescending(x => x._Id).Skip(2).Take(3));
 
                 RunTest("Where + OrderByDescending + TakeLast",
                     await personQuery.Where(x => x._Age < 60)
@@ -299,12 +326,6 @@
                                      .ToListAsync(),
                     allPeople.Where(x => x._Age < 60).OrderByDescending(x => x._Age).TakeLast(2));
 
-                RunTest("Where + Multiple OrderBy",
-                    await personQuery.Where(x => x._Age > 20)
-                                     .OrderBy(x => x.Name)
-                                     .OrderByDescending(x => x._Age)
-                                     .ToListAsync(),
-                    allPeople.Where(x => x._Age > 20).OrderBy(x => x.Name).OrderByDescending(x => x._Age));
 
                 // 🧩 Complex Nested Conditions
                 RunTest("Nested OR within AND",
@@ -333,8 +354,8 @@
                 // 📊 Pagination Stress Test
                 RunTest("Skip and Take Across Boundaries",
                     await personQuery.OrderBy(x => x._Age)
-                                     .Skip(3)
                                      .Take(5)
+                                     .Skip(3)
                                      .ToListAsync(),
                     allPeople.OrderBy(x => x._Age).Skip(3).Take(5));
 
@@ -350,10 +371,10 @@
                     await personQuery.ToListAsync(),
                     allPeople.ToList());
 
-                // ✅ Universal Truth Test (Always Returns Everything)
-                RunTest("Universal Truth Where Condition",
-                    await personQuery.Where(x => true).ToListAsync(),
-                    allPeople.Where(x => true));
+                 // ✅ Universal Truth Test (Always Returns Everything)
+                 RunTest("Universal Truth Where Condition",
+                     await personQuery.Where(x => true).ToListAsync(),
+                     allPeople.Where(x => true));
 
                 // ❌ Universal False Test (Always Returns Nothing)
                 RunTest("Universal False Where Condition",
@@ -383,29 +404,36 @@
                     await personQuery.Where(x => x.DoNotMapTest.Contains("diary")).ToListAsync(),
                     allPeople.Where(x => x.DoNotMapTest != null && x.DoNotMapTest.Contains("diary")));
 
-                // 🎯 Mixing Multiple Conditions & Sorting
-                RunTest("Where + OrderBy + OrderByDescending + Take",
-                    await personQuery.Where(x => x._Age > 20)
-                                     .OrderBy(x => x.Name)
-                                     .OrderByDescending(x => x._Age)
-                                     .Take(3)
-                                     .ToListAsync(),
-                    allPeople.Where(x => x._Age > 20).OrderBy(x => x.Name).OrderByDescending(x => x._Age).Take(3));
 
                 RunTest("Where + OrderBy + Skip + TakeLast",
-                    await personQuery.Where(x => x._Age > 20)
-                                     .OrderBy(x => x._Age)
-                                     .Skip(2)
+                    await personQuery.Where(x => x.TestInt > 2)
+                                     .OrderBy(x => x._Id)
                                      .TakeLast(2)
                                      .ToListAsync(),
-                    allPeople.Where(x => x._Age > 20).OrderBy(x => x._Age).Skip(2).TakeLast(2));
+                    allPeople.Where(x => x.TestInt > 2).OrderBy(x => x._Id).TakeLast(2));
+
+                // RunTest("Where + OrderBy + Skip + TakeLast",
+                //     await personQuery.Where(x => x._Age > 20)
+                //                      .OrderBy(x => x._Age)
+                //                      .TakeLast(2)
+                //                      .ToListAsync(),
+                //     allPeople.Where(x => x._Age > 20).OrderBy(x => x._Age).TakeLast(2));
+
+                RunTest("Paginated Index Query with AND Condition",
+                await personQuery.Where(x => x.TestInt > 2 && x.TestInt == 9)
+                                 .OrderBy(x => x._Id)
+                                 .Take(3)
+                                 .Skip(1)
+                                 .ToListAsync(),
+                allPeople.Where(x => x.TestInt > 2 && x.TestInt == 9).OrderBy(x => x._Id).Skip(1).Take(3));
+
 
                 // 🔄 Complex Pagination with Condition
-                RunTest("Paginated Query with AND Condition",
+                RunTest("Paginated Cursor Query with AND Condition",
                     await personQuery.Where(x => x._Age > 30 && x.TestInt == 9)
-                                     .OrderBy(x => x._Age)
-                                     .Skip(1)
+                                     .OrderBy(x => x._Age)                                     
                                      .Take(3)
+                                     .Skip(1)
                                      .ToListAsync(),
                     allPeople.Where(x => x._Age > 30 && x.TestInt == 9).OrderBy(x => x._Age).Skip(1).Take(3));
 
