@@ -233,17 +233,12 @@ namespace Magic.IndexedDb
             string storeName, NestedOrFilter nestedOrFilter, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
-            string? jsonQueryAdditions = null;
-            if (query != null && query.StoredMagicQueries != null && query.StoredMagicQueries.Count > 0)
-            {
-                jsonQueryAdditions = MagicSerializationHelper.SerializeObject(query.StoredMagicQueries.ToArray());
-            }
             
             var args = new ITypedArgument[] {
                 new TypedArgument<string>(DbName),
                 new TypedArgument<string>(storeName),
                 new TypedArgument<NestedOrFilter>(nestedOrFilter),
-                new TypedArgument<string>(jsonQueryAdditions!),
+                new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
                 new TypedArgument<bool?>(query?.ResultsUnique!),
             };
 
@@ -268,17 +263,12 @@ namespace Magic.IndexedDb
     string storeName, NestedOrFilter nestedOrFilter, MagicQuery<T> query,
     [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
         {
-            string? jsonQueryAdditions = null;
-            if (query != null && query.StoredMagicQueries != null && query.StoredMagicQueries.Count > 0)
-            {
-                jsonQueryAdditions = MagicSerializationHelper.SerializeObject(query.StoredMagicQueries.ToArray());
-            }
 
             var args = new ITypedArgument[] {
         new TypedArgument<string>(DbName),
         new TypedArgument<string>(storeName),
         new TypedArgument<NestedOrFilter>(nestedOrFilter),
-        new TypedArgument<string>(jsonQueryAdditions!),
+        new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
         new TypedArgument<bool?>(query?.ResultsUnique!),
     };
 

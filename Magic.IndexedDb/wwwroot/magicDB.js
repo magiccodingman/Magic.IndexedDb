@@ -226,32 +226,6 @@ const QUERY_ADDITION_RULES = {
 
 const indexCache = {}; //  Cache indexed properties per DB+Store
 
-export async function* whereYield(dbName, storeName, nestedOrFilter, jsonQueryAdditions) {
-    yield* where(dbName, storeName, nestedOrFilter, JSON.parse(jsonQueryAdditions));
-}
-
-export async function* whereJsonYield(dbName, storeName, nestedOrFilter, jsonQueryAdditions) {
-    const QueryAdditions = JSON.parse(jsonQueryAdditions);
-    yield* whereJson(dbName, storeName, nestedOrFilter, QueryAdditions);
-}
-
-export async function whereJson(dbName, storeName, nestedOrFilter, jsonQueryAdditions) {
-    debugLog("whereJson called");
-
-    const QueryAdditions = JSON.parse(jsonQueryAdditions);
-
-    let results = []; // Collect results here
-
-    for await (let record of where(dbName, storeName, nestedOrFilter, QueryAdditions)) {
-        results.push(record);
-    }
-
-    debugLog("whereJson returning results", { count: results.length, results });
-
-    return results; // Return all results at once
-}
-
-
 function isValidFilterObject(obj) {
     if (!obj || !Array.isArray(obj.orGroups)) return false;
 
@@ -270,7 +244,22 @@ function isValidFilterObject(obj) {
     );
 }
 
-export async function* where(dbName, storeName, nestedOrFilter, queryAdditions = []) {
+export async function where(dbName, storeName, nestedOrFilter, QueryAdditions) {
+    debugLog("whereJson called");
+
+
+    let results = []; // Collect results here
+
+    for await (let record of whereYield(dbName, storeName, nestedOrFilter, QueryAdditions)) {
+        results.push(record);
+    }
+
+    debugLog("whereJson returning results", { count: results.length, results });
+
+    return results; // Return all results at once
+}
+
+export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditions = []) {
     debugLog("Starting where function", { dbName, storeName, nestedOrFilter, queryAdditions });
 
     if (!isValidFilterObject(nestedOrFilter)) {
@@ -380,15 +369,19 @@ export async function* where(dbName, storeName, nestedOrFilter, queryAdditions =
     debugLog("Optimized Indexed Queries", { optimizedIndexedQueries });
 
     // Process Indexed Queries First
+    // Memory safe by removing from memory as we send back to prevent double memory at any one point
     for (let query of optimizedIndexedQueries) {
-        for (let record of await runIndexedQuery(table, query)) {
+        let records = await runIndexedQuery(table, query); // Load records first
+
+        while (records.length > 0) {
+            let record = records.shift(); // Remove first item (Frees memory)
             if (!yieldedPrimaryKeys.has(record[primaryKey])) {
                 yieldedPrimaryKeys.add(record[primaryKey]);
-                debugLog("Yielding record from IndexedDB", record);
                 yield record;
             }
         }
     }
+
 
     // Pass yielded primary keys into cursor query to **skip already processed results**
     let cursorResults = await runCursorQuery(table, cursorConditions, yieldedPrimaryKeys);
@@ -400,7 +393,6 @@ export async function* where(dbName, storeName, nestedOrFilter, queryAdditions =
     // Yield final cursor-based records
     for (let record of cursorResults) {
         yieldedPrimaryKeys.add(record[primaryKey]); // **Ensure it's tracked**
-        debugLog("Yielding final cursor-based record", record);
         yield record;
     }
 }
