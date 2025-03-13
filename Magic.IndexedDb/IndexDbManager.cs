@@ -13,6 +13,7 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 using Microsoft.Extensions.Options;
 using Magic.IndexedDb.Extensions;
 using System.Runtime.CompilerServices;
+using Magic.IndexedDb.Models.UniversalOperations;
 
 namespace Magic.IndexedDb
 {
@@ -229,7 +230,7 @@ namespace Magic.IndexedDb
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         internal async Task<IEnumerable<T>?> LinqToIndedDb<T>(
-            string storeName, List<string> jsonQuery, MagicQuery<T> query,
+            string storeName, NestedOrFilter nestedOrFilter, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
             string? jsonQueryAdditions = null;
@@ -241,7 +242,7 @@ namespace Magic.IndexedDb
             var args = new ITypedArgument[] {
                 new TypedArgument<string>(DbName),
                 new TypedArgument<string>(storeName),
-                new TypedArgument<string[]>(jsonQuery.ToArray()),
+                new TypedArgument<NestedOrFilter>(nestedOrFilter),
                 new TypedArgument<string>(jsonQueryAdditions!),
                 new TypedArgument<bool?>(query?.ResultsUnique!),
             };
@@ -264,7 +265,7 @@ namespace Magic.IndexedDb
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         internal async IAsyncEnumerable<T?> LinqToIndedDbYield<T>(
-    string storeName, List<string> jsonQuery, MagicQuery<T> query,
+    string storeName, NestedOrFilter nestedOrFilter, MagicQuery<T> query,
     [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
         {
             string? jsonQueryAdditions = null;
@@ -276,7 +277,7 @@ namespace Magic.IndexedDb
             var args = new ITypedArgument[] {
         new TypedArgument<string>(DbName),
         new TypedArgument<string>(storeName),
-        new TypedArgument<string[]>(jsonQuery.ToArray()),
+        new TypedArgument<NestedOrFilter>(nestedOrFilter),
         new TypedArgument<string>(jsonQueryAdditions!),
         new TypedArgument<bool?>(query?.ResultsUnique!),
     };

@@ -11,6 +11,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Collections;
+using Magic.IndexedDb.Models.UniversalOperations;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
@@ -37,7 +38,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         /// <returns></returns>
         public async IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            await foreach (var item in MagicQuery.Manager.LinqToIndedDbYield<T>(MagicQuery.SchemaName, JsonQueries, MagicQuery, cancellationToken))
+            await foreach (var item in MagicQuery.Manager.LinqToIndedDbYield<T>(MagicQuery.SchemaName, nestedOrFilter, MagicQuery, cancellationToken))
             {
                 if (item is not null) // ✅ Ensure non-null items
                 {
@@ -63,7 +64,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             return items.Where(predicate.Compile()); // Apply predicate after materialization
         }
 
-        private List<string> JsonQueries { get => GetCollectedBinaryJsonExpressions(); }
+        private NestedOrFilter nestedOrFilter { get => GetCollectedBinaryJsonExpressions(); }
 
         /// <summary>
         /// The order you apply does get applied correctly in the query, 
@@ -75,7 +76,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         public async Task<List<T>> ToListAsync()
         {
             return (await MagicQuery.Manager.LinqToIndedDb<T>(MagicQuery.SchemaName, 
-                JsonQueries, MagicQuery, default))?.ToList() ?? new List<T>();
+                nestedOrFilter, MagicQuery, default))?.ToList() ?? new List<T>();
         }
 
         public IMagicQueryPaginationTake<T> Take(int amount)
@@ -88,7 +89,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             return new MagicQueryExtensions<T>(_MagicQuery);
         }
 
-        public IMagicQueryPaginationTake<T> TakeLast(int amount)
+        public IMagicQueryFinal<T> TakeLast(int amount)
         {
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
@@ -171,16 +172,16 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             }
         }
 
-        private List<string> GetCollectedBinaryJsonExpressions()
+        private NestedOrFilter GetCollectedBinaryJsonExpressions()
         {
-            List<string> jsonBinaryExpresions = new List<string>();
+            NestedOrFilter nestedOrFilter = new NestedOrFilter();
             var preprocessedPredicate = PreprocessPredicate();
 
             // FLATTEN OR CONDITIONS because they are annoying and IndexDB doesn't support that!
             var flattenedPredicate = ExpressionFlattener.FlattenAndOptimize(preprocessedPredicate);
 
-            CollectBinaryExpressions(flattenedPredicate.Body, flattenedPredicate, jsonBinaryExpresions);
-            return jsonBinaryExpresions;
+            CollectBinaryExpressions(flattenedPredicate.Body, flattenedPredicate, nestedOrFilter);
+            return nestedOrFilter;
         }
 
         private Expression<Func<T, bool>> PreprocessPredicate()
@@ -193,8 +194,8 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         }
 
         private void CollectBinaryExpressions(Expression expression, 
-            Expression<Func<T, bool>> predicate, 
-            List<string> jsonQueries)
+            Expression<Func<T, bool>> predicate,
+            NestedOrFilter nestedOrFilters)
         {
             var binaryExpr = expression as BinaryExpression;
 
@@ -205,26 +206,26 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                 var right = binaryExpr.Right;
 
                 // Process left and right expressions recursively
-                CollectBinaryExpressions(left, predicate, jsonQueries);
-                CollectBinaryExpressions(right, predicate, jsonQueries);
+                CollectBinaryExpressions(left, predicate, nestedOrFilters);
+                CollectBinaryExpressions(right, predicate, nestedOrFilters);
             }
             else
             {
-                string jsonQuery = 
+                OrFilterGroup orFilters = 
                     GetJsonQueryFromExpression(Expression.Lambda<Func<T, bool>>(expression, predicate.Parameters));
-                jsonQueries.Add(jsonQuery);
+                nestedOrFilters.orGroups.Add(orFilters);
             }
         }
 
-        private string GetJsonQueryFromExpression(Expression<Func<T, bool>> predicate)
+        private OrFilterGroup GetJsonQueryFromExpression(Expression<Func<T, bool>> predicate)
         {
-            var serializerSettings = new MagicJsonSerializationSettings
-            {
-                UseCamelCase = true // Equivalent to setting CamelCasePropertyNamesContractResolver
-            };
+            //var serializerSettings = new MagicJsonSerializationSettings
+            //{
+            //    UseCamelCase = true // Equivalent to setting CamelCasePropertyNamesContractResolver
+            //};
 
-            var conditions = new List<JsonObject>();
-            var orConditions = new List<List<JsonObject>>();
+            var andFilters = new AndFilterGroup();
+            var orFilters = new OrFilterGroup();
 
             void TraverseExpression(Expression expression, bool inOrBranch = false)
             {
@@ -420,28 +421,24 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                             _isString = right.Value is string;
                         }
 
-                        var jsonCondition = new JsonObject
-            {
-                { "property", PropertyMappingCache.GetJsPropertyName<T>(propertyInfo) },
-                { "operation", operation },
-                { "value", valSend },
-                { "isString", _isString },
-                { "caseSensitive", caseSensitive }
-                        };
+                        string property = PropertyMappingCache.GetJsPropertyName<T>(propertyInfo);
+
+                        var queryCondition = new FilterCondition(property, operation,
+                            valSend, _isString, caseSensitive);
 
                         if (inOrBranch)
                         {
-                            var currentOrConditions = orConditions.LastOrDefault();
+                            var currentOrConditions = orFilters.andGroups.LastOrDefault();
                             if (currentOrConditions == null)
                             {
-                                currentOrConditions = new List<JsonObject>();
-                                orConditions.Add(currentOrConditions);
+                                currentOrConditions = new AndFilterGroup();
+                                orFilters.andGroups.Add(currentOrConditions);
                             }
-                            currentOrConditions.Add(jsonCondition);
+                            currentOrConditions.conditions.Add(queryCondition);
                         }
                         else
                         {
-                            conditions.Add(jsonCondition);
+                            andFilters.conditions.Add(queryCondition);
                         }
                     }
                 }
@@ -449,12 +446,12 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             TraverseExpression(predicate.Body);
 
-            if (conditions.Any())
+            if (andFilters.conditions.Any())
             {
-                orConditions.Add(conditions);
+                orFilters.andGroups.Add(andFilters);
             }
 
-            return MagicSerializationHelper.SerializeObject(orConditions, serializerSettings);
+            return orFilters;
         }
     }
 }

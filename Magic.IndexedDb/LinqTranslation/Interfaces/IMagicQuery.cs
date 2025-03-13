@@ -22,7 +22,7 @@ namespace Magic.IndexedDb
         IMagicQuery<T> Where(Expression<Func<T, bool>> predicate);
 
         IMagicQueryPaginationTake<T> Take(int amount);
-        IMagicQueryPaginationTake<T> TakeLast(int amount);
+        IMagicQueryFinal<T> TakeLast(int amount);
         IMagicQueryFinal<T> Skip(int amount);
         IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate);
         IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate);

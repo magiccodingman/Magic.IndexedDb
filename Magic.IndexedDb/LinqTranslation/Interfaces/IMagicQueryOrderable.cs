@@ -18,7 +18,7 @@ namespace Magic.IndexedDb
     public interface IMagicQueryOrderable<T> : IMagicExecute<T> where T : class
     {
         IMagicQueryPaginationTake<T> Take(int amount);
-        IMagicQueryPaginationTake<T> TakeLast(int amount);
+        IMagicQueryFinal<T> TakeLast(int amount);
         IMagicQueryFinal<T> Skip(int amount);
 
         /// <summary>

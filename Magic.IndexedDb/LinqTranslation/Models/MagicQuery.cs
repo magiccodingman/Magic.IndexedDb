@@ -76,7 +76,7 @@ namespace Magic.IndexedDb
         public IMagicQueryPaginationTake<T> Take(int amount)
             => new MagicQueryExtensions<T>(this).Take(amount);
 
-        public IMagicQueryPaginationTake<T> TakeLast(int amount)
+        public IMagicQueryFinal<T> TakeLast(int amount)
             => new MagicQueryExtensions<T>(this).TakeLast(amount);
 
         public IMagicQueryFinal<T> Skip(int amount)

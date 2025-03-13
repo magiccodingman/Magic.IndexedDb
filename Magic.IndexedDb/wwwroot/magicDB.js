@@ -254,8 +254,34 @@ export async function whereJson(dbName, storeName, jsonQueries, jsonQueryAdditio
 }
 
 
+function isValidFilterObject(obj) {
+    if (!obj || !Array.isArray(obj.orGroups)) return false;
+
+    return obj.orGroups.every(orGroup =>
+        Array.isArray(orGroup.andGroups) &&
+        orGroup.andGroups.every(andGroup =>
+            Array.isArray(andGroup.conditions) &&
+            andGroup.conditions.every(condition =>
+                typeof condition.property === 'string' &&
+                typeof condition.operation === 'string' &&
+                (typeof condition.isString === 'boolean') &&
+                (typeof condition.caseSensitive === 'boolean') &&
+                ('value' in condition) // Ensures 'value' exists, but allows different types (number, string, etc.)
+            )
+        )
+    );
+}
+
+// Example Usage:
+const data = {/* your deserialized object here */ };
+if (!isValidFilterObject(data)) {
+    throw new Error("Invalid filter object structure");
+}
+
 export async function* where(dbName, storeName, orConditionsArray, queryAdditions = []) {
     debugLog("Starting where function", { dbName, storeName, orConditionsArray, queryAdditions });
+
+    isValidFilterObject(orConditionsArray);
 
     let db = await getDb(dbName);
     let table = db.table(storeName);
@@ -275,7 +301,7 @@ export async function* where(dbName, storeName, orConditionsArray, queryAddition
 
     debugLog("Validated schema & cached indexes", { primaryKey, indexes: indexCache[dbName][storeName].indexes });
 
-    let requiresCursor = validateQueryAdditions(queryAdditions) || validateQueryCombinations(orConditionsArray);
+    let requiresCursor = validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) || validateQueryCombinations(orConditionsArray);
     debugLog("Determined if query requires cursor", { requiresCursor });
 
     if (!orConditionsArray || orConditionsArray.length === 0) {
@@ -388,7 +414,7 @@ export async function* where(dbName, storeName, orConditionsArray, queryAddition
 
     // Process Indexed Queries First
     for (let query of optimizedIndexedQueries) {
-        for await (let record of runIndexedQuery(table, query)) {
+        for (let record of await runIndexedQuery(table, query)) {
             if (!yieldedPrimaryKeys.has(record[primaryKey])) {
                 yieldedPrimaryKeys.add(record[primaryKey]);
                 debugLog("Yielding record from IndexedDB", record);
@@ -412,7 +438,7 @@ export async function* where(dbName, storeName, orConditionsArray, queryAddition
     }
 }
 
-function validateQueryAdditions(queryAdditions) {
+function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
     queryAdditions = queryAdditions || []; // Ensure it's always an array
     let seenAdditions = new Set();
     let requiresCursor = false;
@@ -424,17 +450,29 @@ function validateQueryAdditions(queryAdditions) {
             throw new Error(`Unsupported query addition: ${addition.Name}`);
         }
 
+        // **New Validation: ORDER_BY & ORDER_BY_DESCENDING Must Target Indexed Properties**
+        if (addition.Name === QUERY_ADDITIONS.ORDER_BY || addition.Name === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
+            const isIndexed = indexCache[dbName]?.[storeName]?.indexes?.[addition.StringValue] || false;
+            if (!isIndexed) {
+                debugLog(`Query requires cursor: ORDER_BY on non-indexed property ${addition.StringValue}`);
+                requiresCursor = true; // Forces cursor usage
+            }
+        }
+
+        // Check if the addition conflicts with previous additions
         for (const seen of seenAdditions) {
             if (!validCombos.includes(seen)) {
                 requiresCursor = true;
                 break;
             }
         }
+
         seenAdditions.add(addition.Name);
     }
 
     return requiresCursor;
 }
+
 
 function validateQueryCombinations(orGroups) {
     debugLog("Validating Query Combinations", { orGroups });
@@ -522,13 +560,12 @@ function isSupportedIndexedOperation(conditions) {
  * @param {Array} indexedConditions - The array of indexed conditions.
  * @returns {AsyncGenerator} - A generator that yields query results.
  */
-async function* runIndexedQuery(table, indexedConditions) {
+async function runIndexedQuery(table, indexedConditions) {
     debugLog("Executing runIndexedQuery", { indexedConditions });
 
     if (indexedConditions.length === 0) {
         debugLog("No indexed conditions provided, returning entire table.");
-        yield* table.toArray(); // If no indexed conditions, return full table.
-        return;
+        return await table.toArray();
     }
 
     let query;
@@ -590,13 +627,7 @@ async function* runIndexedQuery(table, indexedConditions) {
         }
     }
 
-    // **Execute the query & yield results**
-    const results = await query.toArray();
-    debugLog("runIndexedQuery results count", results.length);
-
-    for (let record of results) {
-        yield record;
-    }
+    return await query.toArray();
 }
 
 
