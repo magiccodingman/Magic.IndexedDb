@@ -83,8 +83,8 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         {
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
-            smq.Name = MagicQueryFunctions.Take;
-            smq.IntValue = amount;
+            smq.additionFunction = MagicQueryFunctions.Take;
+            smq.intValue = amount;
             _MagicQuery.StoredMagicQueries.Add(smq);
             return new MagicQueryExtensions<T>(_MagicQuery);
         }
@@ -93,8 +93,8 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         {
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
-            smq.Name = MagicQueryFunctions.Take_Last;
-            smq.IntValue = amount;
+            smq.additionFunction = MagicQueryFunctions.Take_Last;
+            smq.intValue = amount;
             _MagicQuery.StoredMagicQueries.Add(smq);
             return new MagicQueryExtensions<T>(_MagicQuery);
         }
@@ -103,8 +103,8 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         {
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
-            smq.Name = MagicQueryFunctions.Skip;
-            smq.IntValue = amount;
+            smq.additionFunction = MagicQueryFunctions.Skip;
+            smq.intValue = amount;
             _MagicQuery.StoredMagicQueries.Add(smq);
             return new MagicQueryExtensions<T>(_MagicQuery);
         }
@@ -129,8 +129,8 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
-            smq.Name = MagicQueryFunctions.Order_By;
-            smq.StringValue = mpe.JsPropertyName;
+            smq.additionFunction = MagicQueryFunctions.Order_By;
+            smq.property = mpe.JsPropertyName;
             _MagicQuery.StoredMagicQueries.Add(smq);
             return new MagicQueryExtensions<T>(_MagicQuery);
         }
@@ -148,10 +148,10 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
             StoredMagicQuery smq = new StoredMagicQuery();
-            smq.Name = MagicQueryFunctions.Order_By_Descending;
+            smq.additionFunction = MagicQueryFunctions.Order_By_Descending;
 
             // this process could be much more performant
-            smq.StringValue = PropertyMappingCache.GetJsPropertyName<T>(propertyInfo);
+            smq.property = PropertyMappingCache.GetJsPropertyName<T>(propertyInfo);
             _MagicQuery.StoredMagicQueries.Add(smq);
             return new MagicQueryExtensions<T>(_MagicQuery);
         }

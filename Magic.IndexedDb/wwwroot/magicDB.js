@@ -244,6 +244,44 @@ function isValidFilterObject(obj) {
     );
 }
 
+function isValidQueryAdditions(arr) {
+    if (!Array.isArray(arr)) {
+        console.error("Invalid input: Expected an array but received:", arr);
+        return false;
+    }
+
+    let isValid = true;
+
+    arr.forEach((obj, index) => {
+        if (!obj || typeof obj !== 'object') {
+            console.error(`Error at index ${index}: Expected an object but received:`, obj);
+            isValid = false;
+            return;
+        }
+
+        if (typeof obj.additionFunction !== 'string') {
+            console.error(`Error at index ${index}: additionFunction must be a string but got:`, obj.additionFunction);
+            isValid = false;
+        } else if (!Object.values(QUERY_ADDITIONS).includes(obj.additionFunction)) {
+            console.error(`Error at index ${index}: additionFunction '${obj.additionFunction}' is not a valid QUERY_ADDITIONS value.`);
+            isValid = false;
+        }
+
+        if (typeof obj.intValue !== 'number' || !Number.isInteger(obj.intValue)) {
+            console.error(`Error at index ${index}: intValue must be an integer but got:`, obj.intValue);
+            isValid = false;
+        }
+
+        if (obj.property !== undefined && obj.property !== null && typeof obj.property !== 'string') {
+            console.error(`Error at index ${index}: property must be a string, null, or undefined but got:`, obj.property);
+            isValid = false;
+        }
+    });
+
+    return isValid;
+}
+
+
 export async function where(dbName, storeName, nestedOrFilter, QueryAdditions) {
     debugLog("whereJson called");
 
@@ -265,7 +303,10 @@ export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditi
     if (!isValidFilterObject(nestedOrFilter)) {
         throw new Error("Invalid filter object provided to where function.");
     }
-
+    if (!isValidQueryAdditions(queryAdditions)) {
+        throw new Error("Invalid addition query provided to where function.");
+    }
+    
     let db = await getDb(dbName);
     let table = db.table(storeName);
 
@@ -404,14 +445,14 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
     let requiresCursor = false;
 
     for (const addition of queryAdditions) {
-        let validCombos = QUERY_ADDITION_RULES[addition.Name];
+        let validCombos = QUERY_ADDITION_RULES[addition.additionFunction];
 
         if (!validCombos) {
-            throw new Error(`Unsupported query addition: ${addition.Name}`);
+            throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
         }
 
         // **New Validation: ORDER_BY & ORDER_BY_DESCENDING Must Target Indexed Properties**
-        if (addition.Name === QUERY_ADDITIONS.ORDER_BY || addition.Name === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
+        if (addition.additionFunction === QUERY_ADDITIONS.ORDER_BY || addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
             const isIndexed = indexCache[dbName]?.[storeName]?.indexes?.[addition.StringValue] || false;
             if (!isIndexed) {
                 debugLog(`Query requires cursor: ORDER_BY on non-indexed property ${addition.StringValue}`);
@@ -427,7 +468,7 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
             }
         }
 
-        seenAdditions.add(addition.Name);
+        seenAdditions.add(addition.additionFunction);
     }
 
     return requiresCursor;
@@ -751,7 +792,7 @@ function applyIndexedQueryAdditions(table, results, queryAdditions) {
     debugLog("Applying indexed query additions in given order", { queryAdditions });
 
     for (const addition of queryAdditions) {
-        switch (addition.Name) {
+        switch (addition.additionFunction) {
             case QUERY_ADDITIONS.ORDER_BY:
                 results = results.orderBy(addition.StringValue);
                 break;
@@ -768,7 +809,7 @@ function applyIndexedQueryAdditions(table, results, queryAdditions) {
                 results = results.reverse().limit(addition.IntValue).reverse(); // Ensures last `n` items are taken in order
                 break;
             default:
-                throw new Error(`Unsupported query addition: ${addition.Name}`);
+                throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
         }
     }
 
@@ -782,7 +823,7 @@ function applyCursorQueryAdditions(results, queryAdditions) {
     debugLog("Applying cursor query additions in given order", { queryAdditions });
 
     for (const addition of queryAdditions) {
-        switch (addition.Name) {
+        switch (addition.additionFunction) {
             case QUERY_ADDITIONS.ORDER_BY:
                 results.sort((a, b) => a[addition.StringValue] - b[addition.StringValue]);
                 break;
@@ -799,7 +840,7 @@ function applyCursorQueryAdditions(results, queryAdditions) {
                 results = results.slice(-addition.IntValue);
                 break;
             default:
-                throw new Error(`Unsupported query addition: ${addition.Name}`);
+                throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
         }
     }
 
