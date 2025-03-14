@@ -20,13 +20,13 @@ namespace Magic.IndexedDb
     /// <summary>
     /// Provides functionality for accessing IndexedDB from Blazor application
     /// </summary>
-    public sealed class IndexedDbManager : IMagicManager
+    public class IndexedDbManager : IMagicManager
     {
         internal static async ValueTask<IndexedDbManager> CreateAndOpenAsync(
             CancellationToken cancellationToken = default)
         {
             var result = new IndexedDbManager(dbStore, jsRuntime);
-            await result.CallJsAsync(Cache.MagicDbJsImportPath, 
+            await result.CallJsAsync(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.CREATE_DB, cancellationToken, new TypedArgument<DbStore>(dbStore));
             return result;
         }
@@ -102,7 +102,7 @@ namespace Magic.IndexedDb
                     new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
         }
 
-        
+
 
         internal async Task<int> UpdateAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
         {
@@ -120,7 +120,7 @@ namespace Magic.IndexedDb
                 Record = item
             };
 
-            return await CallJsAsync<int>(Cache.MagicDbJsImportPath, 
+            return await CallJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
@@ -165,10 +165,11 @@ namespace Magic.IndexedDb
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName), new TypedArgument<object>(key) });
         }*/
 
-        public IMagicQuery<T> Query<T>() where T : class
+        public IMagicQuery<T> Query<T>(string? databaseNameOverride = null, string? schemaNameOverride = null) where T : class
         {
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            MagicQuery<T> query = new MagicQuery<T>(schemaName, this);
+            MagicQuery<T> query = new MagicQuery<T>(databaseNameOverride ?? databaseName, schemaNameOverride ?? schemaName, this);
             return query;
         }
 
@@ -182,17 +183,14 @@ namespace Magic.IndexedDb
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         internal async Task<IEnumerable<T>?> LinqToIndedDb<T>(
-            string storeName, NestedOrFilter nestedOrFilter, MagicQuery<T> query,
+            NestedOrFilter nestedOrFilter, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
             if (nestedOrFilter.universalFalse == true)
                 return default;
-
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
-
             var args = new ITypedArgument[] {
-                new TypedArgument<string>(databaseName),
-                new TypedArgument<string>(storeName),
+                new TypedArgument<string>(query.DatabaseName),
+                new TypedArgument<string>(query.SchemaName),
                 new TypedArgument<NestedOrFilter>(nestedOrFilter),
                 new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
                 new TypedArgument<bool>(query?.ForceCursorMode??false),
@@ -216,17 +214,15 @@ namespace Magic.IndexedDb
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         internal async IAsyncEnumerable<T?> LinqToIndedDbYield<T>(
-    string storeName, NestedOrFilter nestedOrFilter, MagicQuery<T> query,
+    NestedOrFilter nestedOrFilter, MagicQuery<T> query,
     [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
         {
             if (nestedOrFilter.universalFalse == true)
                 yield break; // Terminate the async iterator immediately.
 
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
-
             var args = new ITypedArgument[] {
-        new TypedArgument<string>(databaseName),
-        new TypedArgument<string>(storeName),
+        new TypedArgument<string>(query.DatabaseName),
+        new TypedArgument<string>(query.SchemaName),
         new TypedArgument<NestedOrFilter>(nestedOrFilter),
         new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
         new TypedArgument<bool>(query?.ForceCursorMode??false),
@@ -237,7 +233,7 @@ namespace Magic.IndexedDb
             {
                 yield return item; // Stream each item immediately
             }
-        }        
+        }
 
         /// <summary>
         /// Returns Mb
@@ -322,7 +318,7 @@ namespace Magic.IndexedDb
             return ClearTableAsync(schemaName, databaseName, cancellationToken);
         }
 
-        internal async Task CallJsAsync(string modulePath, string functionName, 
+        internal async Task CallJsAsync(string modulePath, string functionName,
             CancellationToken token, params ITypedArgument[] args)
         {
             var magicJsInvoke = new MagicJsInvoke(_jsModule);
@@ -330,7 +326,7 @@ namespace Magic.IndexedDb
             await magicJsInvoke.MagicVoidStreamJsAsync(modulePath, functionName, token, args);
         }
 
-        internal async Task<T> CallJsAsync<T>(string modulePath, string functionName, 
+        internal async Task<T> CallJsAsync<T>(string modulePath, string functionName,
             CancellationToken token, params ITypedArgument[] args)
         {
 

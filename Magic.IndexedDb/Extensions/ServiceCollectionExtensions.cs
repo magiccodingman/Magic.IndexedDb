@@ -1,5 +1,6 @@
 ﻿using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
+using Magic.IndexedDb.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System;
@@ -14,7 +15,7 @@ namespace Magic.IndexedDb.Extensions
     {
         public static IServiceCollection AddBlazorDB(this IServiceCollection services, Action<DbStore> options)
         {
-            services.TryAddScoped<IMagicDbFactory, MagicDbFactory>();
+            services.TryAddScoped<IMagicManager, IndexedDbManager>();
 
             var dbStore = new DbStore();
             options(dbStore);

@@ -19,6 +19,7 @@ namespace Magic.IndexedDb
     internal class MagicQuery<T> : IMagicQuery<T>, IMagicQueryStaging<T> where T : class
     {
         internal string SchemaName { get; }
+        internal string DatabaseName { get; }
         internal IndexedDbManager Manager { get; }
         internal List<StoredMagicQuery> StoredMagicQueries { get; set; } = new List<StoredMagicQuery>();
         internal bool ForceCursorMode { get; set; } = false;
@@ -26,15 +27,17 @@ namespace Magic.IndexedDb
         internal bool ResultsUnique { get; set; } = true;
         internal List<Expression<Func<T, bool>>> Predicates { get; } = new List<Expression<Func<T, bool>>>();
 
-        public MagicQuery(string schemaName, IndexedDbManager manager)
+        internal MagicQuery(string databaseName, string schemaName, IndexedDbManager manager)
         {
             Manager = manager;
             SchemaName = schemaName;
+            DatabaseName = databaseName;
         }
 
         public MagicQuery(MagicQuery<T> _MagicQuery)
         {
             SchemaName = _MagicQuery.SchemaName;  // Keep reference
+            DatabaseName = _MagicQuery.DatabaseName;  // Keep reference
             Manager = _MagicQuery.Manager;        // Keep reference
             StoredMagicQueries = new List<StoredMagicQuery>(_MagicQuery.StoredMagicQueries); // Deep copy
             ResultsUnique = _MagicQuery.ResultsUnique;
@@ -110,17 +113,11 @@ namespace Magic.IndexedDb
         public async Task AddRangeAsync(
             IEnumerable<T> records, CancellationToken cancellationToken = default)
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
-
             await Manager.BulkAddRecordAsync(schemaName, databaseName, records, cancellationToken);
         }
 
         public async Task<int> UpdateAsync(T item, CancellationToken cancellationToken = default)
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
-
             return await Manager.UpdateAsync(item, databaseName, cancellationToken);
         }
 
@@ -128,17 +125,11 @@ namespace Magic.IndexedDb
     IEnumerable<T> items,
     CancellationToken cancellationToken = default)
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
-
             return await Manager.UpdateRangeAsync(items, databaseName, cancellationToken);
         }
 
         public async Task DeleteAsync(T item, CancellationToken cancellationToken = default)
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
-
             await Manager.DeleteAsync(item, databaseName, cancellationToken);
         }
 
@@ -146,17 +137,11 @@ namespace Magic.IndexedDb
     IEnumerable<T> items,
     CancellationToken cancellationToken = default)
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
-
             return await Manager.DeleteRangeAsync(items, databaseName, cancellationToken);
         }
 
         public async Task AddAsync(T record, CancellationToken cancellationToken = default)
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
-
             _ = await Manager.AddAsync<T, JsonElement>(record, databaseName, cancellationToken);
         }
     }
