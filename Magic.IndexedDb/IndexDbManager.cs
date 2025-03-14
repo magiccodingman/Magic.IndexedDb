@@ -20,10 +20,9 @@ namespace Magic.IndexedDb
     /// <summary>
     /// Provides functionality for accessing IndexedDB from Blazor application
     /// </summary>
-    public sealed class IndexedDbManager
+    public sealed class IndexedDbManager : IMagicManager
     {
         internal static async ValueTask<IndexedDbManager> CreateAndOpenAsync(
-            DbStore dbStore, IJSObjectReference jsRuntime,
             CancellationToken cancellationToken = default)
         {
             var result = new IndexedDbManager(dbStore, jsRuntime);
@@ -49,7 +48,7 @@ namespace Magic.IndexedDb
         // TODO: make it readonly
         public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
         public int CurrentVersion => _dbStore.Version;
-        public string DbName => _dbStore.Name;
+        //public string DbName => _dbStore.Name;
 
         /// <summary>
         /// Deletes the database corresponding to the dbName passed in
@@ -65,65 +64,23 @@ namespace Magic.IndexedDb
             return CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_DB, cancellationToken, new TypedArgument<string>(dbName));
         }
 
-        public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
-        {
-            _ = await AddAsync<T, JsonElement>(record, cancellationToken);
-        }
+        //public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
+        //{
+        //    _ = await AddAsync<T, JsonElement>(record, cancellationToken);
+        //}
 
-        public async Task<TKey> AddAsync<T, TKey>(T record, CancellationToken cancellationToken = default) where T : class
+        internal async Task<TKey> AddAsync<T, TKey>(T record, string dbName, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
             StoreRecord<T?> RecordToSend = new StoreRecord<T?>()
             {
-                DbName = this.DbName,
+                DbName = dbName,
                 StoreName = schemaName,
                 Record = record
             };
             return await CallJsAsync<TKey>(Cache.MagicDbJsImportPath, IndexedDbFunctions.ADD_ITEM, cancellationToken, new TypedArgument<StoreRecord<T?>>(RecordToSend));
         }
-
-        [Obsolete]
-        public async Task<string> DecryptAsync(
-            string EncryptedValue, CancellationToken cancellationToken = default)
-        {
-            return "Obsolete, decryptions no longer functioning";
-            /*EncryptionFactory encryptionFactory = new EncryptionFactory(this);
-            string decryptedValue = await encryptionFactory.DecryptAsync(
-                EncryptedValue, _dbStore.EncryptionKey, cancellationToken);
-            return decryptedValue;*/
-        }
-
-        // Returns the default value for the given type
-        private static object? GetDefaultValue(Type type)
-        {
-            return type.IsValueType ? Activator.CreateInstance(type) : null;
-        }
-
-        //public async Task<Guid> AddRange<T>(IEnumerable<T> records, Action<BlazorDbEvent> action = null) where T : class
-        //{
-        //    string schemaName = SchemaHelper.GetSchemaName<T>();
-        //    var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-
-        //    List<object> processedRecords = new List<object>();
-        //    foreach (var record in records)
-        //    {
-        //        object processedRecord = await ProcessRecord(record);
-
-        //        if (processedRecord is ExpandoObject)
-        //        {
-        //            var convertedRecord = ((ExpandoObject)processedRecord).ToDictionary(kv => kv.Key, kv => (object)kv.Value);
-        //            processedRecords.Add(ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings));
-        //        }
-        //        else
-        //        {
-        //            var convertedRecord = ManagerHelper.ConvertRecordToDictionary((T)processedRecord);
-        //            processedRecords.Add(ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings));
-        //        }
-        //    }
-
-        //    return await BulkAddRecord(schemaName, processedRecords, action);
-        //}
 
         /// <summary>
         /// Adds records/objects to the specified store in bulk
@@ -132,28 +89,22 @@ namespace Magic.IndexedDb
         /// <typeparam name="T"></typeparam>
         /// <param name="recordsToBulkAdd">An instance of StoreRecord that provides the store name and the data to add</param>
         /// <returns></returns>
-        private Task BulkAddRecordAsync<T>(
-            string storeName,
+        internal Task BulkAddRecordAsync<T>(
+            string storeName, string dbName,
             IEnumerable<T> recordsToBulkAdd,
             CancellationToken cancellationToken = default)
         {
             // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
             return CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName),
+                new ITypedArgument[] { new TypedArgument<string>(dbName),
                     new TypedArgument<string>(storeName),
                     new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
         }
 
-        public async Task AddRangeAsync<T>(
-            IEnumerable<T> records, CancellationToken cancellationToken = default) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+        
 
-            await BulkAddRecordAsync(schemaName, records, cancellationToken);
-        }
-
-        public async Task<int> UpdateAsync<T>(T item, CancellationToken cancellationToken = default) where T : class
+        internal async Task<int> UpdateAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
@@ -164,7 +115,7 @@ namespace Magic.IndexedDb
             UpdateRecord<T> record = new UpdateRecord<T>()
             {
                 Key = primaryKeyValue,
-                DbName = this.DbName,
+                DbName = dbName,
                 StoreName = schemaName,
                 Record = item
             };
@@ -173,8 +124,8 @@ namespace Magic.IndexedDb
                 IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
-        public async Task<int> UpdateRangeAsync<T>(
-    IEnumerable<T> items,
+        internal async Task<int> UpdateRangeAsync<T>(
+    IEnumerable<T> items, string dbName,
     CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
@@ -188,7 +139,7 @@ namespace Magic.IndexedDb
                 return new UpdateRecord<T>()
                 {
                     Key = primaryKeyValue,
-                    DbName = this.DbName,
+                    DbName = dbName,
                     StoreName = schemaName,
                     Record = item
                 };
@@ -199,7 +150,8 @@ namespace Magic.IndexedDb
         }
 
 
-        public async Task<T?> GetByIdAsync<T>(
+        // No longer supported. Instead use query.Where(x => x.Id == 3).FirstOrDefault()
+        /*public async Task<T?> GetByIdAsync<T>(
             object key,
             CancellationToken cancellationToken = default) where T : class
         {
@@ -211,7 +163,7 @@ namespace Magic.IndexedDb
             return await CallJsAsync<T>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.FIND_ITEM, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName), new TypedArgument<object>(key) });
-        }
+        }*/
 
         public IMagicQuery<T> Query<T>() where T : class
         {
@@ -235,9 +187,11 @@ namespace Magic.IndexedDb
         {
             if (nestedOrFilter.universalFalse == true)
                 return default;
-            
+
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+
             var args = new ITypedArgument[] {
-                new TypedArgument<string>(DbName),
+                new TypedArgument<string>(databaseName),
                 new TypedArgument<string>(storeName),
                 new TypedArgument<NestedOrFilter>(nestedOrFilter),
                 new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
@@ -268,8 +222,10 @@ namespace Magic.IndexedDb
             if (nestedOrFilter.universalFalse == true)
                 yield break; // Terminate the async iterator immediately.
 
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+
             var args = new ITypedArgument[] {
-        new TypedArgument<string>(DbName),
+        new TypedArgument<string>(databaseName),
         new TypedArgument<string>(storeName),
         new TypedArgument<NestedOrFilter>(nestedOrFilter),
         new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
@@ -281,34 +237,7 @@ namespace Magic.IndexedDb
             {
                 yield return item; // Stream each item immediately
             }
-        }
-
-
-
-        private object ConvertValueToType(object value, Type targetType)
-        {
-            if (targetType == typeof(Guid) && value is string stringValue)
-            {
-                return Guid.Parse(stringValue);
-            }
-            if (targetType.IsEnum)
-            {
-                return Enum.ToObject(targetType, Convert.ToInt64(value));
-            }
-
-            var nullableType = Nullable.GetUnderlyingType(targetType);
-            if (nullableType != null)
-            {
-                // It's nullable
-                if (value == null)
-                    return null;
-
-                return Convert.ChangeType(value, nullableType);
-            }
-            return Convert.ChangeType(value, targetType);
-        }
-
-        
+        }        
 
         /// <summary>
         /// Returns Mb
@@ -319,15 +248,16 @@ namespace Magic.IndexedDb
             return CallJsAsync<QuotaUsage>(Cache.MagicDbJsImportPath, IndexedDbFunctions.GET_STORAGE_ESTIMATE, cancellationToken, []);
         }
 
-        public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
+        // No longer supported in current LINQ system. Use Query.ToListAsync() for equivilent.
+        /*public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
             return await CallJsAsync<IEnumerable<T>>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.TOARRAY, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName) });
-        }
+        }*/
 
-        public async Task DeleteAsync<T>(T item, CancellationToken cancellationToken = default) where T : class
+        internal async Task DeleteAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
@@ -336,7 +266,7 @@ namespace Magic.IndexedDb
             UpdateRecord<T> record = new UpdateRecord<T>()
             {
                 Key = primaryKeyValue,
-                DbName = this.DbName,
+                DbName = dbName,
                 StoreName = schemaName,
                 Record = item
             };
@@ -344,8 +274,8 @@ namespace Magic.IndexedDb
             await CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
-        public async Task<int> DeleteRangeAsync<T>(
-    IEnumerable<T> items, CancellationToken cancellationToken = default) where T : class
+        internal async Task<int> DeleteRangeAsync<T>(
+    IEnumerable<T> items, string dbName, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
 
@@ -358,7 +288,7 @@ namespace Magic.IndexedDb
             });
 
             var args = new ITypedArgument[] {
-                new TypedArgument<string>(DbName),
+                new TypedArgument<string>(dbName),
                 new TypedArgument<string>(schemaName),
                 new TypedArgument<IEnumerable<object>?>(keys) };
 
@@ -374,10 +304,10 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="storeName"></param>
         /// <returns></returns>
-        public Task ClearTableAsync(string storeName, CancellationToken cancellationToken = default)
+        public Task ClearTableAsync(string storeName, string dbName, CancellationToken cancellationToken = default)
         {
             return CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.CLEAR_TABLE, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(storeName) });
+                new ITypedArgument[] { new TypedArgument<string>(dbName), new TypedArgument<string>(storeName) });
         }
 
         /// <summary>
@@ -387,7 +317,9 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         public Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
-            return ClearTableAsync(SchemaHelper.GetSchemaName<T>(), cancellationToken);
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+            return ClearTableAsync(schemaName, databaseName, cancellationToken);
         }
 
         internal async Task CallJsAsync(string modulePath, string functionName, 

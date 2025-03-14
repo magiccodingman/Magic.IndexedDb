@@ -8,6 +8,9 @@ using Magic.IndexedDb.SchemaAnnotations;
 
 namespace Magic.IndexedDb
 {
+    /// <summary>
+    /// sets as the primary key
+    /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
     public class MagicPrimaryKeyAttribute : Attribute, IColumnNamed
     {

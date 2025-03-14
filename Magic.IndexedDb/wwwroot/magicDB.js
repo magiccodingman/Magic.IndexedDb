@@ -314,12 +314,28 @@ export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditi
     if (!indexCache[dbName]) indexCache[dbName] = {};
     if (!indexCache[dbName][storeName]) {
         const schema = table.schema;
-        indexCache[dbName][storeName] = { indexes: {}, primaryKey: schema.primKey.name };
+        indexCache[dbName][storeName] = {
+            indexes: {},
+            primaryKey: schema.primKey.name,
+            uniqueKeys: new Set(),
+            compoundKeys: new Map() // Store compound indexes separately
+        };
 
         for (const index of schema.indexes) {
-            indexCache[dbName][storeName].indexes[index.name] = true;
+            indexCache[dbName][storeName].indexes[index.name] = true; // Store normal indexes
+
+            // Detect unique indexes
+            if (index.unique) {
+                indexCache[dbName][storeName].uniqueKeys.add(index.name);
+            }
+
+            // Detect compound indexes (where `name` is an array)
+            if (Array.isArray(index.keyPath)) {
+                indexCache[dbName][storeName].compoundKeys.set(index.keyPath.join(","), new Set(index.keyPath));
+            }
         }
     }
+
 
     let primaryKey = indexCache[dbName][storeName].primaryKey;
     let yieldedPrimaryKeys = new Set(); // Track already returned records
@@ -494,7 +510,24 @@ function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, db
                 }
 
                 // Determine if this condition is indexed
-                const isIndexed = indexCache[dbName][storeName].indexes[condition.property] || false;
+                const schema = indexCache[dbName][storeName];
+                const isPrimaryKey = condition.property === schema.primaryKey;
+                const isUniqueKey = schema.uniqueKeys.has(condition.property); // Detect unique keys
+                const isStandaloneIndex = schema.indexes[condition.property]; // Explicitly indexed
+
+                // Check if part of a compound key
+                const isPartOfCompoundKey = [...schema.compoundKeys.values()].some(keySet => keySet.has(condition.property));
+
+                // Allow index usage only if all required compound key fields are present
+                const isValidCompoundQuery = isPartOfCompoundKey
+                    ? [...schema.compoundKeys.entries()].some(([_, keySet]) =>
+                        keySet.has(condition.property) && [...keySet].every(field => queryFields.has(field))
+                    ) : false;
+
+                // Final Indexed Check
+                const isIndexed = isPrimaryKey || isUniqueKey || isStandaloneIndex;
+
+
                 condition.isIndex = isIndexed;
 
                 /**

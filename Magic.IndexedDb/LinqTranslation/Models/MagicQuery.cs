@@ -11,6 +11,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
@@ -106,5 +107,57 @@ namespace Magic.IndexedDb
         public async Task<List<T>> ToListAsync()
             => await new MagicQueryExtensions<T>(this).ToListAsync();
 
+        public async Task AddRangeAsync(
+            IEnumerable<T> records, CancellationToken cancellationToken = default)
+        {
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+
+            await Manager.BulkAddRecordAsync(schemaName, databaseName, records, cancellationToken);
+        }
+
+        public async Task<int> UpdateAsync(T item, CancellationToken cancellationToken = default)
+        {
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+
+            return await Manager.UpdateAsync(item, databaseName, cancellationToken);
+        }
+
+        public async Task<int> UpdateRangeAsync(
+    IEnumerable<T> items,
+    CancellationToken cancellationToken = default)
+        {
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+
+            return await Manager.UpdateRangeAsync(items, databaseName, cancellationToken);
+        }
+
+        public async Task DeleteAsync(T item, CancellationToken cancellationToken = default)
+        {
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+
+            await Manager.DeleteAsync(item, databaseName, cancellationToken);
+        }
+
+        public async Task<int> DeleteRangeAsync(
+    IEnumerable<T> items,
+    CancellationToken cancellationToken = default)
+        {
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+
+            return await Manager.DeleteRangeAsync(items, databaseName, cancellationToken);
+        }
+
+        public async Task AddAsync(T record, CancellationToken cancellationToken = default)
+        {
+            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string databaseName = SchemaHelper.GetDatabaseName<T>();
+
+            _ = await Manager.AddAsync<T, JsonElement>(record, databaseName, cancellationToken);
+        }
     }
 }

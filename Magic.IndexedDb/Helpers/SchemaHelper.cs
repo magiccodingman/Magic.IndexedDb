@@ -15,6 +15,34 @@ namespace Magic.IndexedDb.Helpers
         private static bool _schemasScanned = false;
         private static readonly object _lock = new();
 
+        private static readonly ConcurrentDictionary<Type, string> _databaseNameCache = new();
+
+        public static string GetDatabaseName<T>()
+        {
+            Type type = typeof(T);
+
+            // Check cache first
+            if (_databaseNameCache.TryGetValue(type, out string cachedDatabaseName))
+            {
+                return cachedDatabaseName;
+            }
+
+            // Retrieve the attribute using reflection
+            var attribute = type.GetCustomAttribute<MagicTableAttribute>();
+
+            if (attribute == null)
+            {
+                throw new InvalidOperationException($"Type '{type.FullName}' does not have the MagicTableAttribute.");
+            }
+
+            string databaseName = attribute.DatabaseName;
+
+            // Cache the result for future calls
+            _databaseNameCache[type] = databaseName;
+
+            return databaseName;
+        }
+
         /// <summary>
         /// Determines whether the given type is a complex entity registered in the schema cache.
         /// </summary>

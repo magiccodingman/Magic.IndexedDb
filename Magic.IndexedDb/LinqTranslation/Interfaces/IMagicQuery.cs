@@ -40,5 +40,17 @@ namespace Magic.IndexedDb
         /// <param name="predicate"></param>
         /// <returns></returns>
         IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate);
+
+        Task AddRangeAsync(IEnumerable<T> records, CancellationToken cancellationToken = default);
+
+        Task<int> UpdateAsync(T item, CancellationToken cancellationToken = default);
+
+         Task<int> UpdateRangeAsync(IEnumerable<T> items, CancellationToken cancellationToken = default);
+
+        Task DeleteAsync(T item, CancellationToken cancellationToken = default);
+
+        Task<int> DeleteRangeAsync(IEnumerable<T> items, CancellationToken cancellationToken = default);
+
+        Task AddAsync(T record, CancellationToken cancellationToken = default);
     }
 }

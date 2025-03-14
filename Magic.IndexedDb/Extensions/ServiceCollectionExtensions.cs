@@ -1,4 +1,5 @@
 ﻿using Magic.IndexedDb.Factories;
+using Magic.IndexedDb.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System;
@@ -18,6 +19,8 @@ namespace Magic.IndexedDb.Extensions
             var dbStore = new DbStore();
             options(dbStore);
             _ = services.AddSingleton(dbStore);
+
+            MagicValidator.ValidateTables();
 
             return services;
         }
