@@ -1,10 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using Magic.IndexedDb.Models;
+using Magic.IndexedDb.Helpers;
+using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.Extensions;
 
 namespace Magic.IndexedDb.Factories
 {
-    public class MagicDbFactory : IMagicDbFactory, IAsyncDisposable
+    internal class MagicDbFactory : IMagicDbFactory, IAsyncDisposable
     {
         Lazy<Task<IJSObjectReference>>? _jsRuntime;
         readonly IServiceProvider _serviceProvider;
@@ -55,8 +58,8 @@ namespace Magic.IndexedDb.Factories
             }
         }
 
-        public async ValueTask<IndexedDbManager> OpenAsync(
-            DbStore dbStore, bool force = false, 
+        internal async ValueTask<IndexedDbManager> OpenAsync(
+            DbStore dbStore, bool force = false,
             CancellationToken cancellationToken = default)
         {
             ObjectDisposedException.ThrowIf(_jsRuntime is null, this);
@@ -70,7 +73,7 @@ namespace Magic.IndexedDb.Factories
             return _databases[dbStore.Name];
         }
 
-        public IndexedDbManager Get(string dbName)
+        internal IndexedDbManager Get(string dbName)
         {
             ObjectDisposedException.ThrowIf(_jsRuntime is null, this);
 
@@ -82,7 +85,7 @@ namespace Magic.IndexedDb.Factories
                 $"please use {nameof(OpenAsync)} or {nameof(GetRegisteredAsync)} instead.");
         }
 
-        public async ValueTask<IndexedDbManager> GetRegisteredAsync(string dbName, CancellationToken cancellationToken = default)
+        internal async ValueTask<IndexedDbManager> GetRegisteredAsync(string dbName, CancellationToken cancellationToken = default)
         {
             var registeredStores = _serviceProvider.GetServices<DbStore>();
             foreach (var db in registeredStores)
@@ -96,7 +99,40 @@ namespace Magic.IndexedDb.Factories
                 $"please use {nameof(OpenAsync)} instead.");
         }
 
+
         public async Task<IndexedDbManager> GetDbManagerAsync(string dbName) => await GetRegisteredAsync(dbName);
         public Task<IndexedDbManager> GetDbManagerAsync(DbStore dbStore) => GetDbManagerAsync(dbStore.Name);
+
+        private async Task<IJSObjectReference> GetJsModuleAsync()
+        {
+            if (_cachedJsModule is not null)
+                return _cachedJsModule;
+
+            _cachedJsModule = await _jsRuntime.Value;
+            return _cachedJsModule;
+        }
+
+        /// <summary>
+        /// Navigator storage estimate
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        public async Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default)
+        {
+            var jsModule = await GetJsModuleAsync();
+            var magicUtility = new MagicUtilities(jsModule);
+            return await magicUtility.GetStorageEstimateAsync();
+        }
+
+        /// <summary>
+        /// Query the database for a given type. Automatically opens the database if needed.
+        /// </summary>
+        public async ValueTask<IMagicQuery<T>> Query<T>(string? databaseNameOverride = null, string? schemaNameOverride = null) where T : class
+        {
+            string databaseName = databaseNameOverride ?? SchemaHelper.GetDatabaseName<T>();
+            string schemaName = schemaNameOverride ?? SchemaHelper.GetSchemaName<T>();
+            var dbManager = await GetRegisteredAsync(databaseName); // Ensure database is open
+            return dbManager.Query<T>(databaseName, schemaName);
+        }
     }
 }

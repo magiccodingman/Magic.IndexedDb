@@ -18,8 +18,15 @@ namespace Magic.IndexedDb
 {
     internal class MagicQuery<T> : IMagicQuery<T>, IMagicQueryStaging<T> where T : class
     {
-        internal string SchemaName { get; }
-        internal string DatabaseName { get; }
+        /// <summary>
+        /// table name
+        /// </summary>
+        public string SchemaName { get; }
+
+        /// <summary>
+        /// database name
+        /// </summary>
+        public string DatabaseName { get; }
         internal IndexedDbManager Manager { get; }
         internal List<StoredMagicQuery> StoredMagicQueries { get; set; } = new List<StoredMagicQuery>();
         internal bool ForceCursorMode { get; set; } = false;

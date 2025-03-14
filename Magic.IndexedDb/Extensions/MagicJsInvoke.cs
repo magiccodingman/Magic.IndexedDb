@@ -6,6 +6,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -20,7 +21,33 @@ namespace Magic.IndexedDb.Extensions
             _jsModule = jsModule;
         }
 
-        internal async Task<T?> MagicStreamJsAsync<T>(string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
+        internal async Task CallJsAsync(string modulePath, string functionName,
+            CancellationToken token, params ITypedArgument[] args)
+        {
+            await MagicVoidStreamJsAsync(modulePath, functionName, token, args);
+        }
+
+        internal async Task<T?> CallJsAsync<T>(string modulePath, string functionName,
+            CancellationToken token, params ITypedArgument[] args)
+        {
+
+            return await MagicStreamJsAsync<T>(modulePath, functionName, token, args) ?? default;
+        }
+
+        internal async IAsyncEnumerable<T?> CallYieldJsAsync<T>(
+    string modulePath,
+    string functionName,
+    [EnumeratorCancellation] CancellationToken token,
+    params ITypedArgument[] args)
+        {
+            await foreach (var item in MagicYieldJsAsync<T>(modulePath, functionName, token, args)
+                .WithCancellation(token)) // Ensure cancellation works in the async stream
+            {
+                yield return item; // Yield items as they arrive
+            }
+        }
+
+        private async Task<T?> MagicStreamJsAsync<T>(string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
         {
             return await TrueMagicStreamJsAsync<T>(modulePath, functionName, token, false, args);
         }
@@ -73,7 +100,7 @@ namespace Magic.IndexedDb.Extensions
             return MagicSerializationHelper.DeserializeObject<T>(jsonResponse, settings);
         }
 
-        public async IAsyncEnumerable<T?> MagicYieldJsAsync<T>(
+        private async IAsyncEnumerable<T?> MagicYieldJsAsync<T>(
     string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
         {
             var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
@@ -173,7 +200,7 @@ namespace Magic.IndexedDb.Extensions
 
 
 
-        internal async Task MagicVoidStreamJsAsync(string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
+        private async Task MagicVoidStreamJsAsync(string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
         {
             await TrueMagicStreamJsAsync<bool>(modulePath, functionName, token, true, args);
         }

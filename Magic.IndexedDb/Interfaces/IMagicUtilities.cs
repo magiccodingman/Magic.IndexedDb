@@ -4,9 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb.Interfaces
+namespace Magic.IndexedDb
 {
-    public interface IMagicManager
+    public interface IMagicUtilities
     {
     }
 }

@@ -11,6 +11,8 @@ namespace Magic.IndexedDb
 {
     public interface IMagicQuery<T> : IMagicExecute<T> where T : class
     {
+        string DatabaseName { get; }
+        public string SchemaName { get; }
         /// <summary>
         /// The order you apply does get applied correctly in the query, 
         /// but the returned results will not be in the same order. 
