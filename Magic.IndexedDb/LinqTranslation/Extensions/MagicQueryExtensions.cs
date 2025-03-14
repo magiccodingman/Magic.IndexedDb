@@ -15,8 +15,9 @@ using Magic.IndexedDb.Models.UniversalOperations;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
-    internal class MagicQueryExtensions<T> : 
-        IMagicQueryPaginationTake<T>, IMagicQueryOrderable<T>, IMagicQueryFinal<T> where T : class
+    internal class MagicQueryExtensions<T> :
+        IMagicQueryPaginationTake<T>, IMagicQueryOrderable<T>, IMagicQueryFinal<T>
+        where T : class
     {
         public MagicQuery<T> MagicQuery { get; set; }
         public MagicQueryExtensions(MagicQuery<T> _magicQuery)
@@ -40,7 +41,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         {
             await foreach (var item in MagicQuery.Manager.LinqToIndedDbYield<T>(MagicQuery.SchemaName, nestedOrFilter, MagicQuery, cancellationToken))
             {
-                if (item is not null) // ✅ Ensure non-null items
+                if (item is not null) // Ensure non-null items
                 {
                     yield return item;
                 }
@@ -57,10 +58,9 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         public async Task<IEnumerable<T>> WhereAsync(
-    Expression<Func<T, bool>> predicate,
-    CancellationToken cancellationToken = default)
+    Expression<Func<T, bool>> predicate)
         {
-            var items = await AsAsyncEnumerable(cancellationToken).ToListAsync(cancellationToken);
+            var items = await ToListAsync();
             return items.Where(predicate.Compile()); // Apply predicate after materialization
         }
 
@@ -75,7 +75,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         /// <returns></returns>
         public async Task<List<T>> ToListAsync()
         {
-            return (await MagicQuery.Manager.LinqToIndedDb<T>(MagicQuery.SchemaName, 
+            return (await MagicQuery.Manager.LinqToIndedDb<T>(MagicQuery.SchemaName,
                 nestedOrFilter, MagicQuery, default))?.ToList() ?? new List<T>();
         }
 
@@ -175,7 +175,13 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         private NestedOrFilter GetCollectedBinaryJsonExpressions()
         {
             NestedOrFilter nestedOrFilter = new NestedOrFilter();
-            var preprocessedPredicate = PreprocessPredicate();
+            Expression<Func<T, bool>> preprocessedPredicate = PreprocessPredicate();
+
+            // Check if the predicate is a universal false condition
+            if (IsUniversalFalse(preprocessedPredicate))
+            {
+                return new NestedOrFilter { universalFalse = true };
+            }
 
             // FLATTEN OR CONDITIONS because they are annoying and IndexDB doesn't support that!
             var flattenedPredicate = ExpressionFlattener.FlattenAndOptimize(preprocessedPredicate);
@@ -183,6 +189,13 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             CollectBinaryExpressions(flattenedPredicate.Body, flattenedPredicate, nestedOrFilter);
             return nestedOrFilter;
         }
+
+
+        private bool IsUniversalFalse(Expression<Func<T, bool>> predicate)
+        {
+            return predicate.Body is ConstantExpression constant && constant.Value is bool value && !value;
+        }
+
 
         private Expression<Func<T, bool>> PreprocessPredicate()
         {
@@ -193,7 +206,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             return Expression.Lambda<Func<T, bool>>(newExpression, predicate.Parameters);
         }
 
-        private void CollectBinaryExpressions(Expression expression, 
+        private void CollectBinaryExpressions(Expression expression,
             Expression<Func<T, bool>> predicate,
             NestedOrFilter nestedOrFilters)
         {
@@ -211,7 +224,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             }
             else
             {
-                OrFilterGroup orFilters = 
+                OrFilterGroup orFilters =
                     GetJsonQueryFromExpression(Expression.Lambda<Func<T, bool>>(expression, predicate.Parameters));
                 nestedOrFilters.orGroups.Add(orFilters);
             }

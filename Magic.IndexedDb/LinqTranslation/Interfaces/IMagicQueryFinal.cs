@@ -26,6 +26,6 @@ namespace Magic.IndexedDb
         /// <param name="predicate"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        Task<IEnumerable<T>> WhereAsync(Expression<Func<T, bool>> predicate, [EnumeratorCancellation] CancellationToken cancellationToken = default);
+        Task<IEnumerable<T>> WhereAsync(Expression<Func<T, bool>> predicate);
     }
 }

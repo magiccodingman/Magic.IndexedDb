@@ -9,36 +9,31 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
-    public interface IMagicQuery<T> : IMagicExecute<T> where T : class
+    public interface IMagicCursor<T> : IMagicExecute<T> where T : class
     {
         /// <summary>
-        /// The order you apply does get applied correctly in the query, 
-        /// but the returned results will not be in the same order. 
-        /// If order matters, you must apply the order again on return. 
-        /// This is a fundemental limitation of IndexDB. 
+        /// Pure 100% cursor query. No limitations on any appended additions.
         /// </summary>
         /// <param name="predicate"></param>
         /// <returns></returns>
-        IMagicQueryStaging<T> Where(Expression<Func<T, bool>> predicate);
-
         IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate);
 
-        IMagicQueryPaginationTake<T> Take(int amount);
-        IMagicQueryFinal<T> TakeLast(int amount);
-        IMagicQueryFinal<T> Skip(int amount);
+        IMagicCursorStage<T> Take(int amount);
+        IMagicCursorStage<T> TakeLast(int amount);
+        IMagicCursorSkip<T> Skip(int amount);
 
         /// <summary>
         /// This always orders first by the primary key, then by whatever is appended afterwards
         /// </summary>
         /// <param name="predicate"></param>
         /// <returns></returns>
-        IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate);
+        IMagicCursorStage<T> OrderBy(Expression<Func<T, object>> predicate);
 
         /// <summary>
         /// This always orders by descending by the primary key first, then by whatever is appended afterwards
         /// </summary>
         /// <param name="predicate"></param>
         /// <returns></returns>
-        IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate);
+        IMagicCursorStage<T> OrderByDescending(Expression<Func<T, object>> predicate);
     }
 }

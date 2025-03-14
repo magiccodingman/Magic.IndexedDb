@@ -233,6 +233,8 @@ namespace Magic.IndexedDb
             string storeName, NestedOrFilter nestedOrFilter, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
+            if (nestedOrFilter.universalFalse == true)
+                return default;
             
             var args = new ITypedArgument[] {
                 new TypedArgument<string>(DbName),
@@ -263,6 +265,8 @@ namespace Magic.IndexedDb
     string storeName, NestedOrFilter nestedOrFilter, MagicQuery<T> query,
     [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
         {
+            if (nestedOrFilter.universalFalse == true)
+                yield break; // Terminate the async iterator immediately.
 
             var args = new ITypedArgument[] {
         new TypedArgument<string>(DbName),

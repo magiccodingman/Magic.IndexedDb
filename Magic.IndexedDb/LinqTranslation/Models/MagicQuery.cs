@@ -1,6 +1,7 @@
 ﻿using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.LinqTranslation.Extensions;
 using Magic.IndexedDb.LinqTranslation.Interfaces;
+using Magic.IndexedDb.LinqTranslation.Models;
 using Magic.IndexedDb.Models;
 using Magic.IndexedDb.SchemaAnnotations;
 using System;
@@ -14,14 +15,14 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
-    internal class MagicQuery<T> : IMagicQuery<T> where T : class
+    internal class MagicQuery<T> : IMagicQuery<T>, IMagicQueryStaging<T> where T : class
     {
         internal string SchemaName { get; }
         internal IndexedDbManager Manager { get; }
         internal List<StoredMagicQuery> StoredMagicQueries { get; set; } = new List<StoredMagicQuery>();
 
         internal bool ResultsUnique { get; set; } = true;
-        private List<Expression<Func<T, bool>>> Predicates { get; } = new List<Expression<Func<T, bool>>>();
+        internal List<Expression<Func<T, bool>>> Predicates { get; } = new List<Expression<Func<T, bool>>>();
 
         public MagicQuery(string schemaName, IndexedDbManager manager)
         {
@@ -38,7 +39,7 @@ namespace Magic.IndexedDb
             Predicates = new List<Expression<Func<T, bool>>>(_MagicQuery.Predicates); // Deep copy
         }
 
-        public IMagicQuery<T> Where(Expression<Func<T, bool>> predicate)
+        public IMagicQueryStaging<T> Where(Expression<Func<T, bool>> predicate)
         {
             var _MagicQuery = new MagicQuery<T>(this);
             _MagicQuery.Predicates.Add(predicate);
@@ -87,6 +88,9 @@ namespace Magic.IndexedDb
 
         public IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate)
             => new MagicQueryExtensions<T>(this).OrderByDescending(predicate);
+
+        public IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate)
+            => new MagicCursor<T>(this).Cursor(predicate);
 
         public async IAsyncEnumerable<T> AsAsyncEnumerable(
     [EnumeratorCancellation] CancellationToken cancellationToken = default)

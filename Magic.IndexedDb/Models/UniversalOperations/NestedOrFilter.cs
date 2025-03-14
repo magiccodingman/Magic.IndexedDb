@@ -26,5 +26,7 @@ namespace Magic.IndexedDb.Models.UniversalOperations
         /// A list of OR-groups, where each group represents a possible matching condition set.
         /// </summary>
         public List<OrFilterGroup> orGroups { get; set; } = new();
+
+        public bool universalFalse { get; set; } = false;
     }
 }

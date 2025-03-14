@@ -214,14 +214,15 @@ const QUERY_COMBINATION_RULES = {
 
 //  Query Addition Ruleset (Which Operations Can Be Stacked)
 const QUERY_ADDITION_RULES = {
-    [QUERY_ADDITIONS.ORDER_BY]: [QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE],
-    [QUERY_ADDITIONS.ORDER_BY_DESCENDING]: [QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE],
+    [QUERY_ADDITIONS.ORDER_BY]: [QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.TAKE_LAST],
+    [QUERY_ADDITIONS.ORDER_BY_DESCENDING]: [QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.TAKE_LAST],
     [QUERY_ADDITIONS.FIRST]: [],
     [QUERY_ADDITIONS.LAST]: [],
     [QUERY_ADDITIONS.SKIP]: [QUERY_ADDITIONS.ORDER_BY, QUERY_ADDITIONS.ORDER_BY_DESCENDING],
     [QUERY_ADDITIONS.TAKE]: [QUERY_ADDITIONS.ORDER_BY, QUERY_ADDITIONS.ORDER_BY_DESCENDING],
-    [QUERY_ADDITIONS.TAKE_LAST]: [],
+    [QUERY_ADDITIONS.TAKE_LAST]: [QUERY_ADDITIONS.ORDER_BY, QUERY_ADDITIONS.ORDER_BY_DESCENDING], // **Allow TAKE_LAST after ORDER_BY**
 };
+
 
 
 const indexCache = {}; //  Cache indexed properties per DB+Store
@@ -565,6 +566,15 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
             }
         }
 
+        // **If TAKE_LAST is used after ORDER_BY, allow it (when indexed)**
+        if (addition.additionFunction === QUERY_ADDITIONS.TAKE_LAST) {
+            let prevAddition = queryAdditions[queryAdditions.indexOf(addition) - 1];
+            if (!prevAddition || (prevAddition.additionFunction !== QUERY_ADDITIONS.ORDER_BY && prevAddition.additionFunction !== QUERY_ADDITIONS.ORDER_BY_DESCENDING)) {
+                debugLog(`TAKE_LAST requires ORDER_BY but was not found before it.`);
+                requiresCursor = true; // Force cursor if there's no ORDER_BY before it.
+            }
+        }
+
         // Check if the addition conflicts with previous additions
         for (const seen of seenAdditions) {
             if (!validCombos.includes(seen)) {
@@ -578,6 +588,7 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
 
     return requiresCursor;
 }
+
 
 
 
@@ -671,8 +682,8 @@ function isSupportedIndexedOperation(conditions) {
  * @param {Array} indexedConditions - The array of indexed conditions.
  * @returns {AsyncGenerator} - A generator that yields query results.
  */
-async function runIndexedQuery(table, indexedConditions) {
-    debugLog("Executing runIndexedQuery", { indexedConditions });
+async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
+    debugLog("Executing runIndexedQuery", { indexedConditions, queryAdditions });
 
     if (indexedConditions.length === 0) {
         debugLog("No indexed conditions provided, returning entire table.");
@@ -680,10 +691,9 @@ async function runIndexedQuery(table, indexedConditions) {
     }
 
     let query;
-
-    // **Process the first condition as the main query**
     let firstCondition = indexedConditions[0];
 
+    // **Build the base indexed query**
     switch (firstCondition.operation) {
         case QUERY_OPERATIONS.EQUAL:
             query = table.where(firstCondition.property).equals(firstCondition.value);
@@ -710,7 +720,7 @@ async function runIndexedQuery(table, indexedConditions) {
             throw new Error(`Unsupported indexed query operation: ${firstCondition.operation}`);
     }
 
-    // **Apply additional indexed filters (if any)**
+    // **Apply additional indexed filters**
     for (let i = 1; i < indexedConditions.length; i++) {
         let condition = indexedConditions[i];
 
@@ -738,8 +748,53 @@ async function runIndexedQuery(table, indexedConditions) {
         }
     }
 
-    return await query.toArray();
+    // **Handle Query Additions**
+    let needsReverse = false;
+    let takeCount = null;
+
+    for (const addition of queryAdditions) {
+        switch (addition.additionFunction) {
+            case QUERY_ADDITIONS.ORDER_BY:
+                if (addition.property) {
+                    query = query.sortBy(addition.property);
+                }
+                break;
+            case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
+                if (addition.property) {
+                    query = query.sortBy(addition.property).then(res => res.reverse());
+                }
+                break;
+            case QUERY_ADDITIONS.SKIP:
+                query = query.offset(addition.intValue);
+                break;
+            case QUERY_ADDITIONS.TAKE:
+                takeCount = addition.intValue; // Apply after ordering
+                break;
+            case QUERY_ADDITIONS.TAKE_LAST:
+                needsReverse = true; // Will be handled below
+                takeCount = addition.intValue;
+                break;
+            default:
+                throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
+        }
+    }
+
+    // **Execute Query**
+    let results = await query.toArray();
+
+    // **Handle TAKE_LAST optimization (reverse & slice)**
+    if (needsReverse) {
+        results.reverse(); // Reverse order before taking the last N
+    }
+
+    // **Apply TAKE (last or normal)**
+    if (takeCount !== null) {
+        results = results.slice(0, takeCount);
+    }
+
+    return results;
 }
+
 
 
 /**
