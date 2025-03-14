@@ -23,7 +23,7 @@ namespace Magic.IndexedDb
     public class IndexedDbManager : IMagicManager
     {
         internal static async ValueTask<IndexedDbManager> CreateAndOpenAsync(
-            CancellationToken cancellationToken = default)
+            DbStore dbStore, IJSObjectReference jsRuntime, CancellationToken cancellationToken = default)
         {
             var result = new IndexedDbManager(dbStore, jsRuntime);
             await result.CallJsAsync(Cache.MagicDbJsImportPath,
@@ -55,7 +55,7 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="dbName">The name of database to delete</param>
         /// <returns></returns>
-        public Task DeleteDbAsync(string dbName, CancellationToken cancellationToken = default)
+        internal Task DeleteDbAsync(string dbName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(dbName))
             {
@@ -63,11 +63,6 @@ namespace Magic.IndexedDb
             }
             return CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_DB, cancellationToken, new TypedArgument<string>(dbName));
         }
-
-        //public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
-        //{
-        //    _ = await AddAsync<T, JsonElement>(record, cancellationToken);
-        //}
 
         internal async Task<TKey> AddAsync<T, TKey>(T record, string dbName, CancellationToken cancellationToken = default) where T : class
         {
@@ -149,22 +144,6 @@ namespace Magic.IndexedDb
                 IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, new TypedArgument<IEnumerable<UpdateRecord<T>>>(recordsToUpdate));
         }
 
-
-        // No longer supported. Instead use query.Where(x => x.Id == 3).FirstOrDefault()
-        /*public async Task<T?> GetByIdAsync<T>(
-            object key,
-            CancellationToken cancellationToken = default) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-
-            // Validate key type
-            AttributeHelpers.ValidatePrimaryKey<T>(key);
-
-            return await CallJsAsync<T>(Cache.MagicDbJsImportPath,
-                IndexedDbFunctions.FIND_ITEM, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName), new TypedArgument<object>(key) });
-        }*/
-
         public IMagicQuery<T> Query<T>(string? databaseNameOverride = null, string? schemaNameOverride = null) where T : class
         {
             string databaseName = SchemaHelper.GetDatabaseName<T>();
@@ -244,15 +223,6 @@ namespace Magic.IndexedDb
             return CallJsAsync<QuotaUsage>(Cache.MagicDbJsImportPath, IndexedDbFunctions.GET_STORAGE_ESTIMATE, cancellationToken, []);
         }
 
-        // No longer supported in current LINQ system. Use Query.ToListAsync() for equivilent.
-        /*public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            return await CallJsAsync<IEnumerable<T>>(Cache.MagicDbJsImportPath,
-                IndexedDbFunctions.TOARRAY, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName) });
-        }*/
-
         internal async Task DeleteAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
@@ -300,7 +270,7 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="storeName"></param>
         /// <returns></returns>
-        public Task ClearTableAsync(string storeName, string dbName, CancellationToken cancellationToken = default)
+        internal Task ClearTableAsync(string storeName, string dbName, CancellationToken cancellationToken = default)
         {
             return CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.CLEAR_TABLE, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(dbName), new TypedArgument<string>(storeName) });
@@ -311,7 +281,7 @@ namespace Magic.IndexedDb
         /// Wait for response
         /// </summary>
         /// <returns></returns>
-        public Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
+        internal Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
             string databaseName = SchemaHelper.GetDatabaseName<T>();

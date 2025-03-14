@@ -113,36 +113,36 @@ namespace Magic.IndexedDb
         public async Task AddRangeAsync(
             IEnumerable<T> records, CancellationToken cancellationToken = default)
         {
-            await Manager.BulkAddRecordAsync(schemaName, databaseName, records, cancellationToken);
+            await Manager.BulkAddRecordAsync(SchemaName, DatabaseName, records, cancellationToken);
         }
 
         public async Task<int> UpdateAsync(T item, CancellationToken cancellationToken = default)
         {
-            return await Manager.UpdateAsync(item, databaseName, cancellationToken);
+            return await Manager.UpdateAsync(item, DatabaseName, cancellationToken);
         }
 
         public async Task<int> UpdateRangeAsync(
     IEnumerable<T> items,
     CancellationToken cancellationToken = default)
         {
-            return await Manager.UpdateRangeAsync(items, databaseName, cancellationToken);
+            return await Manager.UpdateRangeAsync(items, DatabaseName, cancellationToken);
         }
 
         public async Task DeleteAsync(T item, CancellationToken cancellationToken = default)
         {
-            await Manager.DeleteAsync(item, databaseName, cancellationToken);
+            await Manager.DeleteAsync(item, DatabaseName, cancellationToken);
         }
 
         public async Task<int> DeleteRangeAsync(
     IEnumerable<T> items,
     CancellationToken cancellationToken = default)
         {
-            return await Manager.DeleteRangeAsync(items, databaseName, cancellationToken);
+            return await Manager.DeleteRangeAsync(items, DatabaseName, cancellationToken);
         }
 
         public async Task AddAsync(T record, CancellationToken cancellationToken = default)
         {
-            _ = await Manager.AddAsync<T, JsonElement>(record, databaseName, cancellationToken);
+            _ = await Manager.AddAsync<T, JsonElement>(record, DatabaseName, cancellationToken);
         }
     }
 }

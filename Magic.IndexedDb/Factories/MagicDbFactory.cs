@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using Magic.IndexedDb.Models;
-using Magic.IndexedDb.Interfaces;
 
 namespace Magic.IndexedDb.Factories
 {
@@ -57,7 +56,7 @@ namespace Magic.IndexedDb.Factories
         }
 
         public async ValueTask<IndexedDbManager> OpenAsync(
-            DbStore dbStore, bool force = false,
+            DbStore dbStore, bool force = false, 
             CancellationToken cancellationToken = default)
         {
             ObjectDisposedException.ThrowIf(_jsRuntime is null, this);
@@ -71,12 +70,7 @@ namespace Magic.IndexedDb.Factories
             return _databases[dbStore.Name];
         }
 
-        public async ValueTask<IMagicManager> GetMagicManager()
-        {
-            return new IndexedDbManager();
-        }
-
-        /*public IndexedDbManager Get(string dbName)
+        public IndexedDbManager Get(string dbName)
         {
             ObjectDisposedException.ThrowIf(_jsRuntime is null, this);
 
@@ -86,7 +80,7 @@ namespace Magic.IndexedDb.Factories
                 $"Failed to find a opened database called {dbName}. " +
                 $"If you want to open or create a new database, " +
                 $"please use {nameof(OpenAsync)} or {nameof(GetRegisteredAsync)} instead.");
-        }*/
+        }
 
         public async ValueTask<IndexedDbManager> GetRegisteredAsync(string dbName, CancellationToken cancellationToken = default)
         {
