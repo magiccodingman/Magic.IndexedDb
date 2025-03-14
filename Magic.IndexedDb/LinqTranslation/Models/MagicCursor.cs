@@ -14,6 +14,7 @@ namespace Magic.IndexedDb.LinqTranslation.Models
         public MagicQuery<T> MagicQuery { get; set; }
         public MagicCursor(MagicQuery<T> _magicQuery)
         {
+            _magicQuery.ForceCursorMode = true;
             MagicQuery = _magicQuery;
 
         }

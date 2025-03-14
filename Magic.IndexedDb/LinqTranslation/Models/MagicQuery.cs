@@ -20,6 +20,7 @@ namespace Magic.IndexedDb
         internal string SchemaName { get; }
         internal IndexedDbManager Manager { get; }
         internal List<StoredMagicQuery> StoredMagicQueries { get; set; } = new List<StoredMagicQuery>();
+        internal bool ForceCursorMode { get; set; } = false;
 
         internal bool ResultsUnique { get; set; } = true;
         internal List<Expression<Func<T, bool>>> Predicates { get; } = new List<Expression<Func<T, bool>>>();

@@ -283,13 +283,13 @@ function isValidQueryAdditions(arr) {
 }
 
 
-export async function where(dbName, storeName, nestedOrFilter, QueryAdditions) {
+export async function where(dbName, storeName, nestedOrFilter, QueryAdditions, forceCursor = false) {
     debugLog("whereJson called");
 
 
     let results = []; // Collect results here
 
-    for await (let record of whereYield(dbName, storeName, nestedOrFilter, QueryAdditions)) {
+    for await (let record of whereYield(dbName, storeName, nestedOrFilter, QueryAdditions, forceCursor)) {
         results.push(record);
     }
 
@@ -298,7 +298,7 @@ export async function where(dbName, storeName, nestedOrFilter, QueryAdditions) {
     return results; // Return all results at once
 }
 
-export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditions = []) {
+export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditions = [], forceCursor = false) {
     debugLog("Starting where function", { dbName, storeName, nestedOrFilter, queryAdditions });
 
     if (!isValidFilterObject(nestedOrFilter)) {
@@ -370,7 +370,7 @@ export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditi
 
 
     let requiresCursor = validateQueryAdditions(queryAdditions, indexCache, dbName, storeName)
-        || validateQueryCombinations(nestedOrFilter);
+        || validateQueryCombinations(nestedOrFilter) || forceCursor;
     debugLog("Determined if query requires cursor", { requiresCursor });
 
     if (!nestedOrFilter.orGroups || nestedOrFilter.orGroups.length === 0) {

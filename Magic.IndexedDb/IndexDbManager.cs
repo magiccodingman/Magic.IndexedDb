@@ -241,7 +241,7 @@ namespace Magic.IndexedDb
                 new TypedArgument<string>(storeName),
                 new TypedArgument<NestedOrFilter>(nestedOrFilter),
                 new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
-                new TypedArgument<bool?>(query?.ResultsUnique!),
+                new TypedArgument<bool>(query?.ForceCursorMode??false),
             };
 
             return await CallJsAsync<IEnumerable<T>>
@@ -273,7 +273,7 @@ namespace Magic.IndexedDb
         new TypedArgument<string>(storeName),
         new TypedArgument<NestedOrFilter>(nestedOrFilter),
         new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
-        new TypedArgument<bool?>(query?.ResultsUnique!),
+        new TypedArgument<bool>(query?.ForceCursorMode??false),
     };
 
             // Yield results **as they arrive** from JS
@@ -322,7 +322,7 @@ namespace Magic.IndexedDb
         public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            return await CallJsAsync<IList<T>>(Cache.MagicDbJsImportPath,
+            return await CallJsAsync<IEnumerable<T>>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.TOARRAY, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName) });
         }

@@ -20,6 +20,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         where T : class
     {
         public MagicQuery<T> MagicQuery { get; set; }
+        
         public MagicQueryExtensions(MagicQuery<T> _magicQuery)
         {
             MagicQuery = _magicQuery;
