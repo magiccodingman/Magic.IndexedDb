@@ -15,7 +15,7 @@ namespace Magic.IndexedDb
 
     internal class InternalMagicCompoundIndex<T> : IMagicCompoundIndex
     {
-        public string[] ColumnNamesInCompoundKey { get; }
+        public string[] ColumnNamesInCompoundIndex { get; }
 
         private InternalMagicCompoundIndex(params Expression<Func<T, object>>[] properties)
         {
@@ -24,9 +24,15 @@ namespace Magic.IndexedDb
                 throw new ArgumentException("Compound keys require at least 2 properties.", nameof(properties));
             }
 
-            ColumnNamesInCompoundKey = properties
+            ColumnNamesInCompoundIndex = properties
                 .Select(GetPropertyName)
                 .ToArray();
+
+            if (ColumnNamesInCompoundIndex.Distinct().Count() != ColumnNamesInCompoundIndex.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate properties detected in the compound index for type '{typeof(T).Name}'. Each property must be unique.");
+            }
         }
 
         internal static IMagicCompoundIndex Create(params Expression<Func<T, object>>[] keySelectors)
@@ -56,6 +62,13 @@ namespace Magic.IndexedDb
             if (property == null)
             {
                 throw new ArgumentException($"Property '{memberExpr.Member.Name}' does not exist on type '{typeof(T).Name}'.");
+            }
+
+            if (memberExpr.Expression is MemberExpression nestedExpr)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compound index nested properties like '{memberExpr.Member.Name}' in compound keys or indexes on type '{typeof(T).Name}'. " +
+                    "Only top-level properties can be indexed.");
             }
 
             if (property.GetCustomAttribute<MagicNotMappedAttribute>() != null)

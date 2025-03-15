@@ -24,6 +24,12 @@ namespace Magic.IndexedDb
             ColumnNamesInCompoundKey = properties
                 .Select(GetPropertyName)
                 .ToArray();
+
+            if (ColumnNamesInCompoundKey.Distinct().Count() != ColumnNamesInCompoundKey.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate properties detected in the compound key for type '{typeof(T).Name}'. Each property must be unique.");
+            }
         }
 
         internal static IMagicCompoundKey Create(params Expression<Func<T, object>>[] keySelectors)
@@ -55,6 +61,13 @@ namespace Magic.IndexedDb
                 throw new ArgumentException($"Property '{memberExpr.Member.Name}' does not exist on type '{typeof(T).Name}'.");
             }
 
+            if (memberExpr.Expression is MemberExpression nestedExpr)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compound key nested properties like '{memberExpr.Member.Name}' in compound keys or indexes on type '{typeof(T).Name}'. " +
+                    "Only top-level properties can be indexed.");
+            }
+
             if (property.GetCustomAttribute<MagicNotMappedAttribute>() != null)
             {
                 throw new InvalidOperationException(
@@ -66,6 +79,14 @@ namespace Magic.IndexedDb
                 throw new InvalidOperationException(
                     $"Cannot use the primary key property '{property.Name}' in a compound key on type '{typeof(T).Name}'.");
             }
+
+            if (property.GetCustomAttribute<MagicUniqueIndexAttribute>() != null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot define a compound key including '{property.Name}' because it is already marked as a unique index " +
+                    $"on type '{typeof(T).Name}'. Either remove the unique index or exclude it from the compound key.");
+            }
+
 
             return PropertyMappingCache.GetJsPropertyName<T>(property);
         }

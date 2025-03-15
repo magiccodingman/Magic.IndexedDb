@@ -8,6 +8,6 @@ namespace Magic.IndexedDb
 {
     public interface IMagicCompoundIndex
     {
-        string[] ColumnNamesInCompoundKey { get; }
+        string[] ColumnNamesInCompoundIndex { get; }
     }
 }

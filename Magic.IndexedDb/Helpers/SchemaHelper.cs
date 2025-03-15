@@ -11,10 +11,7 @@ namespace Magic.IndexedDb.Helpers
 {
     public static class SchemaHelper
     {
-        //internal static readonly ConcurrentDictionary<string, MagicTableAttribute?> _schemaCache = new();
         //private static readonly ConcurrentDictionary<string, List<StoreSchema>> _databaseSchemasCache = new();
-        //private static bool _schemasScanned = false;
-        //private static readonly object _lock = new();
         internal static readonly ConcurrentDictionary<Type, IMagicTableBase?> _schemaCache = new();
 
         internal static void EnsureSchemaIsCached(Type type)
@@ -104,48 +101,29 @@ namespace Magic.IndexedDb.Helpers
         /// <summary>
         /// Retrieves all schemas for a given database name.
         /// </summary>
-       /* public static List<StoreSchema> GetAllSchemas(string databaseName = null)
+        public static List<StoreSchema> GetAllSchemas(string? databaseName = null)
         {
-            lock (_lock)
-            {
-                // If we've already scanned all schemas, return the cached list.
-                if (_schemasScanned && _databaseSchemasCache.TryGetValue(databaseName ?? "DefaultedNone", out var cachedSchemas))
-                    return cachedSchemas;
-
                 var schemas = new List<StoreSchema>();
-                var assemblies = AppDomain.CurrentDomain.GetAssemblies();
 
-                foreach (var assembly in assemblies)
+                // 🔹 Retrieve all valid magic tables
+                var magicTables = GetAllMagicTables();
+
+                foreach (var type in magicTables)
                 {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (!type.IsClass || type.IsAbstract) continue;
+                    // Ensure schema is cached
+                    EnsureSchemaIsCached(type);
 
-                        // 🚀 **Only process classes that actually have the [MagicTable] attribute**
-                        var schemaAttribute = type.GetCustomAttribute<MagicTableAttribute>();
-                        if (schemaAttribute == null) continue;
+                    // Retrieve cached entry
+                    if (!_schemaCache.TryGetValue(type, out var instance) || instance == null)
+                        continue; // Skip if the type is not a valid IMagicTableBase
 
-                        // 🚀 Now that we confirmed it's a schema, ensure it's cached
-                        PropertyMappingCache.EnsureTypeIsCached(type);
-                        EnsureSchemaIsCached(type);
-
-                        // Determine if the schema belongs to the target database
-                        string dbName = !string.IsNullOrWhiteSpace(databaseName) ? databaseName : "DefaultedNone";
-                        if (schemaAttribute.DatabaseName.Equals(dbName, StringComparison.OrdinalIgnoreCase))
-                        {
-                            var schema = GetStoreSchema(type);
-                            schemas.Add(schema);
-                        }
-                    }
+                    // 🚀 Get the store schema
+                    var schema = GetStoreSchema(type);
+                    schemas.Add(schema);
                 }
 
-                // Cache results for future calls
-                _databaseSchemasCache[databaseName ?? "DefaultedNone"] = schemas;
-                _schemasScanned = true;
-
                 return schemas;
-            }
-        }*/
+        }
 
 
         /// <summary>
@@ -205,8 +183,25 @@ namespace Magic.IndexedDb.Helpers
                 .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
                 .ToList();
 
+            // Extract Compound Key
+            var compoundKey = instance.GetCompoundKey();
+            if (compoundKey != null)
+            {
+                schema.ColumnNamesInCompoundKey = compoundKey.ColumnNamesInCompoundKey.ToList();
+            }
+
+            // Extract Compound Indexes
+            var compoundIndexes = instance.GetCompoundIndexes();
+            if (compoundIndexes != null)
+            {
+                schema.ColumnNamesInCompoundIndex = compoundIndexes
+                    .Select(index => index.ColumnNamesInCompoundIndex.ToList())
+                    .ToList();
+            }
+
             return schema;
         }
+
 
     }
 }

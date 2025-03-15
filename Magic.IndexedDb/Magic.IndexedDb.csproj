@@ -50,4 +50,7 @@
     <Folder Include="Models\Abstract\" />
   </ItemGroup>
 
+	<Target Name="GenerateMagicSchema" AfterTargets="Build">
+		<Exec Command="dotnet run --project $(MSBuildThisFileDirectory)/../MagicIndexedDbBuildTool/MagicIndexedDbBuildTool.csproj -- --generate-schema $(MSBuildThisFileDirectory)" />
+	</Target>
 </Project>

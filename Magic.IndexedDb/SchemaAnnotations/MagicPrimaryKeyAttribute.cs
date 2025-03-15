@@ -15,6 +15,7 @@ namespace Magic.IndexedDb
     public class MagicPrimaryKeyAttribute : Attribute, IColumnNamed
     {
         public string ColumnName { get; }
+        public bool AutoIncrement { get; }
 
         /// <summary>
         /// 
@@ -23,6 +24,7 @@ namespace Magic.IndexedDb
         /// <param name="columnName"></param>
         public MagicPrimaryKeyAttribute(bool autoIncrement, string columnName = null)
         {
+            AutoIncrement = autoIncrement;
             if (!String.IsNullOrWhiteSpace(columnName))
             {
                 ColumnName = columnName;

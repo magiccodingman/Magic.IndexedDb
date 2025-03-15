@@ -37,7 +37,12 @@ namespace Magic.IndexedDb
         {
             services.AddSingleton<IMagicDbFactory>(sp => new MagicDbFactory(jsMessageSizeBytes));
 
+#if DEBUG
             MagicValidator.ValidateTables();
+
+            var alltables = SchemaHelper.GetAllSchemas();
+            var sdf = 3;
+#endif
 
             return services;
         }
