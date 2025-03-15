@@ -17,7 +17,23 @@ async function getModule(modulePath) {
     }
 }
 
-export async function streamedJsHandler(streamRef, instanceId, dotNetHelper) {
+export async function JsHandler(isVoid, modulePath, methodName, parameters) {
+    try {
+        const module = await importModule(modulePath);
+
+        if (typeof module[methodName] !== "function") {
+            throw new Error(`Method '${methodName}' not found in module '${modulePath}'`);
+        }
+
+        const result = await module[methodName](...parameters);
+        return isVoid ? true : result;
+    } catch (error) {
+        console.error(`JsHandler error calling ${methodName} from ${modulePath}:`, error);
+        throw error;
+    }
+}
+
+export async function streamedJsHandler(streamRef, instanceId, dotNetHelper, maxChunkBytes) {
     if (!streamRef || typeof streamRef.arrayBuffer !== "function") {
         console.error("Invalid stream reference received.");
         return new Uint8Array();
@@ -61,7 +77,7 @@ export async function streamedJsHandler(streamRef, instanceId, dotNetHelper) {
                     for await (const item of resultIterator) {
                         let jsonChunk = JSON.stringify(item);
                         let chunkInstanceId = crypto.randomUUID(); // Unique ID for this yielded item
-                        let chunks = chunkString(jsonChunk, 31000); // 31KB chunking
+                        let chunks = chunkString(jsonChunk, maxChunkBytes);
 
                         for (let i = 0; i < chunks.length; i++) {
                             await dotNetHelper.invokeMethodAsync(

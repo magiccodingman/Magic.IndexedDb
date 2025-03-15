@@ -12,65 +12,140 @@ import Dexie from "./dexie/dexie.js";
 /**
  * @type {Array.<DatabasesItem>}
  */
-let databases = [];
 
-export function createDb(dbStore) {
-    console.log("Debug: Received dbStore in createDb", dbStore);
-    if (databases.find(d => d.name == dbStore.name) !== undefined)
-        console.warn("Blazor.IndexedDB.Framework - Database already exists");
 
-    const db = new Dexie(dbStore.name);
-
-    const stores = {};
-    for (let i = 0; i < dbStore.storeSchemas.length; i++) {
-        // build string
-        const schema = dbStore.storeSchemas[i];
-        let def = "";
-        if (schema.primaryKeyAuto)
-            def = def + "++";
-        if (schema.primaryKey !== null && schema.primaryKey !== "")
-            def = def + schema.primaryKey;
-        if (schema.uniqueIndexes !== undefined) {
-            for (var j = 0; j < schema.uniqueIndexes.length; j++) {
-                def = def + ",";
-                var u = "&" + schema.uniqueIndexes[j];
-                def = def + u;
-            }
-        }
-        if (schema.indexes !== undefined) {
-            for (var j = 0; j < schema.indexes.length; j++) {
-                def = def + ",";
-                var u = schema.indexes[j];
-                def = def + u;
-            }
-        }
-        stores[schema.name] = def;
-    }
-    db.version(dbStore.version).stores(stores);
-    if (databases.find(d => d.name == dbStore.name) !== undefined) {
-        databases.find(d => d.name == dbStore.name).db = db;
-    }
-    else {
-        databases.push({
-            name: dbStore.name,
-            db: db
-        });
-    }
-    db.open();
+export async function initializeMagicMigration() {
+    const { MagicMigration } = await import('/magicMigration.js');  // Dynamically import it
+    const magicMigration = new MagicMigration(db);  // Pass only Dexie.js
+    magicMigration.Initialize();  // Call method (optional)
 }
 
+let databases = new Map(); // Change array to a Map
+
+async function getDb(dbName) {
+    if (!databases.has(dbName)) {
+        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} doesn't exist`);
+        const db1 = new Dexie(dbName);
+        await db1.open();
+        databases.set(dbName, db1);
+    }
+    return databases.get(dbName);
+}
+
+
+export function createDb(dbName, storeSchemas) {
+    console.log(`Creating database: ${dbName}`);
+
+    if (databases.has(dbName)) {
+        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} already exists.`);
+        return databases.get(dbName).db;
+    }
+
+    const db = new Dexie(dbName);
+    const stores = Object.fromEntries(
+        storeSchemas.map(schema => {
+            let def = schema.primaryKeyAuto ? "++" : "";
+            def += schema.primaryKey ? schema.primaryKey : "";
+
+            if (schema.uniqueIndexes && schema.uniqueIndexes.length) {
+                def += "," + schema.uniqueIndexes.map(i => "&" + i).join(",");
+            }
+
+            if (schema.indexes && schema.indexes.length) {
+                def += "," + schema.indexes.join(",");
+            }
+
+            if (schema.compoundKeys && schema.compoundKeys.length) {
+                def += "," + schema.compoundKeys.map(keys => "[" + keys.join("+") + "]").join(",");
+            }
+
+            return [schema.name, def];
+        })
+    );
+
+    db.version(1).stores(stores);
+    databases.set(dbName, { name: dbName, db: db, isOpen: false });
+    return db;
+}
+
+
+/**
+ * Creates multiple databases based on an array of dbStores.
+ * @param {Array.<{ name: string, storeSchemas: StoreSchema[] }>} dbStores - List of database configurations.
+ */
+export function createDatabases(dbStores) {
+    dbStores.forEach(dbStore => createDb(dbStore.name, dbStore.storeSchemas));
+}
+
+/**
+ * Opens a database if it is not already open.
+ * @param {string} dbName - The database name.
+ */
+export async function openDb(dbName) {
+    if (!databases.has(dbName)) {
+        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} does not exist.`);
+        return null;
+    }
+
+    const entry = databases.get(dbName);
+    if (!entry.isOpen) {
+        await entry.db.open();
+        entry.isOpen = true;
+        console.log(`Database ${dbName} opened successfully.`);
+    }
+
+    return entry.db;
+}
+
+/**
+ * Closes a specific database.
+ * @param {string} dbName - The database name.
+ */
+export function closeDb(dbName) {
+    if (databases.has(dbName)) {
+        const entry = databases.get(dbName);
+        entry.db.close();
+        entry.isOpen = false;
+        console.log(`Database ${dbName} closed successfully.`);
+    } else {
+        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} not found.`);
+    }
+}
+
+/**
+ * Closes all open databases.
+ */
 export function closeAll() {
-    const dbs = databases;
-    databases = [];
-    for (db of dbs)
-        db.db.close();
+    databases.forEach((entry, dbName) => {
+        entry.db.close();
+        entry.isOpen = false;
+        console.log(`Database ${dbName} closed.`);
+    });
 }
 
+/**
+ * Deletes a specific database.
+ * @param {string} dbName - The database name.
+ */
 export async function deleteDb(dbName) {
-    const db = await getDb(dbName);
-    const index = databases.findIndex(d => d.name == dbName);
-    databases.splice(index, 1);
-    db.delete();
+    if (databases.has(dbName)) {
+        const entry = databases.get(dbName);
+        entry.db.close();
+        databases.delete(dbName);
+    }
+
+    await Dexie.delete(dbName);
+    console.log(`Database ${dbName} deleted.`);
+}
+
+/**
+ * Deletes all databases.
+ */
+export async function deleteAllDatabases() {
+    for (const dbName of databases.keys()) {
+        await deleteDb(dbName);
+    }
+    console.log("All databases deleted.");
 }
 
 export async function addItem(item) {
@@ -100,46 +175,24 @@ export async function updateItem(item) {
 
 export async function bulkUpdateItem(items) {
     const table = await getTable(items[0].dbName, items[0].storeName);
-    let updatedCount = 0;
-    let errors = false;
-
-    for (const item of items) {
-        try {
-            await table.update(item.key, item.record);
-            updatedCount++;
-        }
-        catch (e) {
-            console.error(e);
-            errors = true;
-        }
-    }
-
-    if (errors)
+    try {
+        await table.bulkPut(items.map(item => ({ ...item.record, id: item.key })));
+        return items.length;
+    } catch (e) {
+        console.error(e);
         throw new Error('Some items could not be updated');
-    else
-        return updatedCount;
+    }
 }
 
 export async function bulkDelete(dbName, storeName, keys) {
     const table = await getTable(dbName, storeName);
-    let deletedCount = 0;
-    let errors = false;
-
-    for (const key of keys) {
-        try {
-            await table.delete(key);
-            deletedCount++;
-        }
-        catch (e) {
-            console.error(e);
-            errors = true;
-        }
-    }
-
-    if (errors)
+    try {
+        await table.bulkDelete(keys);
+        return keys.length;
+    } catch (e) {
+        console.error(e);
         throw new Error('Some items could not be deleted');
-    else
-        return deletedCount;
+    }
 }
 
 export async function deleteItem(item) {
@@ -163,6 +216,12 @@ export async function toArray(dbName, storeName) {
 }
 export function getStorageEstimate() {
     return navigator.storage.estimate();
+}
+
+async function getTable(dbName, storeName) {
+    let db = await getDb(dbName);
+    let table = db.table(storeName);
+    return table;
 }
 
 const DEBUG_MODE = true; // Set to false before release
@@ -283,13 +342,13 @@ function isValidQueryAdditions(arr) {
 }
 
 
-export async function where(dbName, storeName, nestedOrFilter, QueryAdditions, forceCursor = false) {
+export async function magicQueryAsync(dbName, storeName, nestedOrFilter, QueryAdditions, forceCursor = false) {
     debugLog("whereJson called");
 
 
     let results = []; // Collect results here
 
-    for await (let record of whereYield(dbName, storeName, nestedOrFilter, QueryAdditions, forceCursor)) {
+    for await (let record of magicQueryYield(dbName, storeName, nestedOrFilter, QueryAdditions, forceCursor)) {
         results.push(record);
     }
 
@@ -298,7 +357,7 @@ export async function where(dbName, storeName, nestedOrFilter, QueryAdditions, f
     return results; // Return all results at once
 }
 
-export async function* whereYield(dbName, storeName, nestedOrFilter, queryAdditions = [], forceCursor = false) {
+export async function* magicQueryYield(dbName, storeName, nestedOrFilter, queryAdditions = [], forceCursor = false) {
     debugLog("Starting where function", { dbName, storeName, nestedOrFilter, queryAdditions });
 
     if (!isValidFilterObject(nestedOrFilter)) {
@@ -1148,112 +1207,4 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, primaryKey, f
 
     // **Step 2: Return Only Primary Keys**
     return primaryKeyList.map(item => item.primaryKey);
-}
-
-
-
-
-
-
-
-
-
-
-async function getDb(dbName) {
-    if (databases.find(d => d.name == dbName) === undefined) {
-        console.warn("Blazor.IndexedDB.Framework - Database doesn't exist");
-        var db1 = new Dexie(dbName);
-        await db1.open();
-        if (databases.find(d => d.name == dbName) !== undefined) {
-            databases.find(d => d.name == dbName).db = db1;
-        } else {
-            databases.push({
-                name: dbName,
-                db: db1
-            });
-        }
-        return db1;
-    }
-    else {
-        return databases.find(d => d.name == dbName).db;
-    }
-}
-
-async function getTable(dbName, storeName) {
-    let db = await getDb(dbName);
-    let table = db.table(storeName);
-    return table;
-}
-
-function createFilterObject(filters) {
-    const jsonFilter = {};
-    for (const filter in filters) {
-        if (filters.hasOwnProperty(filter))
-            jsonFilter[filters[filter].indexName] = filters[filter].filterValue;
-    }
-    return jsonFilter;
-}
-
-function getAll(dotnetReference, transaction, dbName, storeName) {
-    return new Promise((resolve, reject) => {
-        getTable(dbName, storeName).then(table => {
-            table.toArray().then(items => {
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, false, 'getAll succeeded');
-                resolve(items);
-            }).catch(e => {
-                console.error(e);
-                dotnetReference.invokeMethodAsync('BlazorDBCallback', transaction, true, 'getAll failed');
-                reject(e);
-            });
-        });
-    });
-}
-
-export function encryptString(data, key) {
-    // Convert the data to an ArrayBuffer
-    let dataBuffer = new TextEncoder().encode(data).buffer;
-
-    // Generate a random initialization vector
-    let iv = crypto.getRandomValues(new Uint8Array(16));
-
-    // Convert the key to an ArrayBuffer
-    let keyBuffer = new TextEncoder().encode(key).buffer;
-
-    // Create a CryptoKey object from the key buffer
-    return crypto.subtle.importKey('raw', keyBuffer, { name: 'AES-CBC' }, false, ['encrypt'])
-        .then(key => {
-            // Encrypt the data with AES-CBC encryption
-            return crypto.subtle.encrypt({ name: 'AES-CBC', iv }, key, dataBuffer);
-        })
-        .then(encryptedDataBuffer => {
-            // Concatenate the initialization vector and encrypted data
-            let encryptedData = new Uint8Array(encryptedDataBuffer);
-            let encryptedDataWithIV = new Uint8Array(encryptedData.byteLength + iv.byteLength);
-            encryptedDataWithIV.set(iv);
-            encryptedDataWithIV.set(encryptedData, iv.byteLength);
-
-            // Convert the encrypted data to a base64 string and return it
-            return btoa(String.fromCharCode.apply(null, encryptedDataWithIV));
-        });
-}
-
-export function decryptString(encryptedData, key) {
-    // Convert the base64 string to a Uint8Array
-    let encryptedDataWithIV = new Uint8Array(atob(encryptedData).split('').map(c => c.charCodeAt(0)));
-    let iv = encryptedDataWithIV.slice(0, 16);
-    let data = encryptedDataWithIV.slice(16);
-
-    // Convert the key to an ArrayBuffer
-    let keyBuffer = new TextEncoder().encode(key).buffer;
-
-    // Create a CryptoKey object from the key buffer
-    return crypto.subtle.importKey('raw', keyBuffer, { name: 'AES-CBC' }, false, ['decrypt'])
-        .then(key => {
-            // Decrypt the data with AES-CBC decryption
-            return crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, data);
-        })
-        .then(decryptedDataBuffer => {
-            // Convert the decrypted data to a string and return it
-            return new TextDecoder().decode(decryptedDataBuffer);
-        });
 }

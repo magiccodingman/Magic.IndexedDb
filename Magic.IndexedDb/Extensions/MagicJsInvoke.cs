@@ -34,6 +34,32 @@ namespace Magic.IndexedDb.Extensions
             return await MagicStreamJsAsync<T>(modulePath, functionName, token, args) ?? default;
         }
 
+        ///
+        internal async Task CallInvokeDefaultJsAsync(string modulePath, string functionName,
+            params object[] args)
+        {
+
+            var throwAway = await CallInvokeDefaultJsAsync<bool>(modulePath, functionName, args);
+
+            return;
+        }
+
+        /// <summary>
+        /// Utilizes InvokeAsync normally with no special serialization or streaming.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="modulePath"></param>
+        /// <param name="functionName"></param>
+        /// <param name="token"></param>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        internal async Task<T?> CallInvokeDefaultJsAsync<T>(string modulePath, string functionName,
+            params object[] args)
+        {
+            var response = await _jsModule.InvokeAsync<T>("JsHandler", modulePath, functionName, args);
+            return response;
+        }
+
         internal async IAsyncEnumerable<T?> CallYieldJsAsync<T>(
     string modulePath,
     string functionName,
@@ -90,7 +116,7 @@ namespace Magic.IndexedDb.Extensions
 
             // Send to JS
             var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler", token,
-                streamRef, instanceId, DotNetObjectReference.Create(this));
+                streamRef, instanceId, DotNetObjectReference.Create(this), Cache.JsMessageSizeBytes);
 
             // 🚀 Convert the stream reference back to JSON in C#
             await using var responseStream = await responseStreamRef.OpenReadStreamAsync(long.MaxValue, token);

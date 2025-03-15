@@ -2,7 +2,7 @@ namespace Magic.IndexedDb
 { 
     internal struct IndexedDbFunctions
     {
-        public const string CREATE_DB = "createDb";
+        public const string CREATE_DATABASES = "createDatabases";
         public const string CLOSE_ALL = "closeAll";
         public const string DELETE_DB = "deleteDb";
         public const string ADD_ITEM = "addItem";
@@ -19,7 +19,7 @@ namespace Magic.IndexedDb
         public const string FIND_ITEM = "findItem";
         public const string TOARRAY = "toArray";
         public const string GET_STORAGE_ESTIMATE = "getStorageEstimate";
-        public const string WHERE = "where";
-        public const string WHERE_YIELD = "whereYield";
+        public const string MAGIC_QUERY_ASYNC = "magicQueryAsync";
+        public const string MAGIC_QUERY_YIELD = "magicQueryYield";
     }
 }

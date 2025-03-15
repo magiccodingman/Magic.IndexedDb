@@ -16,7 +16,12 @@ namespace Magic.IndexedDb
     {
         public string ColumnName { get; }
 
-        public MagicPrimaryKeyAttribute(string columnName = null)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="autoIncrement">whether the primary key automatically increments when new rows are added.</param>
+        /// <param name="columnName"></param>
+        public MagicPrimaryKeyAttribute(bool autoIncrement, string columnName = null)
         {
             if (!String.IsNullOrWhiteSpace(columnName))
             {

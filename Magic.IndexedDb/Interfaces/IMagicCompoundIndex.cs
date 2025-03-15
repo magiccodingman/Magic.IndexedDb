@@ -6,7 +6,8 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
-    public class MagicCompoundKeys
+    public interface IMagicCompoundIndex
     {
+        string[] ColumnNamesInCompoundKey { get; }
     }
 }

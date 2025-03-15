@@ -1,17 +1,30 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Magic.IndexedDb
-{
+﻿namespace Magic.IndexedDb
+{   
     public class StoreSchema
     {
-        public string Name { get; set; }
+        public string TableName { get; set; }
+
+        /// <summary>
+        /// column name of the primary key
+        /// </summary>
         public string PrimaryKey { get; set; }
+
+        public int Version { get; set; }
+
+        /// <summary>
+        /// will the primary key automatically increment?
+        /// </summary>
         public bool PrimaryKeyAuto { get; set; }
+
+        /// <summary>
+        /// IndexDB column names that will be provided a unique index
+        /// </summary>
         public List<string> UniqueIndexes { get; set; } = new List<string>();
+
+        /// <summary>
+        /// IndexDB column names that will be automatically indexed.
+        /// </summary>
         public List<string> Indexes { get; set; } = new List<string>();
+        public List<MagicCompoundExtension> compoundKeys { get; set; } = new List<MagicCompoundExtension>();
     }
 }

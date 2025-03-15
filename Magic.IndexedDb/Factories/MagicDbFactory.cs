@@ -4,15 +4,22 @@ using Magic.IndexedDb.Models;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Extensions;
+using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace Magic.IndexedDb.Factories
 {
     internal class MagicDbFactory : IMagicDbFactory, IAsyncDisposable
-    {
+    {        
+        internal MagicDbFactory(long jsMessageSizeBytes)
+        {
+            Cache.JsMessageSizeBytes = jsMessageSizeBytes;
+        }
+
         Lazy<Task<IJSObjectReference>>? _jsRuntime;
         readonly IServiceProvider _serviceProvider;
         readonly Dictionary<string, IndexedDbManager> _databases = new();
-
+        private IJSObjectReference? _cachedJsModule; // Shared JS module instance
         public MagicDbFactory(IServiceProvider serviceProvider, IJSRuntime jSRuntime)
         {
             _serviceProvider = serviceProvider;
@@ -20,6 +27,19 @@ namespace Magic.IndexedDb.Factories
                 "import",
                 "./_content/Magic.IndexedDb/magicDbMethods.js").AsTask());
         }
+
+        /// <summary>
+        /// Get or initialize the shared JavaScript module.
+        /// </summary>
+        private async Task<IJSObjectReference> GetJsModuleAsync()
+        {
+            if (_cachedJsModule is not null)
+                return _cachedJsModule;
+
+            _cachedJsModule = await _jsRuntime.Value;
+            return _cachedJsModule;
+        }
+
         public async ValueTask DisposeAsync()
         {
             var js = _jsRuntime;
@@ -58,81 +78,108 @@ namespace Magic.IndexedDb.Factories
             }
         }
 
-        internal async ValueTask<IndexedDbManager> OpenAsync(
-            DbStore dbStore, bool force = false,
-            CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Ensure a database is opened and properly associated with the shared JS module.
+        /// </summary>
+        private async ValueTask<IndexedDbManager> GetOrCreateDatabaseAsync(string dbName, CancellationToken cancellationToken = default)
         {
-            ObjectDisposedException.ThrowIf(_jsRuntime is null, this);
+            if (_databases.TryGetValue(dbName, out var dbManager))
+                return dbManager; // Return cached instance
 
-            if (force || !_databases.ContainsKey(dbStore.Name))
-            {
-                var db = await IndexedDbManager.CreateAndOpenAsync(
-                    dbStore, await _jsRuntime.Value, cancellationToken);
-                _databases[dbStore.Name] = db;
-            }
-            return _databases[dbStore.Name];
-        }
-
-        internal IndexedDbManager Get(string dbName)
-        {
-            ObjectDisposedException.ThrowIf(_jsRuntime is null, this);
-
-            if (_databases.TryGetValue(dbName, out var db))
-                return db;
-            throw new MagicException(
-                $"Failed to find a opened database called {dbName}. " +
-                $"If you want to open or create a new database, " +
-                $"please use {nameof(OpenAsync)} or {nameof(GetRegisteredAsync)} instead.");
-        }
-
-        internal async ValueTask<IndexedDbManager> GetRegisteredAsync(string dbName, CancellationToken cancellationToken = default)
-        {
             var registeredStores = _serviceProvider.GetServices<DbStore>();
-            foreach (var db in registeredStores)
-            {
-                if (db.Name == dbName)
-                    return await this.OpenAsync(db, false, cancellationToken);
-            }
-            throw new MagicException(
-                $"Failed to find a registered database called {dbName}. " +
-                $"If you want to dynamically open a new database, " +
-                $"please use {nameof(OpenAsync)} instead.");
+            var dbStore = registeredStores.FirstOrDefault(db => db.Name == dbName)
+                ?? throw new MagicException($"Database {dbName} is not registered.");
+
+            var jsModule = await GetJsModuleAsync(); // Ensure shared JS module is ready
+
+            // Create & Open the database (formerly in IndexedDbManager)
+            var manager = new IndexedDbManager(jsModule);
+            await new MagicJsInvoke(jsModule).CallJsAsync(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.CREATE_DATABASES, cancellationToken, new TypedArgument<DbStore>(dbStore));
+
+            _databases[dbName] = manager; // Cache the opened database
+            return manager;
         }
 
-
-        public async Task<IndexedDbManager> GetDbManagerAsync(string dbName) => await GetRegisteredAsync(dbName);
-        public Task<IndexedDbManager> GetDbManagerAsync(DbStore dbStore) => GetDbManagerAsync(dbStore.Name);
-
-        private async Task<IJSObjectReference> GetJsModuleAsync()
-        {
-            if (_cachedJsModule is not null)
-                return _cachedJsModule;
-
-            _cachedJsModule = await _jsRuntime.Value;
-            return _cachedJsModule;
-        }
 
         /// <summary>
-        /// Navigator storage estimate
+        /// Get storage estimate using the shared JS module.
         /// </summary>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
         public async Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default)
         {
-            var jsModule = await GetJsModuleAsync();
+            var jsModule = await GetJsModuleAsync(); // Shared JS module reference
             var magicUtility = new MagicUtilities(jsModule);
             return await magicUtility.GetStorageEstimateAsync();
+        }
+
+        public async ValueTask<IMagicQuery<T>> Query<T>(IndexedDbSet indexedDbSet)
+    where T : class, IMagicTableBase, new()
+        {
+            ValidateMagicTable<T>();
+
+            // Get database name and schema name
+            string databaseName = indexedDbSet.DatabaseName;
+            string schemaName = SchemaHelper.GetTableName<T>();
+
+            return await QueryOverride<T>(databaseName, schemaName);
+        }
+
+
+        public async ValueTask<IMagicQuery<T>> Query<T>(
+    Func<T, IndexedDbSet> dbSetSelector)
+    where T : class, IMagicTableBase, new()
+        {
+            ValidateMagicTable<T>();
+
+            // Create an instance of T to access `DbSets`
+            var modelInstance = new T();
+
+            // Retrieve the IndexedDbSet using the provided predicate
+            IndexedDbSet selectedDbSet = dbSetSelector(modelInstance);
+
+            // Get database name and schema name
+            string databaseName = selectedDbSet.DatabaseName;
+            string schemaName = SchemaHelper.GetTableName<T>();
+
+            return await QueryOverride<T>(databaseName, schemaName);
         }
 
         /// <summary>
         /// Query the database for a given type. Automatically opens the database if needed.
         /// </summary>
-        public async ValueTask<IMagicQuery<T>> Query<T>(string? databaseNameOverride = null, string? schemaNameOverride = null) where T : class
+        public async ValueTask<IMagicQuery<T>> Query<T>() 
+            where T : class, IMagicTableBase, new()
         {
-            string databaseName = databaseNameOverride ?? SchemaHelper.GetDatabaseName<T>();
-            string schemaName = schemaNameOverride ?? SchemaHelper.GetSchemaName<T>();
-            var dbManager = await GetRegisteredAsync(databaseName); // Ensure database is open
-            return dbManager.Query<T>(databaseName, schemaName);
+            ValidateMagicTable<T>();
+
+            string databaseName = SchemaHelper.GetDefaultDatabaseName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
+            return await QueryOverride<T>(databaseName, schemaName);
+        }
+
+        public async ValueTask<IMagicQuery<T>> QueryOverride<T>(string databaseNameOverride, string schemaNameOverride) 
+            where T: class, IMagicTableBase, new ()
+        {
+            var dbManager = await GetOrCreateDatabaseAsync(databaseName); // Ensure database is open
+            return dbManager.Query<T>(databaseNameOverride, schemaNameOverride);
+        }
+
+        private static readonly ConcurrentDictionary<Type, bool> _validatedTypes = new();
+
+        private static void ValidateMagicTable<T>()
+        {
+            Type type = typeof(T);
+
+            if (!_validatedTypes.TryGetValue(type, out bool isValid))
+            {
+                isValid = type.GetCustomAttribute<MagicTableAttribute>() != null;
+                _validatedTypes[type] = isValid; // Cache the result
+
+                if (!isValid)
+                {
+                    throw new InvalidOperationException($"The type '{type.Name}' is not a valid MagicTable class. Ensure it has the [MagicTableAttribute] applied.");
+                }
+            }
         }
     }
 }

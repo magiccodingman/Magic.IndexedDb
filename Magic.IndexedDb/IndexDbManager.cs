@@ -22,32 +22,18 @@ namespace Magic.IndexedDb
     /// </summary>
     internal class IndexedDbManager
     {
-        internal static async ValueTask<IndexedDbManager> CreateAndOpenAsync(
-            DbStore dbStore, IJSObjectReference jsRuntime, CancellationToken cancellationToken = default)
-        {
-            var result = new IndexedDbManager(dbStore, jsRuntime);
-            await new MagicJsInvoke(result._jsModule).CallJsAsync(Cache.MagicDbJsImportPath,
-                IndexedDbFunctions.CREATE_DB, cancellationToken, new TypedArgument<DbStore>(dbStore));
-            return result;
-        }
-
-        readonly DbStore _dbStore;
-        readonly IJSObjectReference _jsModule;
+        private readonly IJSObjectReference _jsModule;  // Shared JS module
 
         /// <summary>
         /// Ctor
         /// </summary>
         /// <param name="dbStore"></param>
         /// <param name="jsRuntime"></param>
-        private IndexedDbManager(DbStore dbStore, IJSObjectReference jsRuntime)
+        internal IndexedDbManager(IJSObjectReference jsModule)
         {
-            this._dbStore = dbStore;
-            this._jsModule = jsRuntime;
+            _jsModule = jsModule; // Use shared JS module reference
         }
 
-        // TODO: make it readonly
-        public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
-        public int CurrentVersion => _dbStore.Version;
         //public string DbName => _dbStore.Name;
 
         /// <summary>
@@ -176,7 +162,7 @@ namespace Magic.IndexedDb
             };
 
             return await new MagicJsInvoke(_jsModule).CallJsAsync<IEnumerable<T>>
-                (Cache.MagicDbJsImportPath, IndexedDbFunctions.WHERE, cancellationToken,
+                (Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_ASYNC, cancellationToken,
                 args);
         }
 
@@ -208,7 +194,7 @@ namespace Magic.IndexedDb
     };
 
             // Yield results **as they arrive** from JS
-            await foreach (var item in new MagicJsInvoke(_jsModule).CallYieldJsAsync<T>(Cache.MagicDbJsImportPath, IndexedDbFunctions.WHERE_YIELD, cancellationToken, args))
+            await foreach (var item in new MagicJsInvoke(_jsModule).CallYieldJsAsync<T>(Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_YIELD, cancellationToken, args))
             {
                 yield return item; // Stream each item immediately
             }
@@ -276,7 +262,7 @@ namespace Magic.IndexedDb
         internal Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
             string schemaName = SchemaHelper.GetSchemaName<T>();
-            string databaseName = SchemaHelper.GetDatabaseName<T>();
+            string databaseName = SchemaHelper.GetDefaultDatabaseName<T>();
             return ClearTableAsync(schemaName, databaseName, cancellationToken);
         }
 

@@ -1,4 +1,5 @@
-﻿using Magic.IndexedDb.SchemaAnnotations;
+﻿using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.SchemaAnnotations;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -10,75 +11,46 @@ namespace Magic.IndexedDb.Helpers
 {
     public static class SchemaHelper
     {
-        internal static readonly ConcurrentDictionary<string, MagicTableAttribute?> _schemaCache = new();
-        private static readonly ConcurrentDictionary<string, List<StoreSchema>> _databaseSchemasCache = new();
-        private static bool _schemasScanned = false;
-        private static readonly object _lock = new();
+        //internal static readonly ConcurrentDictionary<string, MagicTableAttribute?> _schemaCache = new();
+        //private static readonly ConcurrentDictionary<string, List<StoreSchema>> _databaseSchemasCache = new();
+        //private static bool _schemasScanned = false;
+        //private static readonly object _lock = new();
 
+        private static readonly ConcurrentDictionary<Type, string> _tableNameCache = new();
         private static readonly ConcurrentDictionary<Type, string> _databaseNameCache = new();
 
-        public static string GetDatabaseName<T>()
+        public static string GetDefaultDatabaseName<T>() where T : IMagicTableBase, new()
         {
             Type type = typeof(T);
 
-            // Check cache first
             if (_databaseNameCache.TryGetValue(type, out string cachedDatabaseName))
             {
                 return cachedDatabaseName;
             }
 
-            // Retrieve the attribute using reflection
-            var attribute = type.GetCustomAttribute<MagicTableAttribute>();
+            // Create an instance of T and retrieve database name
+            var instance = new T();
+            string databaseName = instance.GetDefaultDatabase().DatabaseName;
 
-            if (attribute == null)
-            {
-                throw new InvalidOperationException($"Type '{type.FullName}' does not have the MagicTableAttribute.");
-            }
-
-            string databaseName = attribute.DatabaseName;
-
-            // Cache the result for future calls
             _databaseNameCache[type] = databaseName;
-
             return databaseName;
         }
 
-        /// <summary>
-        /// Determines whether the given type is a complex entity registered in the schema cache.
-        /// </summary>
-        public static bool IsMagicEntity<T>()
+        public static string GetTableName<T>() where T : IMagicTableBase, new()
         {
-            return _schemaCache.ContainsKey(typeof(T).FullName!);
-        }
+            Type type = typeof(T);
 
-        public static bool IsMagicEntity(Type type)
-        {
-            return _schemaCache.ContainsKey(type.FullName!);
-        }
+            if (_tableNameCache.TryGetValue(type, out string cachedTableName))
+            {
+                return cachedTableName;
+            }
 
-        /// <summary>
-        /// Ensures the schema information for a given type is cached.
-        /// </summary>
-        internal static void EnsureSchemaIsCached(Type type)
-        {
-            string typeKey = type.FullName!;
+            // Create an instance of T and retrieve table name
+            var instance = new T();
+            string tableName = instance.GetTableName();
 
-            _schemaCache.GetOrAdd(typeKey, _ => type.GetCustomAttribute<MagicTableAttribute>());
-        }
-
-        /// <summary>
-        /// Gets the schema name (table name) for the given type <typeparamref name="T"/>.
-        /// Ensures all properties and schema information are cached together.
-        /// </summary>
-        public static string GetSchemaName<T>() where T : class
-        {
-            PropertyMappingCache.EnsureTypeIsCached<T>();
-            EnsureSchemaIsCached(typeof(T));
-
-            if (!_schemaCache.TryGetValue(typeof(T).FullName!, out var schemaAttribute) || schemaAttribute == null)
-                throw new InvalidOperationException($"Type {typeof(T).Name} does not have a [MagicTable] attribute.");
-
-            return schemaAttribute.SchemaName;
+            _tableNameCache[type] = tableName;
+            return tableName;
         }
 
         /// <summary>
@@ -142,7 +114,7 @@ namespace Magic.IndexedDb.Helpers
 
             var schema = new StoreSchema
             {
-                Name = schemaAttribute.SchemaName,
+                TableName = schemaAttribute.SchemaName,
                 PrimaryKeyAuto = true
             };
 
