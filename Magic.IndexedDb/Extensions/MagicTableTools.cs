@@ -10,9 +10,14 @@ namespace Magic.IndexedDb
 {
     public class MagicTableTool<T> where T : class, IMagicTableBase, new()
     {
-        protected CreateCompoundIndex CreateCompoundIndex(params Expression<Func<T, object>>[] keySelectors)
+        protected IMagicCompoundIndex CreateCompoundIndex(params Expression<Func<T, object>>[] keySelectors)
         {
-            return MagicCompoundExtension.Create<T>(keySelectors);
+            return MagicCompoundExtension.CreateIndex<T>(keySelectors);
+        }
+
+        protected IMagicCompoundKey CreateCompoundKey(params Expression<Func<T, object>>[] keySelectors)
+        {
+            return MagicCompoundExtension.CreateKey<T>(keySelectors);
         }
     }
 

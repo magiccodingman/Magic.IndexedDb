@@ -4,6 +4,7 @@
 @using System.Text.Json
 @using Magic.IndexedDb.Testing.Models
 @using TestWasm.Models
+@using TestWasm.Repository
 
 @inject IMagicDbFactory _MagicDb
 
@@ -108,10 +109,10 @@
 <br />
 <h3>Complex query capabilities!</h3>
 <pre>
-<code>
-<span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
-<span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
-<span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
+    <code>
+        <span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
+        <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
+        <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
         ).<span style="color: #2A56C6;">OrderBy</span>(x =&gt; x._Id).<span style="color: #2A56C6;">Skip</span>(<span style="color: #2A56C6;">1</span>).<span style="color: #2A56C6;">ToListAsync</span>();
     </code>
 </pre>
@@ -157,14 +158,23 @@
         {
             try
             {
-                var manager = await _MagicDb.GetRegisteredAsync(DbNames.Client);
 
-                await manager.ClearTableAsync<Person>();
+                // Targets the default database automatically if called without any parameters.
+                IMagicQuery<Person> personQuery = await _MagicDb.Query<Person>();
+
+                // Choose an assigned database to Person with strictly typed enforced connected Db's.
+                IMagicQuery<Person> employeeDbQuery = await _MagicDb.Query<Person>(x => x.Databases.Client);
+
+                // // Highly not suggested, but you're allowed to target databases not assigned to the Person table
+                // IMagicQuery<Person> animalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
+
+                // // DO NOT DO THIS! I only am allowing this for maximum flexibility but this is very dangerous.
+                // IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
+
+                //await manager.ClearTableAsync<Person>();
 
 
-                if (!(await manager.GetAllAsync<Person>()).Any())
-                {
-                    Person[] persons = new Person[] {
+                Person[] persons = new Person[] {
                         new Person { Name = "Zack", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
                         new Person { Name = "Luna", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
                         new Person { Name = "Jerry", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
@@ -210,14 +220,14 @@
     new Person { Name = "Zane", TestInt = 101, _Age = 47, GUIY = Guid.NewGuid(), DoNotMapTest = "I love motorcycles" },
 
      };
-                    await manager.AddRangeAsync(persons);
-                }
+                
 
-                var storageInfo = await manager.GetStorageEstimateAsync();
+
+                var storageInfo = await _MagicDb.GetStorageEstimateAsync();
                 storageQuota = storageInfo.QuotaInMegabytes;
                 storageUsage = storageInfo.UsageInMegabytes;
 
-                allPeople = (await manager.GetAllAsync<Person>()).ToList();
+
 
 
                 // WhereExample = await (manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
@@ -226,65 +236,71 @@
                 // || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)
                 // ).OrderBy(x => x._Id).Skip(1).AsAsyncEnumerable()).ToListAsync();
 
-                var personQuery = manager.Query<Person>();
+                //IMagicQuery<Person> personQuery = manager.Query<Person>();
+
+                await personQuery.AddRangeAsync(persons);
+
+                allPeople = await personQuery.ToListAsync();
+
+                List<Person> people = await personQuery.ToListAsync();
                 StateHasChanged();
 
-            //      RunTest("Get All Test", await personQuery.ToListAsync(),
-            // allPeople);
+                //      RunTest("Get All Test", await personQuery.ToListAsync(),
+                // allPeople);
 
-                 RunTest("Force Cursor Equal Test", await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
-            allPeople.Where(x => x.Name == "Zack"));
-
-
-                // RunTest("Basic Index Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
+                //      RunTest("Force Cursor Equal Test", await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
                 // allPeople.Where(x => x.Name == "Zack"));
 
-                 RunTest("Basic Cursor Equal Test", await personQuery.Where(x => x._Age == 35).ToListAsync(),
-                 allPeople.Where(x => x._Age == 35));
 
-           //      RunTest("Greater Than Age Test", await personQuery.Where(x => x._Age > 40).ToListAsync(),
-           //          allPeople.Where(x => x._Age > 40));
+                //     RunTest("Basic Index Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
+                //     allPeople.Where(x => x.Name == "Zack"));
 
-           //      RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).OrderBy(x => x._Id).ToListAsync(),
-           //          allPeople.Where(x => x._Age <= 35));
+                //      RunTest("Basic Cursor Equal Test", await personQuery.Where(x => x._Age == 35).ToListAsync(),
+                //      allPeople.Where(x => x._Age == 35));
 
-           //      RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-           //          allPeople.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+                //     RunTest("Greater Than Age Test", await personQuery.Where(x => x._Age > 40).ToListAsync(),
+                //         allPeople.Where(x => x._Age > 40));
 
-           //      RunTest("StartsWith Test", await personQuery.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-           //          allPeople.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
+                //     RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).OrderBy(x => x._Id).ToListAsync(),
+                //         allPeople.Where(x => x._Age <= 35));
 
-           //      RunTest("Multiple Conditions AND", await personQuery.Where(x => x._Age > 30 && x.TestInt == 9).ToListAsync(),
-           //          allPeople.Where(x => x._Age > 30 && x.TestInt == 9));
+                //     RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                //         allPeople.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+                //     RunTest("StartsWith Test", await personQuery.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                //         allPeople.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
+
+                //     RunTest("Multiple Conditions AND", await personQuery.Where(x => x._Age > 30 && x.TestInt == 9).ToListAsync(),
+                //         allPeople.Where(x => x._Age > 30 && x.TestInt == 9));
 
 
-           //      RunTest("Multiple Index Conditions OR", await personQuery.Where(x => x.Name == "Zack" || x.Name == "Isla").ToListAsync(),
-           //          allPeople.Where(x => x.Name == "Zack" || x.Name == "Isla"));
-           //      RunTest("Multiple Cursor Conditions OR", await personQuery.Where(x => x._Age > 50 || x.TestInt == 3).ToListAsync(),
-           //          allPeople.Where(x => x._Age > 50 || x.TestInt == 3));
+                //     RunTest("Multiple Index Conditions OR", await personQuery.Where(x => x.Name == "Zack" || x.Name == "Isla").ToListAsync(),
+                //         allPeople.Where(x => x.Name == "Zack" || x.Name == "Isla"));
+                //     RunTest("Multiple Cursor Conditions OR", await personQuery.Where(x => x._Age > 50 || x.TestInt == 3).ToListAsync(),
+                //         allPeople.Where(x => x._Age > 50 || x.TestInt == 3));
 
-           //      RunTest("Nested AND/OR", await personQuery.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-           //          allPeople.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+                //     RunTest("Nested AND/OR", await personQuery.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                //         allPeople.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
 
-           //      RunTest("Ordering Test", await personQuery.OrderBy(x => x._Age).ToListAsync(),
-           //          allPeople.OrderBy(x => x._Age));
+                //     RunTest("Ordering Test", await personQuery.OrderBy(x => x._Age).ToListAsync(),
+                //         allPeople.OrderBy(x => x._Age));
 
-           //      RunTest("Order Descending Test", await personQuery.OrderByDescending(x => x._Age).ToListAsync(),
-           //          allPeople.OrderByDescending(x => x._Age));
+                //     RunTest("Order Descending Test", await personQuery.OrderByDescending(x => x._Age).ToListAsync(),
+                //         allPeople.OrderByDescending(x => x._Age));
 
-           //      RunTest("Skip Test", await personQuery.OrderBy(x => x._Age).Skip(3).ToListAsync(),
-           //          allPeople.OrderBy(x => x._Age).Skip(3));
+                //     RunTest("Skip Test", await personQuery.OrderBy(x => x._Age).Skip(3).ToListAsync(),
+                //         allPeople.OrderBy(x => x._Age).Skip(3));
 
-           //      RunTest("Take Test", await personQuery.OrderBy(x => x._Age).Take(2).ToListAsync(),
-           //          allPeople.OrderBy(x => x._Age).Take(2));
+                //     RunTest("Take Test", await personQuery.OrderBy(x => x._Age).Take(2).ToListAsync(),
+                //         allPeople.OrderBy(x => x._Age).Take(2));
 
-                RunTest("TakeLast Index Test", await personQuery.OrderBy(x => x.Name).TakeLast(2).ToListAsync(),
+                RunTest("TakeLast Index Test", await personQuery.OrderBy(x => x.Name).Take(2).ToListAsync(),
 
-                          /*
-                               * Take last is special operation that changes order, 
-                               * but this altered version replicates the LINQ to SQL desired result
-                               */
-                          allPeople.OrderBy(x => x._Id).ThenBy(x => x.Name).TakeLast(2)); 
+                              /*
+                                   * Take last is special operation that changes order,
+                                   * but this altered version replicates the LINQ to SQL desired result
+                                   */
+                          allPeople.OrderBy(x => x._Id).ThenBy(x => x.Name).Take(2));
 
                 RunTest("TakeLast Cursor Test", await personQuery.OrderBy(x => x._Age).TakeLast(2).ToListAsync(),
                      allPeople.OrderBy(x => x._Age).TakeLast(2));
@@ -379,10 +395,10 @@
                     await personQuery.ToListAsync(),
                     allPeople.ToList());
 
-                 // ✅ Universal Truth Test (Always Returns Everything)
-                 RunTest("Universal Truth Where Condition",
-                     await personQuery.Where(x => true).ToListAsync(),
-                     allPeople.Where(x => true));
+                // ✅ Universal Truth Test (Always Returns Everything)
+                RunTest("Universal Truth Where Condition",
+                    await personQuery.Where(x => true).ToListAsync(),
+                    allPeople.Where(x => true));
 
                 // ❌ Universal False Test (Always Returns Nothing)
                 RunTest("Universal False Where Condition",
@@ -439,7 +455,7 @@
                 // 🔄 Complex Pagination with Condition
                 RunTest("Paginated Cursor Query with AND Condition",
                     await personQuery.Where(x => x._Age > 30 && x.TestInt == 9)
-                                     .OrderBy(x => x._Age)                                     
+                                     .OrderBy(x => x._Age)
                                      .Take(3)
                                      .Skip(1)
                                      .ToListAsync(),

@@ -52,7 +52,7 @@ namespace Magic.IndexedDb
 
         internal async Task<TKey> AddAsync<T, TKey>(T record, string dbName, CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
 
             StoreRecord<T?> RecordToSend = new StoreRecord<T?>()
             {
@@ -89,7 +89,7 @@ namespace Magic.IndexedDb
 
         internal async Task<int> UpdateAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
 
             object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
             if (primaryKeyValue is null)
@@ -111,7 +111,7 @@ namespace Magic.IndexedDb
     IEnumerable<T> items, string dbName,
     CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>(); 
 
             var recordsToUpdate = items.Select(item =>
             {
@@ -202,7 +202,7 @@ namespace Magic.IndexedDb
 
         internal async Task DeleteAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
 
             object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
 
@@ -220,7 +220,7 @@ namespace Magic.IndexedDb
         internal async Task<int> DeleteRangeAsync<T>(
     IEnumerable<T> items, string dbName, CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
 
             var keys = items.Select(item =>
             {
@@ -259,12 +259,12 @@ namespace Magic.IndexedDb
         /// Wait for response
         /// </summary>
         /// <returns></returns>
-        internal Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
+       /* internal Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
             string databaseName = SchemaHelper.GetDefaultDatabaseName<T>();
             return ClearTableAsync(schemaName, databaseName, cancellationToken);
-        }
+        }*/
 
 
     }

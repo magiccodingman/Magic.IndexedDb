@@ -11,7 +11,7 @@ namespace Magic.IndexedDb.Interfaces
         string GetTableName();
 
         List<IMagicCompoundIndex>? GetCompoundIndexes();
-        IMagicCompoundIndex? GetCompoundKey();
+        IMagicCompoundKey? GetCompoundKey();
 
         // <summary>
         /// Set the default database most commonly utilized for this table.

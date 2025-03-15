@@ -25,6 +25,6 @@
         /// IndexDB column names that will be automatically indexed.
         /// </summary>
         public List<string> Indexes { get; set; } = new List<string>();
-        public List<MagicCompoundExtension> compoundKeys { get; set; } = new List<MagicCompoundExtension>();
+        //public List<MagicCompoundExtension> compoundKeys { get; set; } = new List<MagicCompoundExtension>();
     }
 }

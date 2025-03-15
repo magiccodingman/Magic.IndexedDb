@@ -7,11 +7,16 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
-    public static class MagicCompoundExtension
+    internal static class MagicCompoundExtension
     {
-        public static IMagicCompoundIndex Create<T>(params Expression<Func<T, object>>[] keySelectors)
+        public static IMagicCompoundIndex CreateIndex<T>(params Expression<Func<T, object>>[] keySelectors)
         {
             return InternalMagicCompoundIndex<T>.Create(keySelectors);
+        }
+
+        public static IMagicCompoundKey CreateKey<T>(params Expression<Func<T, object>>[] keySelectors)
+        {
+            return InternalMagicCompoundKey<T>.Create(keySelectors);
         }
     }
 }

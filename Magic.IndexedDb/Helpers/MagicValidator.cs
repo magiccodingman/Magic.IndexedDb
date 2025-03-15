@@ -16,8 +16,9 @@ namespace Magic.IndexedDb.Helpers
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
             var magicTableClasses = assemblies
                 .SelectMany(a => a.GetTypes())
-                .Where(t => t.GetCustomAttribute<MagicTableAttribute>() != null)
+                .Where(SchemaHelper.HasMagicTableInterface) // Uses the helper method
                 .ToList();
+
 
             foreach (var type in magicTableClasses)
             {

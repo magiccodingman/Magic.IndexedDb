@@ -1,5 +1,8 @@
 ﻿using Magic.IndexedDb;
+
 using Magic.IndexedDb.SchemaAnnotations;
+using TestWasm.Repository;
+using static TestWasm.Models.Person;
 
 namespace TestWasm.Models
 {
@@ -8,12 +11,30 @@ namespace TestWasm.Models
         public string Value { get; set; } = "abc";
     }
 
-    [MagicTable("Person", DbNames.Client)]
-    public class Person
+
+    public class Person : MagicTableTool<Person>, IMagicTable<DbSets>
     {
+        public List<IMagicCompoundIndex> GetCompoundIndexes() =>
+            new List<IMagicCompoundIndex>() {
+            CreateCompoundIndex(x => x.GUIY, x => x._Id)
+            };
+
+        //public IMagicCompoundIndex? GetCompoundKey() => null;
+        public IMagicCompoundKey? GetCompoundKey() => 
+            CreateCompoundKey(x => x._Id, x => x.GUIY);
+
+        public string GetTableName() => "Person";
+        public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;
+        public DbSets Databases { get; } = new();
+        public sealed class DbSets
+        {
+            public readonly IndexedDbSet Client = IndexDbContext.Client;
+            public readonly IndexedDbSet Employee = IndexDbContext.Employee;
+        }
+
         public Nested Nested { get; set; } = new Nested();
 
-        [MagicPrimaryKey("id")]
+        [MagicPrimaryKey(true, "id")]
         public int _Id { get; set; }
 
         [MagicIndex]
@@ -24,7 +45,7 @@ namespace TestWasm.Models
 
         [MagicIndex]
         public int TestInt { get; set; }
-                
+
         public DateTime? DateOfBirth { get; set; }
 
         [MagicUniqueIndex("guid")]

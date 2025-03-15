@@ -115,8 +115,6 @@ namespace Magic.IndexedDb.Factories
         public async ValueTask<IMagicQuery<T>> Query<T>(IndexedDbSet indexedDbSet)
     where T : class, IMagicTableBase, new()
         {
-            ValidateMagicTable<T>();
-
             // Get database name and schema name
             string databaseName = indexedDbSet.DatabaseName;
             string schemaName = SchemaHelper.GetTableName<T>();
@@ -129,8 +127,6 @@ namespace Magic.IndexedDb.Factories
     Func<T, IndexedDbSet> dbSetSelector)
     where T : class, IMagicTableBase, new()
         {
-            ValidateMagicTable<T>();
-
             // Create an instance of T to access `DbSets`
             var modelInstance = new T();
 
@@ -150,8 +146,6 @@ namespace Magic.IndexedDb.Factories
         public async ValueTask<IMagicQuery<T>> Query<T>() 
             where T : class, IMagicTableBase, new()
         {
-            ValidateMagicTable<T>();
-
             string databaseName = SchemaHelper.GetDefaultDatabaseName<T>();
             string schemaName = SchemaHelper.GetTableName<T>();
             return await QueryOverride<T>(databaseName, schemaName);
@@ -160,26 +154,11 @@ namespace Magic.IndexedDb.Factories
         public async ValueTask<IMagicQuery<T>> QueryOverride<T>(string databaseNameOverride, string schemaNameOverride) 
             where T: class, IMagicTableBase, new ()
         {
-            var dbManager = await GetOrCreateDatabaseAsync(databaseName); // Ensure database is open
+            var dbManager = await GetOrCreateDatabaseAsync(databaseNameOverride); // Ensure database is open
             return dbManager.Query<T>(databaseNameOverride, schemaNameOverride);
         }
 
         private static readonly ConcurrentDictionary<Type, bool> _validatedTypes = new();
 
-        private static void ValidateMagicTable<T>()
-        {
-            Type type = typeof(T);
-
-            if (!_validatedTypes.TryGetValue(type, out bool isValid))
-            {
-                isValid = type.GetCustomAttribute<MagicTableAttribute>() != null;
-                _validatedTypes[type] = isValid; // Cache the result
-
-                if (!isValid)
-                {
-                    throw new InvalidOperationException($"The type '{type.Name}' is not a valid MagicTable class. Ensure it has the [MagicTableAttribute] applied.");
-                }
-            }
-        }
     }
 }

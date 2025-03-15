@@ -15,6 +15,20 @@ namespace Magic.IndexedDb.Helpers
         //private static readonly ConcurrentDictionary<string, List<StoreSchema>> _databaseSchemasCache = new();
         //private static bool _schemasScanned = false;
         //private static readonly object _lock = new();
+        internal static readonly ConcurrentDictionary<string, Type> _schemaCache = new();
+
+        internal static void EnsureSchemaIsCached(Type type)
+        {
+            string typeKey = type.FullName!;
+
+            _schemaCache.GetOrAdd(typeKey, _ =>
+            {
+                if (!typeof(IMagicTableBase).IsAssignableFrom(type))
+                    throw new InvalidOperationException($"Type {type.Name} does not implement IMagicTableBase.");
+
+                return type; // Cache the type itself
+            });
+        }
 
         private static readonly ConcurrentDictionary<Type, string> _tableNameCache = new();
         private static readonly ConcurrentDictionary<Type, string> _databaseNameCache = new();
@@ -36,7 +50,7 @@ namespace Magic.IndexedDb.Helpers
             return databaseName;
         }
 
-        public static string GetTableName<T>() where T : IMagicTableBase, new()
+        public static string GetTableName<T>() where T : class
         {
             Type type = typeof(T);
 
@@ -45,18 +59,38 @@ namespace Magic.IndexedDb.Helpers
                 return cachedTableName;
             }
 
-            // Create an instance of T and retrieve table name
-            var instance = new T();
+            // Check if the type implements IMagicTableBase
+            if (!typeof(IMagicTableBase).IsAssignableFrom(type))
+            {
+                throw new InvalidOperationException($"Type {type.Name} does not implement IMagicTableBase.");
+            }
+
+            // Create an instance dynamically and retrieve the table name
+            if (Activator.CreateInstance(type) is not IMagicTableBase instance)
+            {
+                throw new InvalidOperationException($"Failed to create an instance of {type.Name}.");
+            }
+
             string tableName = instance.GetTableName();
+
+            if (string.IsNullOrWhiteSpace(tableName))
+            {
+                throw new InvalidOperationException($"Type {type.Name} returned an invalid table name.");
+            }
 
             _tableNameCache[type] = tableName;
             return tableName;
         }
 
+        public static bool HasMagicTableInterface(Type type)
+        {
+            return typeof(IMagicTableBase).IsAssignableFrom(type);
+        }
+
         /// <summary>
         /// Retrieves all schemas for a given database name.
         /// </summary>
-        public static List<StoreSchema> GetAllSchemas(string databaseName = null)
+       /* public static List<StoreSchema> GetAllSchemas(string databaseName = null)
         {
             lock (_lock)
             {
@@ -97,7 +131,7 @@ namespace Magic.IndexedDb.Helpers
 
                 return schemas;
             }
-        }
+        }*/
 
 
         /// <summary>
@@ -109,12 +143,20 @@ namespace Magic.IndexedDb.Helpers
             PropertyMappingCache.EnsureTypeIsCached(type);
             EnsureSchemaIsCached(type);
 
-            if (!_schemaCache.TryGetValue(type.FullName!, out var schemaAttribute) || schemaAttribute == null)
-                throw new InvalidOperationException($"Type {type.Name} does not have a [MagicTable] attribute.");
+            if (!_schemaCache.TryGetValue(type.FullName!, out var cachedType))
+                throw new InvalidOperationException($"Type {type.Name} is not cached and does not implement IMagicTableBase.");
+
+            var instance = Activator.CreateInstance(cachedType) as IMagicTableBase;
+            if (instance == null)
+                throw new InvalidOperationException($"Failed to create an instance of {cachedType.Name}.");
+
+            var tableName = instance.GetTableName();
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new InvalidOperationException($"Type {cachedType.Name} returned an invalid table name.");
 
             var schema = new StoreSchema
             {
-                TableName = schemaAttribute.SchemaName,
+                TableName = tableName,
                 PrimaryKeyAuto = true
             };
 

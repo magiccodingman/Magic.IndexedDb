@@ -76,6 +76,25 @@ Large Refactor notes:
 [] Cursor mode activated!
 
 [] Document how complex queries happen in a memory performant way.
+
+[] Compound key support added
+
+[] On startup validation
+
+[] How to build your repository system
+
+[] Self validation to keep you safe
+### Showcase
+new setup to add wasm, signalR or override and service setup
+
+[] Document wwwroot migration system with server based wwwroot for Hybrid Blazor.
+
+# To Do
+[] Validate all instances being utilized in indexDB is asyncrounous
+[] Add open database
+[] add close database
+[] Should I increase the yield amount above 32 KB? 
+
 #### NEW self documenting Universal Language Model
 orConditionsArray is now NestedOrFilter
 ```json
