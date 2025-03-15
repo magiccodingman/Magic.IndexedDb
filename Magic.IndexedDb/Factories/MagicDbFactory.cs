@@ -85,17 +85,17 @@ namespace Magic.IndexedDb.Factories
         {
             if (_databases.TryGetValue(dbName, out var dbManager))
                 return dbManager; // Return cached instance
-
+/*
             var registeredStores = _serviceProvider.GetServices<DbStore>();
             var dbStore = registeredStores.FirstOrDefault(db => db.Name == dbName)
                 ?? throw new MagicException($"Database {dbName} is not registered.");
-
+*/
             var jsModule = await GetJsModuleAsync(); // Ensure shared JS module is ready
 
             // Create & Open the database (formerly in IndexedDbManager)
             var manager = new IndexedDbManager(jsModule);
-            await new MagicJsInvoke(jsModule).CallJsAsync(Cache.MagicDbJsImportPath,
-                IndexedDbFunctions.CREATE_DATABASES, cancellationToken, new TypedArgument<DbStore>(dbStore));
+            /*await new MagicJsInvoke(jsModule).CallJsAsync(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.CREATE_DATABASES, cancellationToken, new TypedArgument<DbStore>(dbStore));*/
 
             _databases[dbName] = manager; // Cache the opened database
             return manager;

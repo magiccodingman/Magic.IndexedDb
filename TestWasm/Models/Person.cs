@@ -12,7 +12,7 @@ namespace TestWasm.Models
     }
 
 
-    public class Person : MagicTableTool<Person>, IMagicTable<DbSets>
+    public class Person : MagicTableTool<Person>, IMagicTable<Person.DbSets>
     {
         public List<IMagicCompoundIndex> GetCompoundIndexes() =>
             new List<IMagicCompoundIndex>() {
@@ -21,7 +21,7 @@ namespace TestWasm.Models
 
         //public IMagicCompoundIndex? GetCompoundKey() => null;
         public IMagicCompoundKey? GetCompoundKey() => 
-            CreateCompoundKey(x => x._Id, x => x.GUIY);
+            CreateCompoundKey(x => x.Name, x => x.GUIY);
 
         public string GetTableName() => "Person";
         public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;

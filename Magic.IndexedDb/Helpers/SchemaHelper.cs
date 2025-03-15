@@ -15,19 +15,33 @@ namespace Magic.IndexedDb.Helpers
         //private static readonly ConcurrentDictionary<string, List<StoreSchema>> _databaseSchemasCache = new();
         //private static bool _schemasScanned = false;
         //private static readonly object _lock = new();
-        internal static readonly ConcurrentDictionary<string, Type> _schemaCache = new();
+        internal static readonly ConcurrentDictionary<Type, IMagicTableBase?> _schemaCache = new();
 
         internal static void EnsureSchemaIsCached(Type type)
         {
-            string typeKey = type.FullName!;
-
-            _schemaCache.GetOrAdd(typeKey, _ =>
+            _schemaCache.GetOrAdd(type, _ =>
             {
-                if (!typeof(IMagicTableBase).IsAssignableFrom(type))
-                    throw new InvalidOperationException($"Type {type.Name} does not implement IMagicTableBase.");
-
-                return type; // Cache the type itself
+                // Check if the type implements IMagicTableBase
+                return typeof(IMagicTableBase).IsAssignableFrom(type)
+                    ? (Activator.CreateInstance(type) as IMagicTableBase) // Store the instance if valid
+                    : null; // Store null if it doesn’t implement IMagicTableBase
             });
+        }
+
+
+        public static bool ImplementsIMagicTable(Type type)
+        {
+            return type.GetInterfaces().Any(i => i.IsGenericType
+            && i.GetGenericTypeDefinition() == typeof(IMagicTable<>));
+        }
+
+        public static List<Type>? GetAllMagicTables()
+        {
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            return assemblies
+                .SelectMany(a => a.GetTypes())
+                .Where(t => t.IsClass && !t.IsAbstract && SchemaHelper.ImplementsIMagicTable(t))
+                .ToList();
         }
 
         private static readonly ConcurrentDictionary<Type, string> _tableNameCache = new();
@@ -143,16 +157,24 @@ namespace Magic.IndexedDb.Helpers
             PropertyMappingCache.EnsureTypeIsCached(type);
             EnsureSchemaIsCached(type);
 
-            if (!_schemaCache.TryGetValue(type.FullName!, out var cachedType))
-                throw new InvalidOperationException($"Type {type.Name} is not cached and does not implement IMagicTableBase.");
+            // Retrieve the cached entry
+            if (!_schemaCache.TryGetValue(type, out var instance))
+            {
+                throw new InvalidOperationException($"Type {type.Name} is not cached.");
+            }
 
-            var instance = Activator.CreateInstance(cachedType) as IMagicTableBase;
+            // Ensure the type actually implements IMagicTableBase
             if (instance == null)
-                throw new InvalidOperationException($"Failed to create an instance of {cachedType.Name}.");
+            {
+                throw new InvalidOperationException($"Type {type.Name} does not implement IMagicTableBase and cannot be used as a Magic Table.");
+            }
 
+            // Retrieve table name
             var tableName = instance.GetTableName();
             if (string.IsNullOrWhiteSpace(tableName))
-                throw new InvalidOperationException($"Type {cachedType.Name} returned an invalid table name.");
+            {
+                throw new InvalidOperationException($"Type {type.Name} returned an invalid table name.");
+            }
 
             var schema = new StoreSchema
             {
@@ -165,7 +187,9 @@ namespace Magic.IndexedDb.Helpers
                 .FirstOrDefault(prop => PropertyMappingCache.GetPropertyEntry(prop, type).PrimaryKey);
 
             if (primaryKeyProperty == null)
+            {
                 throw new InvalidOperationException($"The entity {type.Name} does not have a primary key attribute.");
+            }
 
             schema.PrimaryKey = PropertyMappingCache.GetJsPropertyName(primaryKeyProperty, type);
 
@@ -183,5 +207,6 @@ namespace Magic.IndexedDb.Helpers
 
             return schema;
         }
+
     }
 }

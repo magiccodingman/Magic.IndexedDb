@@ -13,11 +13,7 @@ namespace Magic.IndexedDb.Helpers
         public static void ValidateTables()
         {
             var errors = new StringBuilder();
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-            var magicTableClasses = assemblies
-                .SelectMany(a => a.GetTypes())
-                .Where(SchemaHelper.HasMagicTableInterface) // Uses the helper method
-                .ToList();
+            var magicTableClasses = SchemaHelper.GetAllMagicTables();
 
 
             foreach (var type in magicTableClasses)
@@ -59,6 +55,29 @@ namespace Magic.IndexedDb.Helpers
                     if (appliedMagicAttributes.Count > 1)
                     {
                         errors.AppendLine($"Error: Property '{prop.Name}' in class '{type.Name}' has multiple Magic attributes ({string.Join(", ", appliedMagicAttributes.Select(a => a.Name))}). A property can have at most one Magic attribute.");
+                    }
+                }
+
+                var instance = Activator.CreateInstance(type);
+                var getCompoundKeyMethod = type.GetMethod("GetCompoundKey", BindingFlags.Public | BindingFlags.Instance);
+                var getCompoundIndexesMethod = type.GetMethod("GetCompoundIndexes", BindingFlags.Public | BindingFlags.Instance);
+
+                if (getCompoundKeyMethod == null || getCompoundIndexesMethod == null)
+                {
+                    errors.AppendLine($"Error: Class '{type.Name}' is missing required methods 'GetCompoundKey()' or 'GetCompoundIndexes()'.");
+                }
+                else
+                {
+                    try
+                    {
+                        // Call both methods and force any errors to surface
+                        var compoundKey = getCompoundKeyMethod.Invoke(instance, null);
+                        var compoundIndexes = getCompoundIndexesMethod.Invoke(instance, null);
+                    }
+                    catch (TargetInvocationException tie) when (tie.InnerException != null)
+                    {
+                        // Extract and log the **actual** exception instead of the generic wrapper
+                        errors.AppendLine($"Error: Class '{type.Name}' encountered an issue when calling 'GetCompoundKey()' or 'GetCompoundIndexes()'. Exception: {tie.InnerException.Message}");
                     }
                 }
             }
