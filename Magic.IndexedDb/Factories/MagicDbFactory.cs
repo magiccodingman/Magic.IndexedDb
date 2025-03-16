@@ -20,7 +20,7 @@ namespace Magic.IndexedDb.Factories
         readonly IServiceProvider _serviceProvider;
         readonly Dictionary<string, IndexedDbManager> _databases = new();
         private IJSObjectReference? _cachedJsModule; // Shared JS module instance
-        public MagicDbFactory(IServiceProvider serviceProvider, IJSRuntime jSRuntime)
+        public MagicDbFactory(IServiceProvider serviceProvider, IJSRuntime jSRuntime, long jsMessageSizeBytes)
         {
             _serviceProvider = serviceProvider;
             this._jsRuntime = new(() => jSRuntime.InvokeAsync<IJSObjectReference>(
@@ -92,10 +92,17 @@ namespace Magic.IndexedDb.Factories
 */
             var jsModule = await GetJsModuleAsync(); // Ensure shared JS module is ready
 
+
+            var dbSchemas = SchemaHelper.GetAllSchemas();
             // Create & Open the database (formerly in IndexedDbManager)
             var manager = new IndexedDbManager(jsModule);
-            /*await new MagicJsInvoke(jsModule).CallJsAsync(Cache.MagicDbJsImportPath,
-                IndexedDbFunctions.CREATE_DATABASES, cancellationToken, new TypedArgument<DbStore>(dbStore));*/
+            await new MagicJsInvoke(jsModule).CallJsAsync(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.CREATE_LEGACY, cancellationToken, 
+                new TypedArgument<DbStore>(new DbStore() { 
+                Name = dbName,
+                Version = 1,
+                StoreSchemas = dbSchemas
+                }));
 
             _databases[dbName] = manager; // Cache the opened database
             return manager;
@@ -145,9 +152,10 @@ namespace Magic.IndexedDb.Factories
         /// </summary>
         public async ValueTask<IMagicQuery<T>> Query<T>() 
             where T : class, IMagicTableBase, new()
-        {
+        {            
             string databaseName = SchemaHelper.GetDefaultDatabaseName<T>();
             string schemaName = SchemaHelper.GetTableName<T>();
+            var dbManager = await GetOrCreateDatabaseAsync(databaseName);
             return await QueryOverride<T>(databaseName, schemaName);
         }
 

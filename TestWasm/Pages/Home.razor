@@ -163,7 +163,7 @@
                 IMagicQuery<Person> personQuery = await _MagicDb.Query<Person>();
 
                 // Choose an assigned database to Person with strictly typed enforced connected Db's.
-                IMagicQuery<Person> employeeDbQuery = await _MagicDb.Query<Person>(x => x.Databases.Client);
+                //IMagicQuery<Person> employeeDbQuery = await _MagicDb.Query<Person>(x => x.Databases.Client);
 
                 // // Highly not suggested, but you're allowed to target databases not assigned to the Person table
                 // IMagicQuery<Person> animalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
@@ -223,9 +223,9 @@
                 
 
 
-                var storageInfo = await _MagicDb.GetStorageEstimateAsync();
-                storageQuota = storageInfo.QuotaInMegabytes;
-                storageUsage = storageInfo.UsageInMegabytes;
+                //var storageInfo = await _MagicDb.GetStorageEstimateAsync();
+                //storageQuota = storageInfo.QuotaInMegabytes;
+                //storageUsage = storageInfo.UsageInMegabytes;
 
 
 

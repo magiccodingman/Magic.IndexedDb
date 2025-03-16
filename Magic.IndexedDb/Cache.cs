@@ -12,6 +12,6 @@ namespace Magic.IndexedDb
         /// <summary>
         /// this is the wwwroot path of "./magicDB.js" for importing the script
         /// </summary>
-        public const string MagicDbJsImportPath = "/magicDB.js";
+        public const string MagicDbJsImportPath = "./magicDB.js";
     }
 }

@@ -3,6 +3,7 @@ using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.JSInterop;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,21 +29,25 @@ namespace Magic.IndexedDb
 
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddBlazorDB(this IServiceCollection services, BlazorInteropMode interoptMode)
+        public static IServiceCollection AddBlazorDB(this IServiceCollection services, 
+            BlazorInteropMode interoptMode, bool isDebug)
         {
-            return services.AddBlazorDB((long)interoptMode);
+            return services.AddBlazorDB((long)interoptMode, isDebug);
         }
 
-        public static IServiceCollection AddBlazorDB(this IServiceCollection services, long jsMessageSizeBytes)
+        public static IServiceCollection AddBlazorDB(this IServiceCollection services, 
+            long jsMessageSizeBytes, bool isDebug)
         {
-            services.AddSingleton<IMagicDbFactory>(sp => new MagicDbFactory(jsMessageSizeBytes));
+            services.AddSingleton<IMagicDbFactory>(sp =>
+        new MagicDbFactory(sp, sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes));
 
-#if DEBUG
-            MagicValidator.ValidateTables();
-
-            var alltables = SchemaHelper.GetAllSchemas();
-            var sdf = 3;
-#endif
+            if (isDebug)
+            {
+                MagicValidator.ValidateTables();
+                string currentDirectory = Directory.GetCurrentDirectory();
+                var alltables = SchemaHelper.GetAllSchemas();
+                var sdf = 3;
+            }
 
             return services;
         }

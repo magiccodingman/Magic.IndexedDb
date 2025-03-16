@@ -1,56 +1,52 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
 
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Title>Magic.IndexedDb</Title>
-    <Authors>Magic Man</Authors>
-    <Copyright>MIT</Copyright>
-    <Description>Open source library provides an IndexedDb wrapper for C# and Blazor WebAssembly applications. It simplifies working with IndexedDb and makes it similar to using LINQ to SQL.</Description>
-    <PackageProjectUrl></PackageProjectUrl>
-    <RepositoryUrl>https://github.com/magiccodingman/Magic.IndexedDb</RepositoryUrl>
-    <PackageTags>IndexedDb, Blazor IndexedDb, c# IndexedDb, local database, blazor</PackageTags>
-    <PackageIcon>wizardHatIcon.png</PackageIcon>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <AssemblyVersion>1.0.1</AssemblyVersion>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-    <FileVersion>1.01</FileVersion>
-    <Version>1.0.12</Version>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Title>Magic.IndexedDb</Title>
+		<Authors>Magic Man</Authors>
+		<Copyright>MIT</Copyright>
+		<Description>Open source library provides an IndexedDb wrapper for C# and Blazor WebAssembly applications. It simplifies working with IndexedDb and makes it similar to using LINQ to SQL.</Description>
+		<PackageProjectUrl></PackageProjectUrl>
+		<RepositoryUrl>https://github.com/magiccodingman/Magic.IndexedDb</RepositoryUrl>
+		<PackageTags>IndexedDb, Blazor IndexedDb, c# IndexedDb, local database, blazor</PackageTags>
+		<PackageIcon>wizardHatIcon.png</PackageIcon>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<AssemblyVersion>1.0.1</AssemblyVersion>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+		<FileVersion>1.01</FileVersion>
+		<Version>1.0.12</Version>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <None Include="..\LICENSE.txt">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-    <None Include="..\README.md">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-    <None Include="..\wizardHatIcon.png">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
+	<ItemGroup>
+		<None Include="..\LICENSE.txt">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+		<None Include="..\README.md">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+		<None Include="..\wizardHatIcon.png">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
 
 
-  <ItemGroup>
-    <SupportedPlatform Include="browser" />
-  </ItemGroup>
+	<ItemGroup>
+		<SupportedPlatform Include="browser" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="8.0.11" />
-    <PackageReference Include="System.Linq.Async" Version="6.0.1" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="8.0.11" />
+		<PackageReference Include="System.Linq.Async" Version="6.0.1" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Models\Abstract\" />
-  </ItemGroup>
-
-	<Target Name="GenerateMagicSchema" AfterTargets="Build">
-		<Exec Command="dotnet run --project $(MSBuildThisFileDirectory)/../MagicIndexedDbBuildTool/MagicIndexedDbBuildTool.csproj -- --generate-schema $(MSBuildThisFileDirectory)" />
-	</Target>
+	<ItemGroup>
+		<Folder Include="Models\Abstract\" />
+	</ItemGroup>
 </Project>

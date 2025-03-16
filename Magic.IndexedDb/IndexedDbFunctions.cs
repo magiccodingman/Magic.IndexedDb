@@ -3,6 +3,7 @@ namespace Magic.IndexedDb
     internal struct IndexedDbFunctions
     {
         public const string CREATE_DATABASES = "createDatabases";
+        public const string CREATE_LEGACY = "createDb";
         public const string CLOSE_ALL = "closeAll";
         public const string DELETE_DB = "deleteDb";
         public const string ADD_ITEM = "addItem";

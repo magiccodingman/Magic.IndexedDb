@@ -12,10 +12,20 @@ async function getModule(modulePath) {
         moduleCache.set(modulePath, importedModule);
         return importedModule;
     } catch (error) {
-        console.error(`Failed to import module: ${modulePath}`, error);
+        console.error(
+            `Failed to import module: ${modulePath}\nError Message: ${error.message}\nStack Trace: ${error.stack}`
+        );
+
+        if (error instanceof SyntaxError) {
+            console.error("Possible Syntax Error in the module.");
+        } else if (error instanceof TypeError) {
+            console.error("Possible TypeError in the module (maybe missing export?).");
+        }
+
         throw new Error(`Module import error: ${modulePath}`);
     }
 }
+
 
 export async function JsHandler(isVoid, modulePath, methodName, parameters) {
     try {

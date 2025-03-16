@@ -12,6 +12,6 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 
 
-builder.Services.AddBlazorDB(BlazorInteropMode.WASM);
+builder.Services.AddBlazorDB(BlazorInteropMode.WASM, builder.HostEnvironment.IsDevelopment());
 
 await builder.Build().RunAsync();

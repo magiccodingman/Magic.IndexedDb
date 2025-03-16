@@ -14,11 +14,11 @@ import Dexie from "./dexie/dexie.js";
  */
 
 
-export async function initializeMagicMigration() {
-    const { MagicMigration } = await import('/magicMigration.js');  // Dynamically import it
-    const magicMigration = new MagicMigration(db);  // Pass only Dexie.js
-    magicMigration.Initialize();  // Call method (optional)
-}
+//export async function initializeMagicMigration() {
+//    const { MagicMigration } = await import('/magicMigration.js');  // Dynamically import it
+//    const magicMigration = new MagicMigration(db);  // Pass only Dexie.js
+//    magicMigration.Initialize();  // Call method (optional)
+//}
 
 let databases = new Map(); // Change array to a Map
 
@@ -33,7 +33,7 @@ async function getDb(dbName) {
 }
 
 
-export function createDb(dbName, storeSchemas) {
+/*export function createDb(dbName, storeSchemas) {
     console.log(`Creating database: ${dbName}`);
 
     if (databases.has(dbName)) {
@@ -66,8 +66,64 @@ export function createDb(dbName, storeSchemas) {
     db.version(1).stores(stores);
     databases.set(dbName, { name: dbName, db: db, isOpen: false });
     return db;
-}
+}*/
 
+
+export function createDb(dbStore) {
+    console.log("Debug: Received dbStore in createDb", dbStore);
+
+    if (!dbStore || !dbStore.name) {
+        console.error("Blazor.IndexedDB.Framework - Invalid dbStore provided");
+        return;
+    }
+
+    const dbName = dbStore.name;
+
+    if (databases.has(dbName)) {
+        console.warn(`Blazor.IndexedDB.Framework - Database "${dbName}" already exists`);
+        return;
+    }
+
+    const db = new Dexie(dbName);
+    const stores = {};
+
+    for (let i = 0; i < dbStore.storeSchemas.length; i++) {
+        const schema = dbStore.storeSchemas[i];
+
+        if (!schema || schema.tableName !== 'Person') {
+            console.error(`Invalid schema at index ${i}:`, schema);
+            continue;
+        }
+
+        let def = "";
+
+        if (schema.primaryKeyAuto) def += "++";
+        if (schema.primaryKey) def += schema.primaryKey;
+
+        if (Array.isArray(schema.uniqueIndexes)) {
+            for (let j = 0; j < schema.uniqueIndexes.length; j++) {
+                def += `,&${schema.uniqueIndexes[j]}`;
+            }
+        }
+
+        if (Array.isArray(schema.indexes)) {
+            for (let j = 0; j < schema.indexes.length; j++) {
+                def += `,${schema.indexes[j]}`;
+            }
+        }
+
+        stores[schema.tableName = 'Person'] = def;
+    }
+
+    db.version(dbStore.version).stores(stores);
+
+    // Store the database in the Map (overwriting if it already exists)
+    databases.set(dbName, db);
+
+    db.open().catch(error => {
+        console.error(`Failed to open IndexedDB for "${dbName}":`, error);
+    });
+}
 
 /**
  * Creates multiple databases based on an array of dbStores.
@@ -1034,10 +1090,6 @@ async function runMetaDataCursorQuery(table, conditions, queryAdditions, yielded
     debugLog("Primary Key List Collected", { count: primaryKeyList.length });
     return primaryKeyList;
 }
-
-
-
-
 
 /**
  *  Applies a single filtering condition on a record.
