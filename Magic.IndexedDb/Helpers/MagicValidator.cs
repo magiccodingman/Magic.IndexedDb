@@ -8,12 +8,14 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Helpers
 {
-    internal static class MagicValidator
+    public static class MagicValidator
     {
-        public static void ValidateTables()
+        public static void ValidateTables(List<Type>? magicTableClasses = null)
         {
             var errors = new StringBuilder();
-            var magicTableClasses = SchemaHelper.GetAllMagicTables();
+
+            if (magicTableClasses == null)
+                magicTableClasses = SchemaHelper.GetAllMagicTables();
 
 
             foreach (var type in magicTableClasses)
@@ -136,7 +138,7 @@ namespace Magic.IndexedDb.Helpers
                         // Extract and log the **actual** exception instead of the generic wrapper
                         errors.AppendLine($"Error: Class '{type.Name}' encountered an issue when calling 'GetCompoundKey()' or 'GetCompoundIndexes()'. Exception: {tie.InnerException.Message}");
                     }
-                }                
+                }
             }
 
             if (errors.Length > 0)

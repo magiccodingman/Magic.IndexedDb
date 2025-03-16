@@ -8,11 +8,8 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb
+namespace Magic.IndexedDb.Models
 {
-
-
-
     internal class InternalMagicCompoundIndex<T> : IMagicCompoundIndex
     {
         public string[] ColumnNamesInCompoundIndex { get; }

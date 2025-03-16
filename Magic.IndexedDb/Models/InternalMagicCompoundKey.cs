@@ -8,7 +8,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb
+namespace Magic.IndexedDb.Models
 {
     internal class InternalMagicCompoundKey<T> : IMagicCompoundKey
     {

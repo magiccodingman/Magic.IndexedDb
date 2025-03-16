@@ -1,6 +1,7 @@
 ﻿using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.JSInterop;
@@ -8,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
@@ -43,10 +45,7 @@ namespace Magic.IndexedDb
 
             if (isDebug)
             {
-                MagicValidator.ValidateTables();
-                string currentDirectory = Directory.GetCurrentDirectory();
-                var alltables = SchemaHelper.GetAllSchemas();
-                var sdf = 3;
+                Magic.IndexedDb.Helpers.MagicValidator.ValidateTables();
             }
 
             return services;
