@@ -9,6 +9,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Magic.IndexedDb.Extensions
 {
@@ -56,8 +57,22 @@ namespace Magic.IndexedDb.Extensions
         internal async Task<T?> CallInvokeDefaultJsAsync<T>(string modulePath, string functionName,
             params object[] args)
         {
-            var response = await _jsModule.InvokeAsync<T>("JsHandler", modulePath, functionName, args);
+            return await TrueCallInvokeDefaultJsAsync<T>(modulePath, functionName, false, args);
+        }
+
+        private async Task<T?> TrueCallInvokeDefaultJsAsync<T>(string modulePath, string functionName,
+            bool isVoid,
+            params object[] args)
+        {
+            var response = await _jsModule.InvokeAsync<T>("JsHandler", isVoid, modulePath, functionName, args);
             return response;
+        }
+
+
+        internal async Task CallInvokeVoidDefaultJsAsync(string modulePath, string functionName,
+            params object[] args)
+        {
+            await TrueCallInvokeDefaultJsAsync<bool>(modulePath, functionName, true, args);
         }
 
         internal async IAsyncEnumerable<T?> CallYieldJsAsync<T>(

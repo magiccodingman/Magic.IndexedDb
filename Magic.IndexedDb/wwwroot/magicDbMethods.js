@@ -29,7 +29,7 @@ async function getModule(modulePath) {
 
 export async function JsHandler(isVoid, modulePath, methodName, parameters) {
     try {
-        const module = await importModule(modulePath);
+        const module = await getModule(modulePath);
 
         if (typeof module[methodName] !== "function") {
             throw new Error(`Method '${methodName}' not found in module '${modulePath}'`);

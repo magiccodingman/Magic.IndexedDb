@@ -16,7 +16,8 @@ using Magic.IndexedDb.Models.UniversalOperations;
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
     internal class MagicQueryExtensions<T> :
-        IMagicQueryPaginationTake<T>, IMagicQueryOrderable<T>, IMagicQueryFinal<T>
+        IMagicQueryPaginationTake<T>, IMagicQueryOrderable<T>, 
+        IMagicQueryOrderableTable<T>, IMagicQueryFinal<T>
         where T : class
     {
         public MagicQuery<T> MagicQuery { get; set; }
@@ -90,6 +91,41 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             return new MagicQueryExtensions<T>(_MagicQuery);
         }
 
+        public async Task<T?> FirstOrDefaultAsync()
+        {
+            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
+            StoredMagicQuery smq = new StoredMagicQuery();
+            smq.additionFunction = MagicQueryFunctions.First;
+            _MagicQuery.StoredMagicQueries.Add(smq);
+            
+            var items = await new MagicQueryExtensions<T>(_MagicQuery).ToListAsync();
+            return items.FirstOrDefault();
+        }
+
+        public async Task<T?> LastOrDefaultAsync()
+        {
+            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
+            StoredMagicQuery smq = new StoredMagicQuery();
+            smq.additionFunction = MagicQueryFunctions.Last;
+            _MagicQuery.StoredMagicQueries.Add(smq);
+            var items = await new MagicQueryExtensions<T>(_MagicQuery).ToListAsync();
+            return items.LastOrDefault();
+        }
+
+        public async Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>> predicate)
+        {
+            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
+            _MagicQuery.Predicates.Add(predicate);
+            return await new MagicQueryExtensions<T>(_MagicQuery).FirstOrDefaultAsync();
+        }
+
+        public async Task<T?> LastOrDefaultAsync(Expression<Func<T, bool>> predicate)
+        {
+            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
+            _MagicQuery.Predicates.Add(predicate);
+            return await new MagicQueryExtensions<T>(_MagicQuery).LastOrDefaultAsync();
+        }
+
         public IMagicQueryFinal<T> TakeLast(int amount)
         {
             var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
@@ -111,7 +147,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         }
 
         // Not currently available in Dexie version 1,2, or 3
-        public IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate)
+        public IMagicQueryOrderableTable<T> OrderBy(Expression<Func<T, object>> predicate)
         {
             var memberExpression = GetMemberExpressionFromLambda(predicate);
             var propertyInfo = memberExpression.Member as PropertyInfo;
@@ -137,7 +173,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         }
 
         // Not currently available in Dexie version 1,2, or 3
-        public IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate)
+        public IMagicQueryOrderableTable<T> OrderByDescending(Expression<Func<T, object>> predicate)
         {
             var memberExpression = GetMemberExpressionFromLambda(predicate);
             var propertyInfo = memberExpression.Member as PropertyInfo;

@@ -95,14 +95,32 @@ namespace Magic.IndexedDb
         public IMagicQueryFinal<T> Skip(int amount)
             => new MagicQueryExtensions<T>(this).Skip(amount);
 
-        public IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate)
-            =>  new MagicQueryExtensions<T>(this).OrderBy(predicate);
+        public IMagicQueryOrderableTable<T> OrderBy(Expression<Func<T, object>> predicate)
+            => new MagicQueryExtensions<T>(this).OrderBy(predicate);
 
-        public IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate)
+        public IMagicQueryOrderableTable<T> OrderByDescending(Expression<Func<T, object>> predicate)
             => new MagicQueryExtensions<T>(this).OrderByDescending(predicate);
+
+        IMagicQueryOrderable<T> IMagicQueryStaging<T>.OrderBy(Expression<Func<T, object>> predicate)
+            => OrderBy(predicate); 
+
+        IMagicQueryOrderable<T> IMagicQueryStaging<T>.OrderByDescending(Expression<Func<T, object>> predicate)
+            => OrderByDescending(predicate);
 
         public IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate)
             => new MagicCursor<T>(this).Cursor(predicate);
+
+        public async Task<T?> FirstOrDefaultAsync()
+           => await new MagicQueryExtensions<T>(this).FirstOrDefaultAsync();
+
+        public async Task<T?> LastOrDefaultAsync()
+           => await new MagicQueryExtensions<T>(this).LastOrDefaultAsync();
+
+        public async Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>> predicate)
+           => await new MagicQueryExtensions<T>(this).FirstOrDefaultAsync(predicate);
+
+        public async Task<T?> LastOrDefaultAsync(Expression<Func<T, bool>> predicate)
+           => await new MagicQueryExtensions<T>(this).LastOrDefaultAsync(predicate);
 
         public async IAsyncEnumerable<T> AsAsyncEnumerable(
     [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -116,6 +134,11 @@ namespace Magic.IndexedDb
 
         public async Task<List<T>> ToListAsync()
             => await new MagicQueryExtensions<T>(this).ToListAsync();
+
+        public async Task<int> CountAsync()
+        {
+            return await Manager.CountEntireTableAsync<int>(SchemaName, DatabaseName);
+        }
 
         public async Task AddRangeAsync(
             IEnumerable<T> records, CancellationToken cancellationToken = default)
@@ -150,6 +173,11 @@ namespace Magic.IndexedDb
         public async Task AddAsync(T record, CancellationToken cancellationToken = default)
         {
             _ = await Manager.AddAsync<T, JsonElement>(record, DatabaseName, cancellationToken);
+        }
+
+        public async Task ClearTable()
+        {
+            await Manager.ClearTableAsync(SchemaName, DatabaseName);
         }
     }
 }

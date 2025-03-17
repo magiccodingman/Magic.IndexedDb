@@ -107,6 +107,14 @@ namespace Magic.IndexedDb
                 IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
+        internal async Task<int> CountEntireTableAsync<T>(string schemaName, string dbName)
+        {
+            return await new MagicJsInvoke(_jsModule).CallInvokeDefaultJsAsync<int>(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.COUNT_TABLE,
+                dbName, schemaName
+                );
+        }
+
         internal async Task<int> UpdateRangeAsync<T>(
     IEnumerable<T> items, string dbName,
     CancellationToken cancellationToken = default) where T : class
@@ -247,10 +255,10 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="storeName"></param>
         /// <returns></returns>
-        internal Task ClearTableAsync(string storeName, string dbName, CancellationToken cancellationToken = default)
+        internal Task ClearTableAsync(string storeName, string dbName)
         {
-            return new MagicJsInvoke(_jsModule).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.CLEAR_TABLE, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(dbName), new TypedArgument<string>(storeName) });
+            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
+                IndexedDbFunctions.CLEAR_TABLE, dbName, storeName);
         }
 
 

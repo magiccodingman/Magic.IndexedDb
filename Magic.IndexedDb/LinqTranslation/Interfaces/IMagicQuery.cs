@@ -25,6 +25,14 @@ namespace Magic.IndexedDb
 
         IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate);
 
+        Task<T?> FirstOrDefaultAsync();
+        Task<T?> LastOrDefaultAsync();
+
+        Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>> predicate);
+        Task<T?> LastOrDefaultAsync(Expression<Func<T, bool>> predicate);
+
+        Task<int> CountAsync();
+
         IMagicQueryPaginationTake<T> Take(int amount);
         IMagicQueryFinal<T> TakeLast(int amount);
         IMagicQueryFinal<T> Skip(int amount);
@@ -34,14 +42,14 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="predicate"></param>
         /// <returns></returns>
-        IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate);
+        IMagicQueryOrderableTable<T> OrderBy(Expression<Func<T, object>> predicate);
 
         /// <summary>
         /// This always orders by descending by the primary key first, then by whatever is appended afterwards
         /// </summary>
         /// <param name="predicate"></param>
         /// <returns></returns>
-        IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate);
+        IMagicQueryOrderableTable<T> OrderByDescending(Expression<Func<T, object>> predicate);
 
         Task AddRangeAsync(IEnumerable<T> records, CancellationToken cancellationToken = default);
 
@@ -54,5 +62,6 @@ namespace Magic.IndexedDb
         Task<int> DeleteRangeAsync(IEnumerable<T> items, CancellationToken cancellationToken = default);
 
         Task AddAsync(T record, CancellationToken cancellationToken = default);
+        Task ClearTable();
     }
 }

@@ -20,6 +20,8 @@ namespace Magic.IndexedDb
         IMagicQueryPaginationTake<T> Take(int amount);
         IMagicQueryFinal<T> TakeLast(int amount);
         IMagicQueryFinal<T> Skip(int amount);
+        Task<T?> FirstOrDefaultAsync();
+        Task<T?> LastOrDefaultAsync();
 
         /// <summary>
         /// In memory processing from this point forward! IndexDB 

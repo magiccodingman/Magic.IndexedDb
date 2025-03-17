@@ -51,5 +51,11 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
         public async Task<List<T>> ToListAsync()
             => await new MagicQueryExtensions<T>(MagicQuery).ToListAsync();
+
+        public async Task<T?> FirstOrDefaultAsync()
+           => await new MagicQueryExtensions<T>(MagicQuery).FirstOrDefaultAsync();
+
+        public async Task<T?> LastOrDefaultAsync()
+           => await new MagicQueryExtensions<T>(MagicQuery).LastOrDefaultAsync();
     }
 }

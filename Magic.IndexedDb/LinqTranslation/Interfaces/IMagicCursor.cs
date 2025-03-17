@@ -22,6 +22,9 @@ namespace Magic.IndexedDb
         IMagicCursorStage<T> TakeLast(int amount);
         IMagicCursorSkip<T> Skip(int amount);
 
+        Task<T?> FirstOrDefaultAsync();
+        Task<T?> LastOrDefaultAsync();
+
         /// <summary>
         /// This always orders first by the primary key, then by whatever is appended afterwards
         /// </summary>
