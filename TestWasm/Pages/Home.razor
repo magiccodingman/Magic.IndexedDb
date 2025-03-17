@@ -461,13 +461,6 @@
                                      .ToListAsync(),
                     allPeople.Where(x => x.TestInt > 2).OrderBy(x => x._Id).ThenBy(x => x._Id).TakeLast(2));
 
-                // RunTest("Where + OrderBy + Skip + TakeLast",
-                //     await personQuery.Where(x => x._Age > 20)
-                //                      .OrderBy(x => x._Age)
-                //                      .TakeLast(2)
-                //                      .ToListAsync(),
-                //     allPeople.Where(x => x._Age > 20).OrderBy(x => x._Age).TakeLast(2));
-
                 RunTest("Paginated Index Query with AND Condition",
                 await personQuery.Where(x => x.TestInt > 2 && x.TestInt == 9)
                                  .OrderBy(x => x._Id)
@@ -490,7 +483,7 @@
 
 
 
-                // not yet supported
+                // ends with not yet supported
                 // // 🔀 Complex AND/OR Mix (Nested Multiple Layers)
                 // RunTest("Deeply Nested AND within OR",
                 //     await personQuery.Where(x => (x._Age > 30 && (x.TestInt == 9 || x.Name.StartsWith("J"))) || (x.TestInt == 3 && x.Name.EndsWith("b", StringComparison.OrdinalIgnoreCase)))
