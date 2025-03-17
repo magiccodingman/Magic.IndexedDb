@@ -19,7 +19,6 @@ namespace TestWasm.Models
             CreateCompoundIndex(x => x.GUIY, x => x._Id)
             };
 
-        //public IMagicCompoundIndex? GetCompoundKey() => null;
         public IMagicCompoundKey? GetCompoundKey() => 
             CreateCompoundKey(x => x.Name, x => x.DateOfBirth);
 

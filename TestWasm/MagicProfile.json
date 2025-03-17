@@ -1,0 +1,15 @@
+{
+  "HasCompletedBasicConfiguration": true,
+  "RunDatabaseFirstScaffolding": false,
+  "RunMagicIndexedDbScaffolding": true,
+  "DbContextClassName": null,
+  "RunSeparateVirtualProperties": null,
+  "ModelsDirectoryPath": null,
+  "SeparateVirtualPropertiesPath": null,
+  "RunShareProtocol": false,
+  "RunFlatteningProtocol": false,
+  "ShareProjectPath": null,
+  "FlattenProjectPath": "",
+  "PasswordHash": null,
+  "_id": "080bac06-1137-4354-a3fe-d5a43acd9687"
+}

@@ -84,10 +84,34 @@ Large Refactor notes:
 [] How to build your repository system
 
 [] Self validation to keep you safe
+
+[] Document that you now must specify primary key if it increments or not.
+	- We could also auto build in for users auto incrementing Guid's or other if they wanted on C#'s side.
 ### Showcase
 new setup to add wasm, signalR or override and service setup
 
 [] Document wwwroot migration system with server based wwwroot for Hybrid Blazor.
+
+[] Handles column additions, consistent nullable, and more.
+	- Tracks cursor found order to keep database row order logic consistent with take, skip, take last, etc grabs along with indexed queries. 
+
+[] Added "Count"
+# Must DO
+[] Describe translated intent
+[] Validate updates, deletes, and the other methods
+
+[] Setup the AutoIncrement to work on db store!
+
+[] Import Profile
+[] Exit setting change
+[] Allow multiple net frameworks into compilation!
+
+[] Allow bypassing assembly check if they know it's been ran.
+
+[] Interfaces that protect you
+
+# Potential
+[] We could also auto build in for users auto incrementing Guid's or other if they wanted on C#'s side.
 
 # To Do
 [] Validate all instances being utilized in indexDB is asyncrounous
