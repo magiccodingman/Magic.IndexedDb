@@ -506,7 +506,7 @@ export async function* magicQueryYield(dbName, storeName, nestedOrFilter, queryA
 
 
     // partition function to correctly separate IndexedDB vs. Cursor**
-    let { indexedQueries, cursorConditions } =
+    let { indexedQueries, compoundIndexQueries, cursorConditions } =
         partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, dbName, storeName, requiresCursor);
 
     debugLog("Final Indexed Queries vs. Cursor Queries", { indexedQueries, cursorConditions });
@@ -577,13 +577,10 @@ function cleanNestedOrFilter(filter) {
 function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, dbName, storeName, requiresCursor) {
     debugLog("Partitioning query conditions", { nestedOrFilter, queryAdditions, requiresCursor });
 
-    // Indexed Queries will store fully indexed AND groups that can be optimized with IndexedDB
-    let indexedQueries = [];
+    let indexedQueries = [];        // Fully indexed single-property queries
+    let compoundIndexQueries = [];  // Fully or partially compound-indexed queries
+    let cursorConditions = [];      // Queries that must be processed manually in JavaScript
 
-    // Cursor Conditions will store AND groups that must be processed manually in JavaScript
-    let cursorConditions = [];
-
-    // If requiresCursor is true, skip processing and send everything to cursor-based execution
     if (requiresCursor) {
         debugLog("Forcing all conditions to use cursor due to validation.");
         for (const orGroup of nestedOrFilter.orGroups || []) {
@@ -593,95 +590,123 @@ function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, db
                 }
             }
         }
-        return { indexedQueries: [], cursorConditions }; // Ensure all goes to cursor
+        return { indexedQueries: [], compoundIndexQueries: [], cursorConditions };
     }
 
-    /**
-     * Iterate over the structured OR groups (|| logic)
-     */
     for (const orGroup of nestedOrFilter.orGroups || []) {
         if (!orGroup.andGroups || orGroup.andGroups.length === 0) continue;
 
-        for (const andGroup of orGroup.andGroups) { // Each OR group contains multiple AND conditions
+        for (const andGroup of orGroup.andGroups) {
             if (!andGroup.conditions || andGroup.conditions.length === 0) continue;
 
             let indexedConditions = [];
+            let compoundConditions = [];
             let needsCursor = false;
 
-            for (const condition of andGroup.conditions) { // Each condition within the AND group
-                // Ensure the condition is valid
+            let matchedCompoundKey = null;
+            let matchedCompoundKeyFields = new Set();
+            let usedCompoundKeySet = new Set();
+            let singleFieldConditions = [];
+
+            for (const condition of andGroup.conditions) {
                 if (!condition || typeof condition !== "object" || !condition.operation) {
                     debugLog("Skipping invalid condition", { condition });
                     continue;
                 }
 
-                // Determine if this condition is indexed
                 const schema = indexCache[dbName][storeName];
                 const isPrimaryKey = condition.property === schema.primaryKey;
-                const isUniqueKey = schema.uniqueKeys.has(condition.property); // Detect unique keys
-                const isStandaloneIndex = schema.indexes[condition.property]; // Explicitly indexed
+                const isUniqueKey = schema.uniqueKeys.has(condition.property);
+                const isStandaloneIndex = schema.indexes[condition.property];
 
-                // Check if part of a compound key
-                const isPartOfCompoundKey = [...schema.compoundKeys.values()].some(keySet => keySet.has(condition.property));
+                // Detect if this condition belongs to a **compound index**
+                let isPartOfCompoundKey = false;
+                let compoundKeyFields = null;
 
-                // Allow index usage only if all required compound key fields are present
-                const isValidCompoundQuery = isPartOfCompoundKey
-                    ? [...schema.compoundKeys.entries()].some(([_, keySet]) =>
-                        keySet.has(condition.property) && [...keySet].every(field => queryFields.has(field))
-                    ) : false;
+                for (const [compoundKey, fieldSet] of schema.compoundKeys.entries()) {
+                    if (fieldSet.has(condition.property)) {
+                        isPartOfCompoundKey = true;
+                        compoundKeyFields = fieldSet;
+                        if (!matchedCompoundKey || matchedCompoundKey === compoundKey) {
+                            matchedCompoundKey = compoundKey;
+                            matchedCompoundKeyFields.add(condition.property);
+                        }
+                        break;
+                    }
+                }
+
+                // Check if **all fields of a compound key are provided in order**
+                let isValidFullCompoundQuery = false;
+                if (matchedCompoundKey && compoundKeyFields) {
+                    const compoundFieldArray = [...compoundKeyFields];
+                    const matchedFieldsArray = [...matchedCompoundKeyFields];
+
+                    if (compoundFieldArray.length === matchedFieldsArray.length &&
+                        compoundFieldArray.every((field, index) => field === matchedFieldsArray[index])) {
+                        isValidFullCompoundQuery = true;
+                        usedCompoundKeySet.add(matchedCompoundKey); // Mark this compound key as used
+                    }
+                }
+
+                // Check if **partial compound index is still valid (leading fields match)**
+                let isValidPartialCompoundQuery = false;
+                if (matchedCompoundKey && compoundKeyFields) {
+                    const compoundFieldArray = [...compoundKeyFields];
+                    const matchedFieldsArray = [...matchedCompoundKeyFields];
+
+                    if (matchedFieldsArray.length > 0 && compoundFieldArray.length > matchedFieldsArray.length &&
+                        compoundFieldArray.slice(0, matchedFieldsArray.length).every((field, index) => field === matchedFieldsArray[index])) {
+                        isValidPartialCompoundQuery = true;
+                    }
+                }
 
                 // Final Indexed Check
-                const isIndexed = isPrimaryKey || isUniqueKey || isStandaloneIndex;
-
-
+                const isIndexed = isPrimaryKey || isUniqueKey || isStandaloneIndex || isValidFullCompoundQuery || isValidPartialCompoundQuery;
                 condition.isIndex = isIndexed;
 
-                /**
-                 * If even **one** condition in an AND group is not indexed,
-                 * we **must** process the entire AND group using a cursor.
-                 */
+                // If even one condition cannot be indexed, send **the entire AND group** to cursor execution
                 if (!isIndexed || !isSupportedIndexedOperation([condition])) {
                     needsCursor = true;
-                    break; // Stop processing and mark this entire AND group for cursors
+                    break;
+                } else if (isValidFullCompoundQuery || isValidPartialCompoundQuery) {
+                    compoundConditions.push(condition);
                 } else {
-                    indexedConditions.push(condition);
+                    singleFieldConditions.push(condition);
                 }
             }
 
-            /**
-             * If **any condition in an AND group** requires a cursor, 
-             * we push the **entire AND group** to `cursorConditions`.
-             * 
-             * Otherwise, if **all conditions were indexed**, we push 
-             * them to `indexedQueries` for optimized IndexedDB execution.
-             */
             if (needsCursor) {
                 cursorConditions.push(andGroup.conditions);
+            } else if (compoundConditions.length > 0) {
+                compoundIndexQueries.push(compoundConditions);
             } else {
-                indexedQueries.push(indexedConditions);
+                indexedQueries.push(singleFieldConditions);
             }
         }
     }
 
     /**
-     * **Final Check:** If any of the query additions (`TAKE`, `SKIP`, `TAKE_LAST`) exist,
-     * we must ensure there is only **one** indexed query. If multiple exist, we force everything to cursor.
+     * **Final Check:** If any query additions (`TAKE`, `SKIP`, etc.) exist and there are multiple indexed queries,
+     * force all queries (including compound index queries) to cursor execution.
      */
     const hasTakeOrSkipOrFirstOrLast = queryAdditions.some(addition =>
         [QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE_LAST,
-            QUERY_ADDITIONS.LAST, QUERY_ADDITIONS.FIRST].includes(addition.additionFunction)
+        QUERY_ADDITIONS.LAST, QUERY_ADDITIONS.FIRST].includes(addition.additionFunction)
     );
 
-    if (hasTakeOrSkipOrFirstOrLast && indexedQueries.length !== 1) {
-        debugLog("Multiple indexed queries or cursor usage detected with TAKE/SKIP, forcing all to cursor.");
-        cursorConditions = [...cursorConditions, ...indexedQueries]; // Move all indexed queries to cursor
-        indexedQueries = []; // Clear indexed queries since we can't trust multiple indexes with take/skip
+    if (hasTakeOrSkipOrFirstOrLast && (indexedQueries.length + compoundIndexQueries.length) > 1) {
+        debugLog("Multiple indexed/compound queries detected with TAKE/SKIP, forcing all to cursor.");
+        cursorConditions = [...cursorConditions, ...indexedQueries, ...compoundIndexQueries];
+        indexedQueries = [];
+        compoundIndexQueries = [];
     }
 
-    debugLog("Partitioned Queries", { indexedQueries, cursorConditions });
+    debugLog("Partitioned Queries", { indexedQueries, compoundIndexQueries, cursorConditions });
 
-    return { indexedQueries, cursorConditions };
+    return { indexedQueries, compoundIndexQueries, cursorConditions };
 }
+
+
 
 
 
