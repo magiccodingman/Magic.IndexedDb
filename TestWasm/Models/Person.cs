@@ -17,12 +17,7 @@ namespace TestWasm.Models
         public List<IMagicCompoundIndex> GetCompoundIndexes() =>
             new List<IMagicCompoundIndex>() {
             CreateCompoundIndex(x => x.TestIntStable2, x => x.Name)
-            };
-
-        public IMagicCompoundKey? GetCompoundKey() =>
-            null;// CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);
-
-        
+            };        
 
         public string GetTableName() => "Person";
         public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;
