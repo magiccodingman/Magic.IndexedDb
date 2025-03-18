@@ -16,11 +16,13 @@ namespace TestWasm.Models
     {
         public List<IMagicCompoundIndex> GetCompoundIndexes() =>
             new List<IMagicCompoundIndex>() {
-            CreateCompoundIndex(x => x.GUIY, x => x._Id)
+            CreateCompoundIndex(x => x.TestIntStable2, x => x.Name)
             };
 
-        public IMagicCompoundKey? GetCompoundKey() => 
-            CreateCompoundKey(x => x.Name, x => x.DateOfBirth);
+        public IMagicCompoundKey? GetCompoundKey() =>
+            null;// CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);
+
+        
 
         public string GetTableName() => "Person";
         public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;
@@ -30,6 +32,10 @@ namespace TestWasm.Models
             public readonly IndexedDbSet Client = IndexDbContext.Client;
             public readonly IndexedDbSet Employee = IndexDbContext.Employee;
         }
+
+
+        public int TestIntStable { get; set; }
+        public int TestIntStable2 { get; set; } = 10;
 
         public Nested Nested { get; set; } = new Nested();
 
