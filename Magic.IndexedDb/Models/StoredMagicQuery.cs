@@ -20,8 +20,21 @@ namespace Magic.IndexedDb.Models
     }
     public class StoredMagicQuery
     {
-        public string? Name { get; set; }
-        public int IntValue { get; set; } = 0;
-        public string? StringValue { get; set; }
+        /// <summary>
+        /// additionFunction string name
+        /// </summary>
+        public string? additionFunction { get; set; }
+
+
+        /// <summary>
+        /// The int value for take, skip, and take last
+        /// </summary>
+        public int intValue { get; set; } = 0;
+
+
+        /// <summary>
+        /// The property we're targetting
+        /// </summary>
+        public string? property { get; set; }
     }
 }

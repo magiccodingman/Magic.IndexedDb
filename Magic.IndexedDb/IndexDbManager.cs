@@ -12,115 +12,58 @@ using Magic.IndexedDb.Interfaces;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using Microsoft.Extensions.Options;
 using Magic.IndexedDb.Extensions;
+using System.Runtime.CompilerServices;
+using Magic.IndexedDb.Models.UniversalOperations;
 
 namespace Magic.IndexedDb
 {
     /// <summary>
     /// Provides functionality for accessing IndexedDB from Blazor application
     /// </summary>
-    public sealed class IndexedDbManager
+    internal class IndexedDbManager
     {
-        internal static async ValueTask<IndexedDbManager> CreateAndOpenAsync(
-            DbStore dbStore, IJSObjectReference jsRuntime,
-            CancellationToken cancellationToken = default)
-        {
-            var result = new IndexedDbManager(dbStore, jsRuntime);
-            await result.CallJsAsync(IndexedDbFunctions.CREATE_DB, cancellationToken, new TypedArgument<DbStore>(dbStore));
-            return result;
-        }
-
-        readonly DbStore _dbStore;
-        readonly IJSObjectReference _jsModule;
+        private readonly IJSObjectReference _jsModule;  // Shared JS module
 
         /// <summary>
         /// Ctor
         /// </summary>
         /// <param name="dbStore"></param>
         /// <param name="jsRuntime"></param>
-        private IndexedDbManager(DbStore dbStore, IJSObjectReference jsRuntime)
+        internal IndexedDbManager(IJSObjectReference jsModule)
         {
-            this._dbStore = dbStore;
-            this._jsModule = jsRuntime;
+            _jsModule = jsModule; // Use shared JS module reference
         }
 
-        // TODO: make it readonly
-        public List<StoreSchema> Stores => this._dbStore.StoreSchemas;
-        public int CurrentVersion => _dbStore.Version;
-        public string DbName => _dbStore.Name;
+        //public string DbName => _dbStore.Name;
 
         /// <summary>
         /// Deletes the database corresponding to the dbName passed in
         /// </summary>
         /// <param name="dbName">The name of database to delete</param>
         /// <returns></returns>
-        public Task DeleteDbAsync(string dbName, CancellationToken cancellationToken = default)
+        internal Task DeleteDbAsync(string dbName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(dbName))
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return CallJsAsync(IndexedDbFunctions.DELETE_DB, cancellationToken, new TypedArgument<string>(dbName));
+            return new MagicJsInvoke(_jsModule).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_DB, cancellationToken, new TypedArgument<string>(dbName));
         }
 
-        public async Task AddAsync<T>(T record, CancellationToken cancellationToken = default) where T : class
+        internal async Task<TKey> AddAsync<T, TKey>(T record, string dbName, CancellationToken cancellationToken = default) where T : class
         {
-            _ = await AddAsync<T, JsonElement>(record, cancellationToken);
-        }
-
-        public async Task<TKey> AddAsync<T, TKey>(T record, CancellationToken cancellationToken = default) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
 
             StoreRecord<T?> RecordToSend = new StoreRecord<T?>()
             {
-                DbName = this.DbName,
+                DbName = dbName,
                 StoreName = schemaName,
                 Record = record
             };
-            return await CallJsAsync<TKey>(IndexedDbFunctions.ADD_ITEM, cancellationToken, new TypedArgument<StoreRecord<T?>>(RecordToSend));
+            return await new MagicJsInvoke(_jsModule).CallJsAsync<TKey>(Cache.MagicDbJsImportPath, 
+                IndexedDbFunctions.ADD_ITEM, cancellationToken, new TypedArgument<StoreRecord<T?>>(RecordToSend))
+                ?? throw new Exception($"An Error occurred trying to add your record of type: {typeof(T).Name}");
         }
-
-        [Obsolete]
-        public async Task<string> DecryptAsync(
-            string EncryptedValue, CancellationToken cancellationToken = default)
-        {
-            return "Obsolete, decryptions no longer functioning";
-            /*EncryptionFactory encryptionFactory = new EncryptionFactory(this);
-            string decryptedValue = await encryptionFactory.DecryptAsync(
-                EncryptedValue, _dbStore.EncryptionKey, cancellationToken);
-            return decryptedValue;*/
-        }
-
-        // Returns the default value for the given type
-        private static object? GetDefaultValue(Type type)
-        {
-            return type.IsValueType ? Activator.CreateInstance(type) : null;
-        }
-
-        //public async Task<Guid> AddRange<T>(IEnumerable<T> records, Action<BlazorDbEvent> action = null) where T : class
-        //{
-        //    string schemaName = SchemaHelper.GetSchemaName<T>();
-        //    var propertyMappings = ManagerHelper.GeneratePropertyMapping<T>();
-
-        //    List<object> processedRecords = new List<object>();
-        //    foreach (var record in records)
-        //    {
-        //        object processedRecord = await ProcessRecord(record);
-
-        //        if (processedRecord is ExpandoObject)
-        //        {
-        //            var convertedRecord = ((ExpandoObject)processedRecord).ToDictionary(kv => kv.Key, kv => (object)kv.Value);
-        //            processedRecords.Add(ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings));
-        //        }
-        //        else
-        //        {
-        //            var convertedRecord = ManagerHelper.ConvertRecordToDictionary((T)processedRecord);
-        //            processedRecords.Add(ManagerHelper.ConvertPropertyNamesUsingMappings(convertedRecord, propertyMappings));
-        //        }
-        //    }
-
-        //    return await BulkAddRecord(schemaName, processedRecords, action);
-        //}
 
         /// <summary>
         /// Adds records/objects to the specified store in bulk
@@ -129,404 +72,178 @@ namespace Magic.IndexedDb
         /// <typeparam name="T"></typeparam>
         /// <param name="recordsToBulkAdd">An instance of StoreRecord that provides the store name and the data to add</param>
         /// <returns></returns>
-        private Task BulkAddRecordAsync<T>(
-            string storeName,
+        internal Task BulkAddRecordAsync<T>(
+            string storeName, string dbName,
             IEnumerable<T> recordsToBulkAdd,
             CancellationToken cancellationToken = default)
         {
             // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
-            return CallJsAsync(IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName),
+            return new MagicJsInvoke(_jsModule).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
+                new ITypedArgument[] { new TypedArgument<string>(dbName),
                     new TypedArgument<string>(storeName),
                     new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
         }
 
-        public async Task AddRangeAsync<T>(
-            IEnumerable<T> records, CancellationToken cancellationToken = default) where T : class
+
+
+        internal async Task<int> UpdateAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
 
-            await BulkAddRecordAsync(schemaName, records, cancellationToken);
-        }
-
-        public async Task<int> UpdateAsync<T>(T item, CancellationToken cancellationToken = default) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-
-            object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
+            List<PrimaryKeys> primaryKeyValue = AttributeHelpers.GetPrimaryKeys<T>(item);
             if (primaryKeyValue is null)
                 throw new ArgumentException("Item being updated must have a key.");
 
             UpdateRecord<T> record = new UpdateRecord<T>()
             {
                 Key = primaryKeyValue,
-                DbName = this.DbName,
+                DbName = dbName,
                 StoreName = schemaName,
                 Record = item
             };
 
-            return await CallJsAsync<int>(IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
+            return await new MagicJsInvoke(_jsModule).CallJsAsync<int>(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
-        public async Task<int> UpdateRangeAsync<T>(
-    IEnumerable<T> items,
+        internal async Task<int> CountEntireTableAsync<T>(string schemaName, string dbName)
+        {
+            return await new MagicJsInvoke(_jsModule).CallInvokeDefaultJsAsync<int>(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.COUNT_TABLE,
+                dbName, schemaName
+                );
+        }
+
+        internal async Task<int> UpdateRangeAsync<T>(
+    IEnumerable<T> items, string dbName,
     CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>(); 
 
             var recordsToUpdate = items.Select(item =>
             {
-                object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
+                List<PrimaryKeys> primaryKeyValue = AttributeHelpers.GetPrimaryKeys<T>(item);
                 if (primaryKeyValue is null)
                     throw new ArgumentException("Item being updated must have a key.");
 
                 return new UpdateRecord<T>()
                 {
                     Key = primaryKeyValue,
-                    DbName = this.DbName,
+                    DbName = dbName,
                     StoreName = schemaName,
                     Record = item
                 };
             });
 
-            return await CallJsAsync<int>(
+            return await new MagicJsInvoke(_jsModule).CallJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, new TypedArgument<IEnumerable<UpdateRecord<T>>>(recordsToUpdate));
         }
 
-
-        public async Task<T?> GetByIdAsync<T>(
-            object key,
-            CancellationToken cancellationToken = default) where T : class
+        internal IMagicQuery<T> Query<T>(string databaseName, string schemaName) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-
-            // Validate key type
-            AttributeHelpers.ValidatePrimaryKey<T>(key);
-
-            return await CallJsAsync<T>(
-                IndexedDbFunctions.FIND_ITEM, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName), new TypedArgument<object>(key) });
-        }
-
-        public MagicQuery<T> Where<T>(Expression<Func<T, bool>> predicate) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            MagicQuery<T> query = new MagicQuery<T>(schemaName, this);
-
-            // Preprocess the predicate to break down Any and All expressions
-            var preprocessedPredicate = PreprocessPredicate(predicate);
-            CollectBinaryExpressions(preprocessedPredicate.Body, preprocessedPredicate, query.JsonQueries);
-
+            MagicQuery<T> query = new MagicQuery<T>(databaseName, schemaName, this);
             return query;
         }
 
-        private Expression<Func<T, bool>> PreprocessPredicate<T>(Expression<Func<T, bool>> predicate)
-        {
-            var visitor = new PredicateVisitor<T>();
-            var newExpression = visitor.Visit(predicate.Body);
-
-            return Expression.Lambda<Func<T, bool>>(newExpression, predicate.Parameters);
-        }
-
-        internal async Task<IEnumerable<T>?> WhereV2Async<T>(
-            string storeName, List<string> jsonQuery, MagicQuery<T> query,
+        /// <summary>
+        /// Results do not come back in the same order.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storeName"></param>
+        /// <param name="jsonQuery"></param>
+        /// <param name="query"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        internal async Task<IEnumerable<T>?> LinqToIndexedDb<T>(
+            NestedOrFilter nestedOrFilter, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
-            string? jsonQueryAdditions = null;
-            if (query != null && query.storedMagicQueries != null && query.storedMagicQueries.Count > 0)
-            {
-                jsonQueryAdditions = MagicSerializationHelper.SerializeObject(query.storedMagicQueries.ToArray());
-            }
-
+            if (nestedOrFilter.universalFalse == true)
+                return default;
             var args = new ITypedArgument[] {
-                new TypedArgument<string>(DbName),
-                new TypedArgument<string>(storeName),
-                new TypedArgument<string[]>(jsonQuery.ToArray()),
-                new TypedArgument<string>(jsonQueryAdditions!),
-                new TypedArgument<bool?>(query?.ResultsUnique!),
+                new TypedArgument<string>(query.DatabaseName),
+                new TypedArgument<string>(query.SchemaName),
+                new TypedArgument<NestedOrFilter>(nestedOrFilter),
+                new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
+                new TypedArgument<bool>(query?.ForceCursorMode??false),
             };
 
-            return await CallJsAsync<IEnumerable<T>>
-                (IndexedDbFunctions.WHERE, cancellationToken,
+            return await new MagicJsInvoke(_jsModule).CallJsAsync<IEnumerable<T>>
+                (Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_ASYNC, cancellationToken,
                 args);
         }
 
-        private void CollectBinaryExpressions<T>(Expression expression, Expression<Func<T, bool>> predicate, List<string> jsonQueries) where T : class
-        {
-            var binaryExpr = expression as BinaryExpression;
-
-            if (binaryExpr != null && binaryExpr.NodeType == ExpressionType.OrElse)
-            {
-                // Split the OR condition into separate expressions
-                var left = binaryExpr.Left;
-                var right = binaryExpr.Right;
-
-                // Process left and right expressions recursively
-                CollectBinaryExpressions(left, predicate, jsonQueries);
-                CollectBinaryExpressions(right, predicate, jsonQueries);
-            }
-            else
-            {
-                string jsonQuery = GetJsonQueryFromExpression(Expression.Lambda<Func<T, bool>>(expression, predicate.Parameters));
-                jsonQueries.Add(jsonQuery);
-            }
-        }
-
-        private object ConvertValueToType(object value, Type targetType)
-        {
-            if (targetType == typeof(Guid) && value is string stringValue)
-            {
-                return Guid.Parse(stringValue);
-            }
-            if (targetType.IsEnum)
-            {
-                return Enum.ToObject(targetType, Convert.ToInt64(value));
-            }
-
-            var nullableType = Nullable.GetUnderlyingType(targetType);
-            if (nullableType != null)
-            {
-                // It's nullable
-                if (value == null)
-                    return null;
-
-                return Convert.ChangeType(value, nullableType);
-            }
-            return Convert.ChangeType(value, targetType);
-        }
-
-        private string GetJsonQueryFromExpression<T>(Expression<Func<T, bool>> predicate) where T : class
-        {
-            var serializerSettings = new MagicJsonSerializationSettings
-            {
-                UseCamelCase = true // Equivalent to setting CamelCasePropertyNamesContractResolver
-            };
-
-            var conditions = new List<JsonObject>();
-            var orConditions = new List<List<JsonObject>>();
-
-            void TraverseExpression(Expression expression, bool inOrBranch = false)
-            {
-                if (expression is BinaryExpression binaryExpression)
-                {
-                    if (binaryExpression.NodeType == ExpressionType.AndAlso)
-                    {
-                        TraverseExpression(binaryExpression.Left, inOrBranch);
-                        TraverseExpression(binaryExpression.Right, inOrBranch);
-                    }
-                    else if (binaryExpression.NodeType == ExpressionType.OrElse)
-                    {
-                        if (inOrBranch)
-                        {
-                            throw new InvalidOperationException("Nested OR conditions are not supported.");
-                        }
-
-                        TraverseExpression(binaryExpression.Left, !inOrBranch);
-                        TraverseExpression(binaryExpression.Right, !inOrBranch);
-                    }
-                    else
-                    {
-                        AddCondition(binaryExpression, inOrBranch);
-                    }
-                }
-                else if (expression is MethodCallExpression methodCallExpression)
-                {
-                    AddCondition(methodCallExpression, inOrBranch);
-                }
-            }
-
-            bool IsParameterMember(Expression expression) => expression is MemberExpression { Expression: ParameterExpression };
-
-            ConstantExpression ToConstantExpression(Expression expression) =>
-                expression switch
-                {
-                    ConstantExpression constantExpression => constantExpression,
-                    MemberExpression memberExpression => Expression.Constant(Expression.Lambda(memberExpression).Compile().DynamicInvoke()),
-                    _ => throw new InvalidOperationException($"Unsupported expression type. Expression: {expression}")
-                };
-
-            void AddCondition(Expression expression, bool inOrBranch)
-            {
-                if (expression is BinaryExpression binaryExpression)
-                {
-                    var operation = binaryExpression.NodeType.ToString();
-
-                    if (IsParameterMember(binaryExpression.Left) && !IsParameterMember(binaryExpression.Right))
-                    {
-                        AddConditionInternal(
-                            binaryExpression.Left as MemberExpression,
-                            ToConstantExpression(binaryExpression.Right),
-                            operation,
-                            inOrBranch);
-                    }
-                    else if (!IsParameterMember(binaryExpression.Left) && IsParameterMember(binaryExpression.Right))
-                    {
-                        // Swap the order of the left and right expressions and the operation
-                        operation = operation switch
-                        {
-                            "GreaterThan" => "LessThan",
-                            "LessThan" => "GreaterThan",
-                            "GreaterThanOrEqual" => "LessThanOrEqual",
-                            "LessThanOrEqual" => "GreaterThanOrEqual",
-                            _ => operation
-                        };
-
-                        AddConditionInternal(
-                            binaryExpression.Right as MemberExpression,
-                            ToConstantExpression(binaryExpression.Left),
-                            operation,
-                            inOrBranch);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Unsupported binary expression. Expression: {expression}");
-                    }
-                }
-                else if (expression is MethodCallExpression methodCallExpression)
-                {
-                    if (methodCallExpression.Method.DeclaringType == typeof(string) &&
-                        (methodCallExpression.Method.Name == "Equals" || methodCallExpression.Method.Name == "Contains" || methodCallExpression.Method.Name == "StartsWith"))
-                    {
-                        var left = methodCallExpression.Object as MemberExpression;
-                        var right = ToConstantExpression(methodCallExpression.Arguments[0]);
-                        var operation = methodCallExpression.Method.Name;
-                        var caseSensitive = true;
-
-                        if (methodCallExpression.Arguments.Count > 1)
-                        {
-                            var stringComparison = methodCallExpression.Arguments[1] as ConstantExpression;
-                            if (stringComparison != null && stringComparison.Value is StringComparison comparisonValue)
-                            {
-                                caseSensitive = comparisonValue == StringComparison.Ordinal || comparisonValue == StringComparison.CurrentCulture;
-                            }
-                        }
-
-                        AddConditionInternal(left, right, operation == "Equals" ? "StringEquals" : operation, inOrBranch, caseSensitive);
-                    }
-                    else if (methodCallExpression.Method.DeclaringType == typeof(List<string>) &&
-                        methodCallExpression.Method.Name == "Contains")
-                    {
-                        var collection = ToConstantExpression(methodCallExpression.Object!);
-                        var property = methodCallExpression.Arguments[0] as MemberExpression;
-                        AddConditionInternal(property, collection, "In", inOrBranch);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Unsupported method call expression. Expression: {expression}");
-                    }
-                }
-                else
-                {
-                    throw new InvalidOperationException($"Unsupported expression type. Expression: {expression}");
-                }
-            }
-
-            void AddConditionInternal(MemberExpression? left, ConstantExpression? right, string operation, bool inOrBranch, bool caseSensitive = false)
-            {
-                if (left != null && right != null)
-                {
-                    var propertyInfo = typeof(T).GetProperty(left.Member.Name);
-                    if (propertyInfo != null)
-                    {
-                        bool _isString = false;
-                        JsonNode? valSend = null;
-                        if (right != null && right.Value != null)
-                        {
-                            valSend = JsonValue.Create(right.Value);
-                            _isString = right.Value is string;
-                        }
-
-                        var jsonCondition = new JsonObject
-            {
-                { "property", PropertyMappingCache.GetJsPropertyName<T>(propertyInfo) },
-                { "operation", operation },
-                { "value", valSend },
-                { "isString", _isString },
-                { "caseSensitive", caseSensitive }
-                        };
-
-                        if (inOrBranch)
-                        {
-                            var currentOrConditions = orConditions.LastOrDefault();
-                            if (currentOrConditions == null)
-                            {
-                                currentOrConditions = new List<JsonObject>();
-                                orConditions.Add(currentOrConditions);
-                            }
-                            currentOrConditions.Add(jsonCondition);
-                        }
-                        else
-                        {
-                            conditions.Add(jsonCondition);
-                        }
-                    }
-                }
-            }
-
-            TraverseExpression(predicate.Body);
-
-            if (conditions.Any())
-            {
-                orConditions.Add(conditions);
-            }
-
-            return MagicSerializationHelper.SerializeObject(orConditions, serializerSettings);
-        }
-
         /// <summary>
-        /// Returns Mb
+        /// Applying the returned ordering on this isn't possible to be guarenteed. 
+        /// Developer must be informed that ordering is correct in the IndexDB response 
+        /// but that the returned values may not be in the same order, so they must 
+        /// manually re-apply the ordering desired.
         /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="storeName"></param>
+        /// <param name="jsonQuery"></param>
+        /// <param name="query"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default)
+        internal async IAsyncEnumerable<T?> LinqToIndexedDbYield<T>(
+    NestedOrFilter nestedOrFilter, MagicQuery<T> query,
+    [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
         {
-            return CallJsAsync<QuotaUsage>(IndexedDbFunctions.GET_STORAGE_ESTIMATE, cancellationToken, []);
+            if (nestedOrFilter.universalFalse == true)
+                yield break; // Terminate the async iterator immediately.
+
+            var args = new ITypedArgument[] {
+        new TypedArgument<string>(query.DatabaseName),
+        new TypedArgument<string>(query.SchemaName),
+        new TypedArgument<NestedOrFilter>(nestedOrFilter),
+        new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
+        new TypedArgument<bool>(query?.ForceCursorMode??false),
+    };
+
+            // Yield results **as they arrive** from JS
+            await foreach (var item in new MagicJsInvoke(_jsModule).CallYieldJsAsync<T>(Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_YIELD, cancellationToken, args))
+            {
+                yield return item; // Stream each item immediately
+            }
         }
 
-        public async Task<IEnumerable<T>> GetAllAsync<T>(CancellationToken cancellationToken = default) where T : class
+        internal async Task DeleteAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-            return await CallJsAsync<IList<T>>(
-                IndexedDbFunctions.TOARRAY, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(schemaName) });
-        }
+            string schemaName = SchemaHelper.GetTableName<T>();
 
-        public async Task DeleteAsync<T>(T item, CancellationToken cancellationToken = default) where T : class
-        {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
-
-            object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
+            List<PrimaryKeys> primaryKeyValue = AttributeHelpers.GetPrimaryKeys<T>(item);
 
             UpdateRecord<T> record = new UpdateRecord<T>()
             {
                 Key = primaryKeyValue,
-                DbName = this.DbName,
+                DbName = dbName,
                 StoreName = schemaName,
                 Record = item
             };
 
-            await CallJsAsync(IndexedDbFunctions.DELETE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
+            await new MagicJsInvoke(_jsModule).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
-        public async Task<int> DeleteRangeAsync<T>(
-    IEnumerable<T> items, CancellationToken cancellationToken = default) where T : class
+        internal async Task<int> DeleteRangeAsync<T>(
+    IEnumerable<T> items, string dbName, CancellationToken cancellationToken = default) where T : class
         {
-            string schemaName = SchemaHelper.GetSchemaName<T>();
+            string schemaName = SchemaHelper.GetTableName<T>();
 
             var keys = items.Select(item =>
             {
-                object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue(item);
+                List<PrimaryKeys> primaryKeyValue = AttributeHelpers.GetPrimaryKeys<T>(item);
                 if (primaryKeyValue is null)
                     throw new ArgumentException("Item being deleted must have a key.");
                 return primaryKeyValue;
             });
 
             var args = new ITypedArgument[] {
-                new TypedArgument<string>(DbName),
+                new TypedArgument<string>(dbName),
                 new TypedArgument<string>(schemaName),
                 new TypedArgument<IEnumerable<object>?>(keys) };
 
-            return await CallJsAsync<int>(
+            return await new MagicJsInvoke(_jsModule).CallJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.BULK_DELETE, cancellationToken,
                 args);
         }
@@ -538,35 +255,25 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="storeName"></param>
         /// <returns></returns>
-        public Task ClearTableAsync(string storeName, CancellationToken cancellationToken = default)
+        internal Task ClearTableAsync(string storeName, string dbName)
         {
-            return CallJsAsync(IndexedDbFunctions.CLEAR_TABLE, cancellationToken,
-                new ITypedArgument[] { new TypedArgument<string>(DbName), new TypedArgument<string>(storeName) });
+            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
+                IndexedDbFunctions.CLEAR_TABLE, dbName, storeName);
         }
+
 
         /// <summary>
         /// Clears all data from a Table but keeps the table
         /// Wait for response
         /// </summary>
         /// <returns></returns>
-        public Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
+       /* internal Task ClearTableAsync<T>(CancellationToken cancellationToken = default) where T : class
         {
-            return ClearTableAsync(SchemaHelper.GetSchemaName<T>(), cancellationToken);
-        }
+            string schemaName = SchemaHelper.GetTableName<T>();
+            string databaseName = SchemaHelper.GetDefaultDatabaseName<T>();
+            return ClearTableAsync(schemaName, databaseName, cancellationToken);
+        }*/
 
-        internal async Task CallJsAsync(string functionName, CancellationToken token, params ITypedArgument[] args)
-        {
-            var magicJsInvoke = new MagicJsInvoke(_jsModule);
 
-            await magicJsInvoke.MagicVoidStreamJsAsync(functionName, token, args);
-        }
-
-        internal async Task<T> CallJsAsync<T>(string functionName, CancellationToken token, params ITypedArgument[] args)
-        {
-
-            var magicJsInvoke = new MagicJsInvoke(_jsModule);
-
-            return await magicJsInvoke.MagicStreamJsAsync<T>(functionName, token, args) ?? default;
-        }
     }
 }

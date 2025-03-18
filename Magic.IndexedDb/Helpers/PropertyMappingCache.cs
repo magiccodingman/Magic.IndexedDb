@@ -27,12 +27,15 @@ namespace Magic.IndexedDb.Helpers
                 jsNameToCsName[entry.Value.JsPropertyName] = entry.Value.CsharpPropertyName;
             }
 
-            // Extract MagicTableAttribute info
-            var magicTableAttr = type.GetCustomAttribute<MagicTableAttribute>();
-            if (magicTableAttr != null && !string.IsNullOrWhiteSpace(magicTableAttr.SchemaName))
+            // Extract IMagicTableBase info
+            if (typeof(IMagicTableBase).IsAssignableFrom(type))
             {
-                EffectiveTableName = magicTableAttr.SchemaName; // Use the schema name
-                EnforcePascalCase = true; // Prevent camel casing
+                var instance = Activator.CreateInstance(type) as IMagicTableBase;
+                if (instance != null)
+                {
+                    EffectiveTableName = instance.GetTableName(); // Use the provided table name
+                    EnforcePascalCase = true; // Prevent camel casing
+                }
             }
             else
             {
@@ -65,9 +68,26 @@ namespace Magic.IndexedDb.Helpers
             }
             else
             {
-                // 🚀 Use default constructor if no valid parameterized constructor is found
-                InstanceCreator = (_) => IsInstantiable(type) ? Activator.CreateInstance(type) : throw new InvalidOperationException($"Cannot instantiate abstract/interface type {type.FullName}");
+                InstanceCreator = (_) =>
+                {
+                    if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                    {
+                        // Instantiate a List<T> when an IEnumerable<T> is requested
+                        Type listType = typeof(List<>).MakeGenericType(type.GetGenericArguments());
+                        return Activator.CreateInstance(listType);
+                    }
+
+                    if (IsInstantiable(type))
+                    {
+                        return Activator.CreateInstance(type);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Cannot instantiate abstract/interface type {type.FullName}");
+                    }
+                };
             }
+
         }
 
         public string EffectiveTableName { get; } // ✅ Stores the final name (SchemaName or C# class name)
@@ -86,32 +106,39 @@ namespace Magic.IndexedDb.Helpers
         /// </summary>
         private static bool IsInstantiable(Type type)
         {
-            return !(type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition);
+            if (type.IsAbstract || type.IsInterface || type.IsGenericTypeDefinition)
+                return false;
+
+            // Handle generic collection interfaces like IEnumerable<T>, ICollection<T>, etc.
+            if (type.IsGenericType)
+            {
+                Type genericTypeDef = type.GetGenericTypeDefinition();
+                if (genericTypeDef == typeof(IEnumerable<>) ||
+                    genericTypeDef == typeof(ICollection<>) ||
+                    genericTypeDef == typeof(IList<>))
+                {
+                    return true; // Can instantiate List<T>
+                }
+            }
+
+            return true;
         }
+
     }
-
-
-
-
-
-
 
     public static class PropertyMappingCache
     {
         internal static readonly ConcurrentDictionary<Type, SearchPropEntry> _propertyCache = new();
 
 
-        public static MagicPropertyEntry GetPrimaryKeyOfType(Type type)
+        public static List<MagicPropertyEntry> GetPrimaryKeysOfType(Type type)
         {
-            var properties = GetTypeOfTProperties(type);
-            foreach (var prop in properties.propertyEntries)
-            {
-                if (prop.Value.PrimaryKey)
-                    return prop.Value;
-            }
-
-            throw new Exception($"The provided type doesn't have a primary key: {type.FullName}");
+            return GetTypeOfTProperties(type).propertyEntries
+                .Where(prop => prop.Value.PrimaryKey)
+                .Select(prop => prop.Value)
+                .ToList();
         }
+
 
         public static SearchPropEntry GetTypeOfTProperties(Type type)
         {
@@ -123,24 +150,65 @@ namespace Magic.IndexedDb.Helpers
             throw new Exception("Something went very wrong getting GetTypeOfTProperties");
         }
 
+
         private static readonly HashSet<Type> _simpleTypes = new()
-        {
-            typeof(string), typeof(decimal), typeof(DateTime), typeof(DateTimeOffset),
-            typeof(Guid), typeof(Uri), typeof(TimeSpan)
-        };
+{
+    typeof(string), typeof(decimal), typeof(DateTime), typeof(DateTimeOffset),
+    typeof(Guid), typeof(Uri), typeof(TimeSpan)
+};
+
+        // Cache lookups for extreme performance
+        private static readonly ConcurrentDictionary<Type, bool> _typeCache = new();
+        private static readonly Type ObjectType = typeof(object); // ✅ Cached for performance
 
         public static bool IsSimpleType(Type type)
         {
             if (type == null)
                 return false;
 
-            // Handle Nullable<T> types (e.g., Nullable<DateTime> -> DateTime)
+            // First, check cache
+            if (_typeCache.TryGetValue(type, out bool cachedResult))
+                return cachedResult;
+
+            // If the type is Nullable<T>, extract T.
             if (Nullable.GetUnderlyingType(type) is Type underlyingType)
                 type = underlyingType;
 
-            // Check if primitive, enum, or explicitly in our list
-            return type.IsPrimitive || type.IsEnum || _simpleTypes.Contains(type);
+            // Unwrap System.Text.Json.Nodes.JsonValueCustomized<T> (avoiding .FullName for perf)
+            if (type.IsGenericType)
+            {
+                var genericType = type.GetGenericTypeDefinition();
+                if (genericType.Namespace == "System.Text.Json.Nodes" && genericType.Name.StartsWith("JsonValueCustomized"))
+                {
+                    type = type.GetGenericArguments()[0]; // Extract T from JsonValueCustomized<T>
+
+                    // If T is still just object, force serialization as a simple type
+                    if (type == ObjectType)
+                    {
+                        _typeCache.TryAdd(type, true);
+                        return true;
+                    }
+                }
+            }
+
+            // If the final unwrapped type is still object, force serialization as-is
+            if (type == ObjectType)
+            {
+                _typeCache.TryAdd(type, true);
+                return true;
+            }
+
+            // Check if the final unwrapped type is simple
+            bool result = type.IsPrimitive || type.IsEnum || _simpleTypes.Contains(type);
+
+            // Store result in cache
+            _typeCache.TryAdd(type, result);
+
+            return result;
         }
+
+
+
 
 
         /*
@@ -421,7 +489,19 @@ namespace Magic.IndexedDb.Helpers
             // Initialize the dictionary for this type
             var propertyEntries = new Dictionary<string, MagicPropertyEntry>(StringComparer.OrdinalIgnoreCase);
 
-            bool hasMagicTableAttribute = type.IsDefined(typeof(MagicTableAttribute), inherit: true);
+            bool isMagicTable = SchemaHelper.HasMagicTableInterface(type);
+
+            var instance = Activator.CreateInstance(type) as IMagicTableBase;
+
+            IMagicCompoundKey compoundKey;
+            List<IMagicCompoundIndex>? compoundIndexes = new List<IMagicCompoundIndex>();
+            HashSet<string> keyNames = new HashSet<string>();
+            if (instance != null)
+            {
+                compoundKey = instance.GetKeys();
+                compoundIndexes = instance.GetCompoundIndexes();
+                keyNames = new HashSet<string>(compoundKey.PropertyInfos.Select(p => p.Name));
+            }
 
             List<MagicPropertyEntry> newMagicPropertyEntry = new List<MagicPropertyEntry>();
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy))
@@ -431,24 +511,27 @@ namespace Magic.IndexedDb.Helpers
 
                 string propertyKey = property.Name; // Now stored as string, not PropertyInfo
 
-                var columnAttribute = property.GetCustomAttributes()
-                                              .FirstOrDefault(attr => attr is IColumnNamed) as IColumnNamed;
+                var columnAttribute = GetPropertyColumnAttribute(property);
 
-                if (columnAttribute != null && string.IsNullOrWhiteSpace(columnAttribute.ColumnName))
+                bool isPrimaryKey = keyNames.Contains(property.Name);
+
+                bool isCompoundIndexed = false;
+                if(compoundIndexes != null && compoundIndexes.Any())
                 {
-                    columnAttribute = null;
+                    isCompoundIndexed = compoundIndexes.SelectMany(x => x.PropertyInfos).Any(x => x.Name == property.Name);
                 }
 
                 var magicEntry = new MagicPropertyEntry(
                     property,
                     columnAttribute,
-                    property.IsDefined(typeof(MagicIndexAttribute), inherit: true),
+                    property.IsDefined(typeof(MagicIndexAttribute), inherit: true)
+                    || isPrimaryKey || isCompoundIndexed
+                    ,
                     property.IsDefined(typeof(MagicUniqueIndexAttribute), inherit: true),
-                    property.IsDefined(typeof(MagicPrimaryKeyAttribute), inherit: true),
+                    isPrimaryKey,
                     property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true),
-                    hasMagicTableAttribute
+                    isMagicTable
                     || property.IsDefined(typeof(MagicNameAttribute), inherit: true)
-                    || property.IsDefined(typeof(MagicTableAttribute), inherit: true)
                 );
 
                 newMagicPropertyEntry.Add(magicEntry);
@@ -470,6 +553,24 @@ namespace Magic.IndexedDb.Helpers
                     EnsureTypeIsCached(comp);
                 }
             }
+        }
+
+        internal static IColumnNamed? GetPropertyColumnAttribute(PropertyInfo property)
+        {
+            var columnAttribute = property.GetCustomAttributes()
+                                          .FirstOrDefault(attr => attr is IColumnNamed) as IColumnNamed;
+
+            if (columnAttribute != null && string.IsNullOrWhiteSpace(columnAttribute.ColumnName))
+            {
+                columnAttribute = null;
+            }
+
+            return columnAttribute;
+        }
+
+        internal static string GetJsPropertyNameNoCache(IColumnNamed? columnAttribute, string PropertyName)
+        {
+            return columnAttribute?.ColumnName ?? PropertyName;
         }
     }
 }

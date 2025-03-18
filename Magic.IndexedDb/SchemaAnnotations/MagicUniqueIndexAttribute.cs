@@ -8,6 +8,9 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
+    /// <summary>
+    /// Creates a unique key
+    /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
     public class MagicUniqueIndexAttribute : Attribute, IColumnNamed
     {

@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
-    public class MagicTableAttribute : Attribute
+    /*public class MagicTableAttribute : Attribute
     {
         public const string defaultNone = "DefaultedNone";
         public string SchemaName { get; }
@@ -22,5 +22,5 @@ namespace Magic.IndexedDb
             else
                 DatabaseName = defaultNone;
         }
-    }
+    }*/
 }

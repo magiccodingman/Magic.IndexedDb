@@ -146,9 +146,23 @@ namespace Magic.IndexedDb.Models
                         continue;
                     }
 
-                    // 🔥 Step 2: Extract values and store them in the dictionary
-                    object? value = ReadPropertyValue(ref reader, mpe, options);
-                    propertyValues[csharpPropertyName] = value;
+                    // Skip interface-based properties that should never be assigned
+                    if (mpe.Property.DeclaringType?.IsInterface == true || !mpe.Property.CanWrite)
+                    {
+                        reader.Skip();
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Extract values and store them in the dictionary
+                        object? value = ReadPropertyValue(ref reader, mpe, options);
+                        propertyValues[csharpPropertyName] = value;
+                    }
+                    catch (Exception ex)
+                    {
+
+                    }
                 }
                 else
                 {
@@ -278,7 +292,7 @@ namespace Magic.IndexedDb.Models
             var properties = PropertyMappingCache.GetTypeOfTProperties(type);
 
             // 🔥 Handle complex objects recursively
-            writer.WriteStartObject();            
+            writer.WriteStartObject();
             SerializeComplexProperties(writer, value, properties.propertyEntries, options);
             writer.WriteEndObject();
         }
@@ -398,7 +412,7 @@ namespace Magic.IndexedDb.Models
         {
             foreach (var (propertyName, mpe) in properties)
             {
-                if (mpe.NotMapped) 
+                if (mpe.NotMapped)
                     continue;
 
                 object? propValue = mpe.Getter(value);

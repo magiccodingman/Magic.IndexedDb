@@ -12,13 +12,10 @@ namespace Magic.IndexedDb
         public string Name { get; set; }
         public int Version { get; set; }
 
-        [Obsolete("Being depreciated")]
-        public string EncryptionKey { get; set; }
-
         [JsonPropertyName("storeSchemas")]
         public List<StoreSchema> StoreSchemas { get; set; }
 
-        [Obsolete("This will likely be created to work with the Truth Protocol. Stay tuned.")]
+        [Obsolete("NOT SUPPORTED: This will likely be created to work with the Truth Protocol. Stay tuned.")]
         public List<DbMigration> DbMigrations { get; set; } = new List<DbMigration>();
     }
 }

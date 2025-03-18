@@ -1,1 +1,0 @@
-This is the start of the Magic IndexDB wiki

@@ -8,6 +8,9 @@ using Magic.IndexedDb.SchemaAnnotations;
 
 namespace Magic.IndexedDb.SchemaAnnotations
 {
+    /// <summary>
+    /// Indexes this key
+    /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
     public class MagicIndexAttribute : Attribute, IColumnNamed
     {

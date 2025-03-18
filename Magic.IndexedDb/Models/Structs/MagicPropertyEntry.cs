@@ -127,8 +127,8 @@ namespace Magic.IndexedDb.Models
         /// <summary>
         /// The JavaScript/Column Name mapping
         /// </summary>
-        public string JsPropertyName =>
-            _columnNamedAttribute?.ColumnName ?? Property.Name;
+        public string JsPropertyName => 
+            PropertyMappingCache.GetJsPropertyNameNoCache(_columnNamedAttribute, Property.Name);
 
         /// <summary>
         /// Reference to the PropertyInfo instead of storing the C# name as a string. 
