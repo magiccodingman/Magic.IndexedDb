@@ -1455,17 +1455,21 @@ async function fetchRecordsByPrimaryKeys(table, primaryKeys, compoundKeys, batch
         let batch = primaryKeys.slice(i, i + batchSize);
 
         if (isCompoundKey) {
-            // **Ensure batch is already formatted as arrays of ordered values**
-            let formattedBatch = batch.map(pk => Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]));
+            // **Ensure batch is formatted correctly for compound keys**
+            let formattedBatch = batch.map(pk =>
+                Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]) // Extract key values in order
+            );
 
             debugLog("Fetching batch with ordered compound key values", { formattedBatch });
 
             batchPromises.push(table.where(compoundKeys).anyOf(formattedBatch).toArray());
         } else {
-            // **Single key fetch**
-            debugLog("Fetching batch with single primary key", { batch });
+            // **Ensure batch contains raw key values for single primary keys**
+            let singleKeyBatch = batch.map(pk => (typeof pk === "object" ? Object.values(pk)[0] : pk));
 
-            batchPromises.push(table.where(compoundKeys[0]).anyOf(batch).toArray());
+            debugLog("Fetching batch with single primary key", { singleKeyBatch });
+
+            batchPromises.push(table.where(compoundKeys[0]).anyOf(singleKeyBatch).toArray());
         }
     }
 
@@ -1475,6 +1479,7 @@ async function fetchRecordsByPrimaryKeys(table, primaryKeys, compoundKeys, batch
     // Flatten the results into a single array
     return batchResults.flat();
 }
+
 
 function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, flipSkipTakeOrder = true) {
     if (!queryAdditions || queryAdditions.length === 0) {
