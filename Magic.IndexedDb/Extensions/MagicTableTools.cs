@@ -17,7 +17,12 @@ namespace Magic.IndexedDb
 
         protected IMagicCompoundKey CreateCompoundKey(params Expression<Func<T, object>>[] keySelectors)
         {
-            return MagicCompoundExtension.CreateKey<T>(keySelectors);
+            return MagicCompoundExtension.CreateKey(false, keySelectors);
+        }
+
+        protected IMagicCompoundKey CreatePrimaryKey(Expression<Func<T, object>> keySelector, bool autoIncrement)
+        {
+            return MagicCompoundExtension.CreateKey(autoIncrement, keySelector);
         }
     }
 

@@ -177,6 +177,11 @@ export async function openDb(dbName) {
     return entry.db;
 }
 
+export async function countTable(dbName, storeName) {
+    const table = await getTable(dbName, storeName);
+    return await table.count();
+}
+
 /**
  * Closes a specific database.
  * @param {string} dbName - The database name.
@@ -228,35 +233,157 @@ export async function deleteAllDatabases() {
     console.log("All databases deleted.");
 }
 
+
+const keyCache = new Map(); // Caches key structures for each (db, storeName) combination
+
+/**
+ * Retrieves the primary key structure for a given table.
+ * Caches the key structure to avoid redundant lookups.
+ */
+async function getPrimaryKey(dbName, storeName) {
+    const cacheKey = `${dbName}.${storeName}`;
+
+    if (keyCache.has(cacheKey)) {
+        return keyCache.get(cacheKey);
+    }
+
+    const table = await getTable(dbName, storeName);
+    const primaryKey = table.schema.primKey; // Retrieve the primary key metadata
+
+    let keyStructure;
+    if (Array.isArray(primaryKey.keyPath)) {
+        keyStructure = { isCompound: true, keys: primaryKey.keyPath };
+    } else {
+        keyStructure = { isCompound: false, keys: [primaryKey.keyPath] };
+    }
+
+    keyCache.set(cacheKey, keyStructure);
+    return keyStructure;
+}
+
+/**
+ * Formats keys correctly based on the table's primary key structure.
+ */
+async function formatKey(dbName, storeName, keyData) {
+    const keyInfo = await getPrimaryKey(dbName, storeName);
+
+    if (!keyInfo.isCompound) {
+        return keyData[keyInfo.keys[0]]; // Extract the single primary key
+    }
+
+    return keyInfo.keys.map(pk => keyData[pk]); // Extract multiple keys for compound key
+}
+
+/**
+ * Closes a specific database.
+ */
+export function closeDb(dbName) {
+    if (databases.has(dbName)) {
+        const entry = databases.get(dbName);
+        entry.db.close();
+        entry.isOpen = false;
+        console.log(`Database ${dbName} closed successfully.`);
+    } else {
+        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} not found.`);
+    }
+}
+
+/**
+ * Closes all open databases.
+ */
+export function closeAll() {
+    databases.forEach((entry, dbName) => {
+        entry.db.close();
+        entry.isOpen = false;
+        console.log(`Database ${dbName} closed.`);
+    });
+}
+
+/**
+ * Deletes a specific database.
+ */
+export async function deleteDb(dbName) {
+    if (databases.has(dbName)) {
+        const entry = databases.get(dbName);
+        entry.db.close();
+        databases.delete(dbName);
+    }
+
+    await Dexie.delete(dbName);
+    console.log(`Database ${dbName} deleted.`);
+}
+
+/**
+ * Deletes all databases.
+ */
+export async function deleteAllDatabases() {
+    for (const dbName of databases.keys()) {
+        await deleteDb(dbName);
+    }
+    console.log("All databases deleted.");
+}
+
+/**
+ * Adds a single item, dynamically determining primary key structure.
+ */
 export async function addItem(item) {
     const table = await getTable(item.dbName, item.storeName);
-    return await table.add(item.record);
+    const key = await formatKey(item.dbName, item.storeName, item.record);
+
+    return await table.add({
+        ...item.record,
+        id: key
+    });
 }
 
+/**
+ * Bulk adds multiple items.
+ */
 export async function bulkAddItem(dbName, storeName, items) {
     const table = await getTable(dbName, storeName);
-    return await table.bulkAdd(items);
+    return await table.bulkAdd(
+        items.map(item => ({
+            ...item,
+            id: formatKey(dbName, storeName, item.record) // Extracts key dynamically
+        }))
+    );
 }
 
-export async function countTable(dbName, storeName) {
-    const table = await getTable(dbName, storeName);
-    return await table.count();
-}
-
+/**
+ * Inserts or updates a single item.
+ */
 export async function putItem(item) {
     const table = await getTable(item.dbName, item.storeName);
-    return await table.put(item.record);
+    const key = await formatKey(item.dbName, item.storeName, item.record);
+
+    return await table.put({
+        ...item.record,
+        id: key
+    });
 }
 
+/**
+ * Updates an item using the correct primary key format.
+ */
 export async function updateItem(item) {
     const table = await getTable(item.dbName, item.storeName);
-    return await table.update(item.key, item.record);
+    const key = await formatKey(item.dbName, item.storeName, item.record);
+
+    return await table.update(key, item.record);
 }
 
+/**
+ * Bulk updates items, ensuring keys are properly formatted.
+ */
 export async function bulkUpdateItem(items) {
     const table = await getTable(items[0].dbName, items[0].storeName);
     try {
-        await table.bulkPut(items.map(item => ({ ...item.record, id: item.key })));
+        await table.bulkPut(
+            await Promise.all(items.map(async item => ({
+                ...item.record,
+                id: await formatKey(item.dbName, item.storeName, item.record)
+            })))
+        );
         return items.length;
     } catch (e) {
         console.error(e);
@@ -264,21 +391,29 @@ export async function bulkUpdateItem(items) {
     }
 }
 
-export async function bulkDelete(dbName, storeName, keys) {
+/**
+ * Deletes multiple items, supporting single and compound keys.
+ */
+export async function bulkDelete(dbName, storeName, items) {
     const table = await getTable(dbName, storeName);
     try {
-        await table.bulkDelete(keys);
-        return keys.length;
+        await table.bulkDelete(await Promise.all(items.map(async item => formatKey(dbName, storeName, item))));
+        return items.length;
     } catch (e) {
         console.error(e);
         throw new Error('Some items could not be deleted');
     }
 }
 
+/**
+ * Deletes a single item.
+ */
 export async function deleteItem(item) {
     const table = await getTable(item.dbName, item.storeName);
-    await table.delete(item.key)
+    const key = await formatKey(item.dbName, item.storeName, item);
+    await table.delete(key);
 }
+
 
 export async function clear(dbName, storeName) {
     const table = await getTable(dbName, storeName);
@@ -302,6 +437,14 @@ async function getTable(dbName, storeName) {
     let db = await getDb(dbName);
     let table = db.table(storeName);
     return table;
+}
+
+/**
+ * Handles single and compound keys dynamically
+ * If key is an array, it treats it as a compound key
+ */
+function formatKey(key) {
+    return Array.isArray(key) ? key : [key]; // Always returns an array for uniformity
 }
 
 const DEBUG_MODE = true; // Set to false before release

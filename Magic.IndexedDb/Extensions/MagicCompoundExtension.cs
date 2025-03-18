@@ -15,9 +15,9 @@ namespace Magic.IndexedDb
             return InternalMagicCompoundIndex<T>.Create(keySelectors);
         }
 
-        public static IMagicCompoundKey CreateKey<T>(params Expression<Func<T, object>>[] keySelectors)
+        public static IMagicCompoundKey CreateKey<T>(bool autoIncrement, params Expression<Func<T, object>>[] keySelectors)
         {
-            return InternalMagicCompoundKey<T>.Create(keySelectors);
+            return InternalMagicCompoundKey<T>.Create(autoIncrement, keySelectors);
         }
     }
 }

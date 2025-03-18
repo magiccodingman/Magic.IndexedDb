@@ -11,7 +11,7 @@ namespace Magic.IndexedDb
     /// <summary>
     /// sets as the primary key
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property)]
+    /*[AttributeUsage(AttributeTargets.Property)]
     public class MagicPrimaryKeyAttribute : Attribute, IColumnNamed
     {
         public string ColumnName { get; }
@@ -34,5 +34,5 @@ namespace Magic.IndexedDb
                 ColumnName = null;
             }
         }
-    }
+    }*/
 }

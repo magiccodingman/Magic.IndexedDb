@@ -91,7 +91,7 @@ namespace Magic.IndexedDb
         {
             string schemaName = SchemaHelper.GetTableName<T>();
 
-            object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
+            List<PrimaryKeys> primaryKeyValue = AttributeHelpers.GetPrimaryKeys<T>(item);
             if (primaryKeyValue is null)
                 throw new ArgumentException("Item being updated must have a key.");
 
@@ -123,7 +123,7 @@ namespace Magic.IndexedDb
 
             var recordsToUpdate = items.Select(item =>
             {
-                object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
+                List<PrimaryKeys> primaryKeyValue = AttributeHelpers.GetPrimaryKeys<T>(item);
                 if (primaryKeyValue is null)
                     throw new ArgumentException("Item being updated must have a key.");
 
@@ -212,7 +212,7 @@ namespace Magic.IndexedDb
         {
             string schemaName = SchemaHelper.GetTableName<T>();
 
-            object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue<T>(item);
+            List<PrimaryKeys> primaryKeyValue = AttributeHelpers.GetPrimaryKeys<T>(item);
 
             UpdateRecord<T> record = new UpdateRecord<T>()
             {
@@ -232,7 +232,7 @@ namespace Magic.IndexedDb
 
             var keys = items.Select(item =>
             {
-                object? primaryKeyValue = AttributeHelpers.GetPrimaryKeyValue(item);
+                List<PrimaryKeys> primaryKeyValue = AttributeHelpers.GetPrimaryKeys<T>(item);
                 if (primaryKeyValue is null)
                     throw new ArgumentException("Item being deleted must have a key.");
                 return primaryKeyValue;

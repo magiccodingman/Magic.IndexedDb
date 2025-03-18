@@ -30,25 +30,32 @@ namespace Magic.IndexedDb.Testing.Helpers
                     Message = $"List size mismatch:\nExpected count: {correctList.Count}\nActual count: {testList.Count}"
                 };
 
-            // 🔑 Get the primary key property dynamically
-            MagicPropertyEntry mpe = PropertyMappingCache.GetPrimaryKeyOfType(typeof(T));
-            PropertyInfo primaryKeyProp = mpe.Property;
+            // 🔑 Get all primary key properties dynamically
+            List<MagicPropertyEntry> mpeList = PropertyMappingCache.GetPrimaryKeysOfType(typeof(T));
 
-            if (primaryKeyProp == null)
-                return new TestResponse { Success = false, Message = "Error: No primary key found for type." };
+            if (mpeList == null || mpeList.Count == 0)
+                return new TestResponse { Success = false, Message = "Error: No primary keys found for type." };
+
+            bool isCompoundKey = mpeList.Count > 1;
 
             var failureDetails = new List<string>();
 
-            // Convert correct results into a dictionary for fast lookup by primary key
-            var correctDictionary = correctList.ToDictionary(item => primaryKeyProp.GetValue(item));
+            // 🔍 Convert correct results into a dictionary for fast lookup by primary key(s)
+            var correctDictionary = correctList.ToDictionary(
+                item => isCompoundKey
+                    ? (object)mpeList.Select(mpe => mpe.Property.GetValue(item)).ToArray() // Compound key as an object array
+                    : mpeList[0].Property.GetValue(item) // Single key
+            );
 
             foreach (var actualItem in testList)
             {
-                var actualKey = primaryKeyProp.GetValue(actualItem);
+                object actualKey = isCompoundKey
+                    ? (object)mpeList.Select(mpe => mpe.Property.GetValue(actualItem)).ToArray()
+                    : mpeList[0].Property.GetValue(actualItem);
 
                 if (actualKey == null || !correctDictionary.TryGetValue(actualKey, out var expectedItem))
                 {
-                    failureDetails.Add($"❌ No matching item found for Primary Key [{actualKey}].");
+                    failureDetails.Add($"❌ No matching item found for Primary Key [{FormatKey(actualKey)}].");
                     continue;
                 }
 
@@ -57,11 +64,11 @@ namespace Magic.IndexedDb.Testing.Helpers
                     .Where(prop => !Attribute.IsDefined(prop, typeof(MagicNotMappedAttribute)))
                     .ToArray();
 
-                var propertyDifferences = CompareObjects(expectedItem, actualItem, properties, $"Item[{actualKey}]");
+                var propertyDifferences = CompareObjects(expectedItem, actualItem, properties, $"Item[{FormatKey(actualKey)}]");
 
                 if (propertyDifferences.Any())
                 {
-                    failureDetails.Add($"Mismatch in object with Primary Key [{actualKey}]:\n" + string.Join("\n", propertyDifferences));
+                    failureDetails.Add($"Mismatch in object with Primary Key [{FormatKey(actualKey)}]:\n" + string.Join("\n", propertyDifferences));
                 }
             }
 
@@ -69,6 +76,12 @@ namespace Magic.IndexedDb.Testing.Helpers
                 ? new TestResponse { Success = false, Message = string.Join("\n\n", failureDetails) }
                 : new TestResponse { Success = true };
         }
+
+        private static string FormatKey(object key)
+        {
+            return key is object[] keyArray ? string.Join(" + ", keyArray.Select(k => k?.ToString() ?? "NULL")) : key?.ToString() ?? "NULL";
+        }
+
         private static List<string> CompareObjects(object expected, object actual, PropertyInfo[] properties, string path)
         {
             var differences = new List<string>();

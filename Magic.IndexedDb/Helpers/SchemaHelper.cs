@@ -184,12 +184,11 @@ namespace Magic.IndexedDb.Helpers
                 .ToList();
 
             // Extract Compound Key
-            // re-support when compound keys are added
-            /*var compoundKey = instance.GetCompoundKey();
+            var compoundKey = instance.GetKeys();
             if (compoundKey != null)
             {
                 schema.ColumnNamesInCompoundKey = compoundKey.ColumnNamesInCompoundKey.ToList();
-            }*/
+            }
 
             // Extract Compound Indexes
             var compoundIndexes = instance.GetCompoundIndexes();

@@ -1,4 +1,5 @@
-﻿using Magic.IndexedDb.SchemaAnnotations;
+﻿using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.SchemaAnnotations;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,7 +19,6 @@ namespace Magic.IndexedDb.Helpers
             foreach (var type in magicTableClasses)
             {
                 var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                var primaryKeyProps = properties.Where(p => p.GetCustomAttribute<MagicPrimaryKeyAttribute>() != null).ToList();
 
                 if (!properties.Any())
                 {
@@ -26,64 +26,48 @@ namespace Magic.IndexedDb.Helpers
                     continue;
                 }
 
-                var instance = Activator.CreateInstance(type);
-                var getCompoundKeyMethod = type.GetMethod("GetCompoundKey", BindingFlags.Public | BindingFlags.Instance);
-                var getCompoundIndexesMethod = type.GetMethod("GetCompoundIndexes", BindingFlags.Public | BindingFlags.Instance);
-
-                IMagicCompoundKey? compoundKey = null;
-                List<IMagicCompoundIndex>? compoundIndexes = null;
-
-                if (getCompoundKeyMethod != null)
+                var instance = Activator.CreateInstance(type) as IMagicTableBase;
+                if (instance == null)
                 {
-                    try
-                    {
-                        compoundKey = getCompoundKeyMethod.Invoke(instance, null) as IMagicCompoundKey;
-                    }
-                    catch (TargetInvocationException tie) when (tie.InnerException != null)
-                    {
-                        errors.AppendLine($"Error: Class '{type.Name}' encountered an issue when calling 'GetCompoundKey()'. Exception: {tie.InnerException.Message}");
-                    }
+                    errors.AppendLine($"Error: Unable to create an instance of '{type.Name}'.");
+                    continue;
                 }
 
-                if (getCompoundIndexesMethod != null)
+                IMagicCompoundKey compoundKey = instance.GetKeys();
+                List<IMagicCompoundIndex>? compoundIndexes = instance.GetCompoundIndexes();
+
+                if (compoundKey == null || compoundKey.ColumnNamesInCompoundKey.Length == 0)
                 {
-                    try
-                    {
-                        compoundIndexes = getCompoundIndexesMethod.Invoke(instance, null) as List<IMagicCompoundIndex>;
-                    }
-                    catch (TargetInvocationException tie) when (tie.InnerException != null)
-                    {
-                        errors.AppendLine($"Error: Class '{type.Name}' encountered an issue when calling 'GetCompoundIndexes()'. Exception: {tie.InnerException.Message}");
-                    }
+                    errors.AppendLine($"Error: Class '{type.Name}' must have at least one primary key.");
+                    continue;
                 }
 
-                // Validate primary key and compound key rules
-                if (compoundKey?.ColumnNamesInCompoundKey?.Length > 0 && primaryKeyProps.Count > 0)
+                // If there's only one key, treat it as a primary key; otherwise, enforce compound key rules.
+                if (compoundKey.ColumnNamesInCompoundKey.Length == 1)
                 {
-                    errors.AppendLine($"Error: Class '{type.Name}' has both a primary key attribute and a compound key. Only one can be defined.");
-                }
-                else if (primaryKeyProps.Count == 0 && (compoundKey == null || compoundKey.ColumnNamesInCompoundKey.Length == 0))
-                {
-                    errors.AppendLine($"Error: Class '{type.Name}' must have either a primary key or a valid compound key.");
-                }
-
-                foreach (var prop in primaryKeyProps)
-                {
-                    var primaryKeyAttribute = prop.GetCustomAttribute<MagicPrimaryKeyAttribute>();
-                    if (primaryKeyAttribute?.AutoIncrement == true && !IsNumericType(prop.PropertyType))
+                    var primaryKeyProperty = compoundKey.PropertyInfos.First();
+                    if (compoundKey.AutoIncrement && !IsNumericType(primaryKeyProperty.PropertyType))
                     {
-                        errors.AppendLine($"Error: Primary key '{prop.Name}' in class '{type.Name}' is marked as auto-increment, but its type '{prop.PropertyType.Name}' is not numeric.");
+                        errors.AppendLine($"Error: Primary key '{primaryKeyProperty.Name}' in class '{type.Name}' is marked as auto-increment, but its type '{primaryKeyProperty.PropertyType.Name}' is not numeric.");
                     }
 
-                    if (Nullable.GetUnderlyingType(prop.PropertyType) != null)
+                    if (Nullable.GetUnderlyingType(primaryKeyProperty.PropertyType) != null)
                     {
-                        errors.AppendLine($"Error: Primary key '{prop.Name}' in class '{type.Name}' cannot be nullable.");
+                        errors.AppendLine($"Error: Primary key '{primaryKeyProperty.Name}' in class '{type.Name}' cannot be nullable.");
+                    }
+                }
+                else
+                {
+                    // Validate compound key rules
+                    var keyNames = new HashSet<string>(compoundKey.ColumnNamesInCompoundKey);
+                    if (keyNames.Count != compoundKey.ColumnNamesInCompoundKey.Length)
+                    {
+                        errors.AppendLine($"Error: Class '{type.Name}' has duplicate column names in its compound key definition.");
                     }
                 }
 
                 var magicAttributes = new List<Type>
             {
-                typeof(MagicPrimaryKeyAttribute),
                 typeof(MagicIndexAttribute),
                 typeof(MagicNotMappedAttribute),
                 typeof(MagicNameAttribute),

@@ -13,39 +13,59 @@ namespace Magic.IndexedDb.Models
     internal class InternalMagicCompoundKey<T> : IMagicCompoundKey
     {
         public string[] ColumnNamesInCompoundKey { get; }
+        public PropertyInfo[] PropertyInfos { get; }
+        public bool AutoIncrement { get; }
+        public bool IsCompoundKey { get; } // New flag to track if it's a compound key
 
-        private InternalMagicCompoundKey(params Expression<Func<T, object>>[] properties)
+        private InternalMagicCompoundKey(bool autoIncrement, params Expression<Func<T, object>>[] properties)
         {
-            if (properties == null || properties.Length < 2)
-            {
-                throw new ArgumentException("Compound keys require at least 2 properties.", nameof(properties));
-            }
+            AutoIncrement = autoIncrement;
 
-            ColumnNamesInCompoundKey = properties
-                .Select(GetPropertyName)
+            PropertyInfos = properties
+                .Select(GetPropertyInfo)
                 .ToArray();
+
+            ColumnNamesInCompoundKey = PropertyInfos
+                .Select(PropertyMappingCache.GetJsPropertyName<T>)
+                .ToArray();
+
+            IsCompoundKey = PropertyInfos.Length > 1; // If more than one key, it's a compound key
+
+            ValidateKeys();
+        }
+
+        internal static IMagicCompoundKey Create(bool autoIncrement, params Expression<Func<T, object>>[] keySelectors)
+        {
+            return new InternalMagicCompoundKey<T>(autoIncrement, keySelectors);
+        }
+
+        private void ValidateKeys()
+        {
+            string keyType = IsCompoundKey ? "Compound Key" : "Primary Key";
 
             if (ColumnNamesInCompoundKey.Distinct().Count() != ColumnNamesInCompoundKey.Length)
             {
                 throw new InvalidOperationException(
-                    $"Duplicate properties detected in the compound key for type '{typeof(T).Name}'. Each property must be unique.");
+                    $"Duplicate properties detected in the {keyType} for type '{typeof(T).Name}'. Each property must be unique.");
+            }
+
+            if (IsCompoundKey && AutoIncrement)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot mark a Compound Key as AutoIncrement for type '{typeof(T).Name}'. " +
+                    "AutoIncrement is only allowed on single Primary Keys.");
             }
         }
 
-        internal static IMagicCompoundKey Create(params Expression<Func<T, object>>[] keySelectors)
-        {
-            return new InternalMagicCompoundKey<T>(keySelectors);
-        }
-
-        private static string GetPropertyName(Expression<Func<T, object>> propertyExpression)
+        private static PropertyInfo GetPropertyInfo(Expression<Func<T, object>> propertyExpression)
         {
             if (propertyExpression.Body is MemberExpression memberExpr)
             {
-                return ValidateAndGetPropertyName(memberExpr);
+                return ValidateAndGetPropertyInfo(memberExpr);
             }
             else if (propertyExpression.Body is UnaryExpression unaryExpr && unaryExpr.Operand is MemberExpression unaryMemberExpr)
             {
-                return ValidateAndGetPropertyName(unaryMemberExpr);
+                return ValidateAndGetPropertyInfo(unaryMemberExpr);
             }
             else
             {
@@ -53,7 +73,7 @@ namespace Magic.IndexedDb.Models
             }
         }
 
-        private static string ValidateAndGetPropertyName(MemberExpression memberExpr)
+        private static PropertyInfo ValidateAndGetPropertyInfo(MemberExpression memberExpr)
         {
             var property = typeof(T).GetProperty(memberExpr.Member.Name);
             if (property == null)
@@ -61,34 +81,27 @@ namespace Magic.IndexedDb.Models
                 throw new ArgumentException($"Property '{memberExpr.Member.Name}' does not exist on type '{typeof(T).Name}'.");
             }
 
-            if (memberExpr.Expression is MemberExpression nestedExpr)
+            if (memberExpr.Expression is MemberExpression)
             {
                 throw new InvalidOperationException(
-                    $"Cannot compound key nested properties like '{memberExpr.Member.Name}' in compound keys or indexes on type '{typeof(T).Name}'. " +
+                    $"Cannot use nested properties like '{memberExpr.Member.Name}' in a Primary or Compound Key for type '{typeof(T).Name}'. " +
                     "Only top-level properties can be indexed.");
             }
 
             if (property.GetCustomAttribute<MagicNotMappedAttribute>() != null)
             {
                 throw new InvalidOperationException(
-                    $"Cannot use the non-mapped property '{property.Name}' in a compound key on type '{typeof(T).Name}'.");
-            }
-
-            if (property.GetCustomAttribute<MagicPrimaryKeyAttribute>() != null)
-            {
-                throw new InvalidOperationException(
-                    $"Cannot use the primary key property '{property.Name}' in a compound key on type '{typeof(T).Name}'.");
+                    $"Cannot use the non-mapped property '{property.Name}' in a Primary or Compound Key for type '{typeof(T).Name}'.");
             }
 
             if (property.GetCustomAttribute<MagicUniqueIndexAttribute>() != null)
             {
                 throw new InvalidOperationException(
-                    $"Cannot define a compound key including '{property.Name}' because it is already marked as a unique index " +
-                    $"on type '{typeof(T).Name}'. Either remove the unique index or exclude it from the compound key.");
+                    $"Cannot define a Primary or Compound Key including '{property.Name}' because it is already marked as a unique index " +
+                    $"on type '{typeof(T).Name}'. Either remove the unique index or exclude it from the key.");
             }
 
-
-            return PropertyMappingCache.GetJsPropertyName<T>(property);
+            return property;
         }
     }
 }

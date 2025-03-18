@@ -12,10 +12,7 @@ namespace Magic.IndexedDb.Interfaces
 
         List<IMagicCompoundIndex>? GetCompoundIndexes();
 
-        // Support is coming. It's mostly the C# side that needs small refactoring to support.
-        // Though the JS side will need to implement and support primary key multi key support when 
-        // coming in as brackets.
-        //IMagicCompoundKey? GetCompoundKey();
+        IMagicCompoundKey GetKeys();
 
         // <summary>
         /// Set the default database most commonly utilized for this table.

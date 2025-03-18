@@ -137,17 +137,14 @@ namespace Magic.IndexedDb.Helpers
         internal static readonly ConcurrentDictionary<Type, SearchPropEntry> _propertyCache = new();
 
 
-        public static MagicPropertyEntry GetPrimaryKeyOfType(Type type)
+        public static List<MagicPropertyEntry> GetPrimaryKeysOfType(Type type)
         {
-            var properties = GetTypeOfTProperties(type);
-            foreach (var prop in properties.propertyEntries)
-            {
-                if (prop.Value.PrimaryKey)
-                    return prop.Value;
-            }
-
-            throw new Exception($"The provided type doesn't have a primary key: {type.FullName}");
+            return GetTypeOfTProperties(type).propertyEntries
+                .Where(prop => prop.Value.PrimaryKey)
+                .Select(prop => prop.Value)
+                .ToList();
         }
+
 
         public static SearchPropEntry GetTypeOfTProperties(Type type)
         {
@@ -500,6 +497,15 @@ namespace Magic.IndexedDb.Helpers
 
             bool isMagicTable = SchemaHelper.HasMagicTableInterface(type);
 
+            var instance = Activator.CreateInstance(type) as IMagicTableBase;
+            if (instance == null)
+            {
+                throw new InvalidOperationException($"Type '{type.Name}' must implement IMagicTableBase.");
+            }
+
+            IMagicCompoundKey compoundKey = instance.GetKeys();
+            HashSet<string> keyNames = new HashSet<string>(compoundKey.PropertyInfos.Select(p => p.Name));
+
             List<MagicPropertyEntry> newMagicPropertyEntry = new List<MagicPropertyEntry>();
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy))
             {
@@ -516,12 +522,14 @@ namespace Magic.IndexedDb.Helpers
                     columnAttribute = null;
                 }
 
+                bool isPrimaryKey = keyNames.Contains(property.Name);
+
                 var magicEntry = new MagicPropertyEntry(
                     property,
                     columnAttribute,
                     property.IsDefined(typeof(MagicIndexAttribute), inherit: true),
                     property.IsDefined(typeof(MagicUniqueIndexAttribute), inherit: true),
-                    property.IsDefined(typeof(MagicPrimaryKeyAttribute), inherit: true),
+                    isPrimaryKey,
                     property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true),
                     isMagicTable
                     || property.IsDefined(typeof(MagicNameAttribute), inherit: true)
