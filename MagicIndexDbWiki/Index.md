@@ -26,7 +26,7 @@ Start here if you're new to **Magic IndexedDB** or looking to integrate it into 
 
 Understand how **Magic IndexedDB** works at its core, including **how LINQ queries are translated into IndexedDB operations**.
 
-1. **[How LINQ to IndexedDB Works (Universal Layer)](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Fundamentals/How-The-LINQ-To-IndexDB-works.md)**
+1. **[How LINQ to IndexedDB Works (Universal Layer)](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Fundamentals/P1-How-The-LINQ-To-IndexDB-works.md)**
     
     - The **Universal Layer** (works beyond Blazor).
     - How LINQ expressions are **parsed, optimized, and executed**.
