@@ -259,40 +259,40 @@
                 List<Person> people = await personQuery.ToListAsync();
                 StateHasChanged();
 
-           //      RunTest("Combined Query Test", await personQuery.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10).ToListAsync(),
-           // allPeople.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10));
+                RunTest("Combined Query Test", await personQuery.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10).ToListAsync(),
+           allPeople.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10));
 
-           //      RunTest("Get All Test", await personQuery.ToListAsync(),
-           // allPeople);
+                RunTest("Get All Test", await personQuery.ToListAsync(),
+           allPeople);
 
-           //      RunTest("Force Cursor Equal Test", await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
-           // allPeople.Where(x => x.Name == "Zack"));
-
-
-           //      RunTest("Basic Index Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
-           //      allPeople.Where(x => x.Name == "Zack"));
-
-           //      RunTest("Basic Cursor Equal Test", await personQuery.Where(x => x._Age == 35).ToListAsync(),
-           //      allPeople.Where(x => x._Age == 35));
-
-           //      RunTest("Greater Than Age Test", await personQuery.Where(x => x._Age > 40).ToListAsync(),
-           //          allPeople.Where(x => x._Age > 40));
-
-           //      RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).ToListAsync(),
-           //          allPeople.Where(x => x._Age <= 35));
-
-           //      RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-           //          allPeople.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
-
-           //      RunTest("StartsWith Test", await personQuery.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-           //          allPeople.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
-
-           //      RunTest("Multiple Conditions AND", await personQuery.Where(x => x._Age > 30 && x.TestInt == 9).ToListAsync(),
-           //          allPeople.Where(x => x._Age > 30 && x.TestInt == 9));
+                RunTest("Force Cursor Equal Test", await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
+           allPeople.Where(x => x.Name == "Zack"));
 
 
-           //      RunTest("Multiple Index Conditions OR", await personQuery.Where(x => x.Name == "Zack" || x.Name == "Isla").ToListAsync(),
-           //          allPeople.Where(x => x.Name == "Zack" || x.Name == "Isla"));
+                RunTest("Basic Index Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
+                allPeople.Where(x => x.Name == "Zack"));
+
+                RunTest("Basic Cursor Equal Test", await personQuery.Where(x => x._Age == 35).ToListAsync(),
+                allPeople.Where(x => x._Age == 35));
+
+                RunTest("Greater Than Age Test", await personQuery.Where(x => x._Age > 40).ToListAsync(),
+                    allPeople.Where(x => x._Age > 40));
+
+                RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).ToListAsync(),
+                    allPeople.Where(x => x._Age <= 35));
+
+                RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                    allPeople.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+                RunTest("StartsWith Test", await personQuery.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                    allPeople.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
+
+                RunTest("Multiple Conditions AND", await personQuery.Where(x => x._Age > 30 && x.TestInt == 9).ToListAsync(),
+                    allPeople.Where(x => x._Age > 30 && x.TestInt == 9));
+
+
+                RunTest("Multiple Index Conditions OR", await personQuery.Where(x => x.Name == "Zack" || x.Name == "Isla").ToListAsync(),
+                    allPeople.Where(x => x.Name == "Zack" || x.Name == "Isla"));
 
                 RunTest("Multiple Cursor Conditions OR", await personQuery.Where(x => x._Age > 50 || x.TestInt == 3).ToListAsync(),
                     allPeople.Where(x => x._Age > 50 || x.TestInt == 3));
@@ -490,6 +490,7 @@
                     allPeople.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null)));
 
                 // 📌 Edge Case: Querying on a Property That Doesn't Exist in Some Objects
+                // THis test worked but now I secured it via the wrapper to throw an error to prevent user error!
                 RunTest("Query on Optional Property (Some Missing Values)",
                     await personQuery.Where(x => x.DoNotMapTest.Contains("diary")).ToListAsync(),
                     allPeople.Where(x => x.DoNotMapTest != null && x.DoNotMapTest.Contains("diary")));

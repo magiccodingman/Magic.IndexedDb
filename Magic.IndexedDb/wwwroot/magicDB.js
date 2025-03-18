@@ -1312,6 +1312,8 @@ async function runCursorQuery(table, conditions, queryAdditions, yieldedPrimaryK
     return finalRecords; // Ready for yielding
 }
 
+let lastCursorWarningTime = null;
+
 /**
  * Extracts only the necessary metadata for cursor-based queries.
  * Returns an array of objects containing the primary key and only the required properties.
@@ -1348,8 +1350,27 @@ async function runMetaDataCursorQuery(table, conditions, queryAdditions, yielded
 
     debugLog("Properties needed for cursor processing", { requiredProperties: [...requiredProperties] });
 
+    const now = Date.now();
+
     // **Iterate over each record in IndexedDB**
     await table.each(record => {
+        // **Validate all required properties exist (excluding `_MagicOrderId`)**
+        let missingProperties = [];
+        for (const prop of requiredProperties) {
+            if (prop !== "_MagicOrderId" && record[prop] === undefined) {
+                missingProperties.push(prop);
+            }
+        }
+
+        if (missingProperties.length > 0) {
+            // **Throttle warning to prevent spam (once every 10 minutes)**
+            if (!lastCursorWarningTime || startTime - lastCursorWarningTime > 10 * 60 * 1000) {
+                console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing properties: ${missingProperties.join(", ")}`);
+                lastCursorWarningTime = startTime;
+            }
+            return; // Skip this record
+        }
+
         // **Extract compound key values in correct order**
         let recordKey = normalizeCompoundKey(compoundKeys, record);
 
