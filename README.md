@@ -68,6 +68,9 @@ However, just as **LINQ to SQL is not identical to in-memory LINQ**, **LINQ to I
 It's important that you read the LINQ to IndexedDB documentation to truly understand what's going on so you can use IndexedDB like a pro:
 ## [Click Here to Get Started - Magic IndexedDB Documentation](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Index.md)
 
+## Blazor
+And for us Blazor users. Not only is this powerful, but we obviously get something truly amazing! Built in true yield based AsAsyncEnumerator operations, built in streamed responses for uncapped message limits, and so much more!
+
 # **Welcome to the Future**
 **IndexedDB is no longer a painful, complex system**. With **Magic IndexedDB**, your intent is effortlessly transformed into optimized queries. 
 
@@ -75,3 +78,10 @@ This is **the first and only true LINQ to IndexedDB implementation**—not a fak
 
 Welcome to **Magic IndexedDB**.  
 Where **everything is truly magic**.
+
+## Special Thanks
+Back in 2023, I ran into IndexedDB for the first time. I hated how hard it was to use, so I ventured to look for a good LINQ to IndexedDB library for Blazor. I would then discover nobody built a true Blazor to IndexedDB translation layer. Any that did exist were just replicating LINQ syntax, were depreciated/archived, or missed the point entirely. More shockingly, there was no library at all that did this in any language or framework! Everyone simply wrote their own wrappers around API's, but didn't built true LINQ like translated intent. But shortly after I released the project, I would get swept away by life and tune out for well over a year.
+
+But in 2024 recognizing there was peer review submissions for fixes that had sat for what seemed like ages. I decided to get involved enough to watch PR's and accept them. I'd eventually request contributor support and [@yueyinqiu](https://github.com/yueyinqiu) would answer that call. And thanks to your help, brain storming, suggestions, code, tests, and ideas, I was able to see how to accomplish the original goal of this project. I very likely never would have touched this project again if you hadn't provided support.
+
+But thank you to everyone who supported the v1.0 era. But now, it's time for v2.0 which truly accomplishes the goal of building a true LINQ to IndexedDB translation layer.
