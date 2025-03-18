@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace E2eTestWebApp.TestPages;
 
 [Route("/WhereTest")]
-public class WhereTestPage(IMagicDbFactory magic) : TestPageBase
+public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
 {
     [MagicTable("Records", null)]
     private class Record

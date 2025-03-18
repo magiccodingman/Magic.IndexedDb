@@ -9,7 +9,7 @@ using System.Reflection;
 
 namespace Magic.IndexedDb.Factories
 {
-    internal class MagicDbFactory : IMagicDbFactory, IAsyncDisposable
+    internal class MagicDbFactory : IMagicIndexedDb, IAsyncDisposable
     {        
         internal MagicDbFactory(long jsMessageSizeBytes)
         {

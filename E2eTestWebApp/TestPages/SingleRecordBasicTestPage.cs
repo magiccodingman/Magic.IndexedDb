@@ -10,7 +10,7 @@ using System.Text.Json;
 namespace E2eTestWebApp.TestPages;
 
 [Route("/SingleRecordBasicTest")]
-public class SingleRecordBasicTestPage(IMagicDbFactory magic) : TestPageBase
+public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
 {
     private class NestedItem
     {

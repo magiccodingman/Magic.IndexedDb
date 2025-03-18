@@ -40,7 +40,7 @@ namespace Magic.IndexedDb
         public static IServiceCollection AddMagicBlazorDB(this IServiceCollection services, 
             long jsMessageSizeBytes, bool isDebug)
         {
-            services.AddSingleton<IMagicDbFactory>(sp =>
+            services.AddSingleton<IMagicIndexedDb>(sp =>
         new MagicDbFactory(sp, sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes));
 
             if (isDebug)

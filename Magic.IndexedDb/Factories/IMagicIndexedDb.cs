@@ -3,7 +3,7 @@ using Magic.IndexedDb.Models;
 
 namespace Magic.IndexedDb
 {
-    public interface IMagicDbFactory
+    public interface IMagicIndexedDb
     {
 
         /// <summary>
