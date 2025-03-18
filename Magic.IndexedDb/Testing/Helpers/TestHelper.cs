@@ -30,57 +30,76 @@ namespace Magic.IndexedDb.Testing.Helpers
                     Message = $"List size mismatch:\nExpected count: {correctList.Count}\nActual count: {testList.Count}"
                 };
 
-            // 🔑 Get all primary key properties dynamically
-            List<MagicPropertyEntry> mpeList = PropertyMappingCache.GetPrimaryKeysOfType(typeof(T));
+            // 🔑 Retrieve primary key properties
+            List<MagicPropertyEntry> primaryKeys = PropertyMappingCache.GetPrimaryKeysOfType(typeof(T))
+                .Where(pk => pk.PrimaryKey)
+                .ToList();
 
-            if (mpeList == null || mpeList.Count == 0)
+            if (!primaryKeys.Any())
                 return new TestResponse { Success = false, Message = "Error: No primary keys found for type." };
-
-            bool isCompoundKey = mpeList.Count > 1;
 
             var failureDetails = new List<string>();
 
-            // 🔍 Convert correct results into a dictionary for fast lookup by primary key(s)
+            // 🔍 Convert correct results into a dictionary for fast lookup by **property name**
             var correctDictionary = correctList.ToDictionary(
-                item => isCompoundKey
-                    ? (object)mpeList.Select(mpe => mpe.Property.GetValue(item)).ToArray() // Compound key as an object array
-                    : mpeList[0].Property.GetValue(item) // Single key
+                item => primaryKeys.ToDictionary(
+                    pk => pk.Property.DeclaringType.FullName + "." + pk.Property.Name,  // **Use fully qualified property name**
+                    pk => pk.Property.GetValue(item)
+                ),
+                item => item
             );
 
             foreach (var actualItem in testList)
             {
-                object actualKey = isCompoundKey
-                    ? (object)mpeList.Select(mpe => mpe.Property.GetValue(actualItem)).ToArray()
-                    : mpeList[0].Property.GetValue(actualItem);
+                // Extract key properties from the actual item
+                var actualKeyValues = primaryKeys
+                    .Select(pk => (Property: pk.Property.Name, Value: pk.Property.GetValue(actualItem)))
+                    .ToList();
 
-                if (actualKey == null || !correctDictionary.TryGetValue(actualKey, out var expectedItem))
+                // Find matching item in correctList using key properties
+                var expectedItem = correctList.FirstOrDefault(correctItem =>
+                    primaryKeys.All(pk =>
+                        Equals(pk.Property.GetValue(correctItem), pk.Property.GetValue(actualItem))
+                    )
+                );
+
+                if (expectedItem == null)
                 {
-                    failureDetails.Add($"❌ No matching item found for Primary Key [{FormatKey(actualKey)}].");
+                    failureDetails.Add($"❌ No matching item found for Primary Key [{FormatKey(actualKeyValues)}].");
                     continue;
                 }
 
-                // Deeply compare the expected and actual item
+                // **Deeply compare object properties**
                 var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                     .Where(prop => !Attribute.IsDefined(prop, typeof(MagicNotMappedAttribute)))
                     .ToArray();
 
-                var propertyDifferences = CompareObjects(expectedItem, actualItem, properties, $"Item[{FormatKey(actualKey)}]");
+                var propertyDifferences = CompareObjects(expectedItem, actualItem, properties, $"Item[{FormatKey(actualKeyValues)}]");
 
                 if (propertyDifferences.Any())
                 {
-                    failureDetails.Add($"Mismatch in object with Primary Key [{FormatKey(actualKey)}]:\n" + string.Join("\n", propertyDifferences));
+                    failureDetails.Add($"Mismatch in object with Primary Key [{FormatKey(actualKeyValues)}]:\n" + string.Join("\n", propertyDifferences));
                 }
             }
+
 
             return failureDetails.Any()
                 ? new TestResponse { Success = false, Message = string.Join("\n\n", failureDetails) }
                 : new TestResponse { Success = true };
         }
 
-        private static string FormatKey(object key)
+        private static string FormatKey(List<(string Property, object Value)> keyValues)
         {
-            return key is object[] keyArray ? string.Join(" + ", keyArray.Select(k => k?.ToString() ?? "NULL")) : key?.ToString() ?? "NULL";
+            if (keyValues == null || keyValues.Count == 0)
+                return "NULL";
+
+            return string.Join(" | ", keyValues
+                .OrderBy(kv => kv.Property) // Ensure stable order for comparison
+                .Select(kv => $"{kv.Property}={kv.Value?.ToString() ?? "NULL"}"));
         }
+
+
+
 
         private static List<string> CompareObjects(object expected, object actual, PropertyInfo[] properties, string path)
         {

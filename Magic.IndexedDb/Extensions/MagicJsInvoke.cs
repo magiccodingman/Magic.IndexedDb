@@ -130,7 +130,7 @@ namespace Magic.IndexedDb.Extensions
             var streamRef = new DotNetStreamReference(stream);
 
             // Send to JS
-            var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler", token,
+            var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler", 
                 streamRef, instanceId, DotNetObjectReference.Create(this), Cache.JsMessageSizeBytes);
 
             // 🚀 Convert the stream reference back to JSON in C#

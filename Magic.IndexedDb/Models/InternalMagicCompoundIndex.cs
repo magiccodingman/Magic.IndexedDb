@@ -13,23 +13,28 @@ namespace Magic.IndexedDb.Models
     internal class InternalMagicCompoundIndex<T> : IMagicCompoundIndex
     {
         public string[] ColumnNamesInCompoundIndex { get; }
+        public PropertyInfo[] PropertyInfos { get; }
 
         private InternalMagicCompoundIndex(params Expression<Func<T, object>>[] properties)
         {
             if (properties == null || properties.Length < 2)
             {
-                throw new ArgumentException("Compound keys require at least 2 properties.", nameof(properties));
+                throw new ArgumentException("Compound indexes require at least 2 properties.", nameof(properties));
             }
 
-            ColumnNamesInCompoundIndex = properties
-                .Select(GetPropertyName)
+            // 🔥 Step 1: Retrieve PropertyInfos
+            PropertyInfos = properties
+                .Select(GetPropertyInfo)
                 .ToArray();
 
-            if (ColumnNamesInCompoundIndex.Distinct().Count() != ColumnNamesInCompoundIndex.Length)
-            {
-                throw new InvalidOperationException(
-                    $"Duplicate properties detected in the compound index for type '{typeof(T).Name}'. Each property must be unique.");
-            }
+            // 🔥 Step 2: Retrieve JS property names **without causing infinite recursion**
+            ColumnNamesInCompoundIndex = PropertyInfos
+                .Select(x => PropertyMappingCache.GetJsPropertyNameNoCache(
+                    PropertyMappingCache.GetPropertyColumnAttribute(x), x.Name)) // ✅ Correct JS name retrieval
+                .ToArray();
+
+            // 🔥 Step 3: Validate the compound index properties
+            ValidateIndexes();
         }
 
         internal static IMagicCompoundIndex Create(params Expression<Func<T, object>>[] keySelectors)
@@ -37,15 +42,27 @@ namespace Magic.IndexedDb.Models
             return new InternalMagicCompoundIndex<T>(keySelectors);
         }
 
-        private static string GetPropertyName(Expression<Func<T, object>> propertyExpression)
+        private void ValidateIndexes()
+        {
+            if (ColumnNamesInCompoundIndex.Distinct().Count() != ColumnNamesInCompoundIndex.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate properties detected in the compound index for type '{typeof(T).Name}'. Each property must be unique.");
+            }
+        }
+
+        /// <summary>
+        /// Extracts PropertyInfo from the provided expression.
+        /// </summary>
+        private static PropertyInfo GetPropertyInfo(Expression<Func<T, object>> propertyExpression)
         {
             if (propertyExpression.Body is MemberExpression memberExpr)
             {
-                return ValidateAndGetPropertyName(memberExpr);
+                return ValidateAndGetPropertyInfo(memberExpr);
             }
             else if (propertyExpression.Body is UnaryExpression unaryExpr && unaryExpr.Operand is MemberExpression unaryMemberExpr)
             {
-                return ValidateAndGetPropertyName(unaryMemberExpr);
+                return ValidateAndGetPropertyInfo(unaryMemberExpr);
             }
             else
             {
@@ -53,7 +70,10 @@ namespace Magic.IndexedDb.Models
             }
         }
 
-        private static string ValidateAndGetPropertyName(MemberExpression memberExpr)
+        /// <summary>
+        /// Ensures the property exists and is valid for indexing.
+        /// </summary>
+        private static PropertyInfo ValidateAndGetPropertyInfo(MemberExpression memberExpr)
         {
             var property = typeof(T).GetProperty(memberExpr.Member.Name);
             if (property == null)
@@ -61,20 +81,20 @@ namespace Magic.IndexedDb.Models
                 throw new ArgumentException($"Property '{memberExpr.Member.Name}' does not exist on type '{typeof(T).Name}'.");
             }
 
-            if (memberExpr.Expression is MemberExpression nestedExpr)
+            if (memberExpr.Expression is MemberExpression)
             {
                 throw new InvalidOperationException(
-                    $"Cannot compound index nested properties like '{memberExpr.Member.Name}' in compound keys or indexes on type '{typeof(T).Name}'. " +
+                    $"Cannot use nested properties like '{memberExpr.Member.Name}' in a Compound Index for type '{typeof(T).Name}'. " +
                     "Only top-level properties can be indexed.");
             }
 
             if (property.GetCustomAttribute<MagicNotMappedAttribute>() != null)
             {
                 throw new InvalidOperationException(
-                    $"Cannot use the non-mapped property '{property.Name}' in a compound key on type '{typeof(T).Name}'.");
+                    $"Cannot use the non-mapped property '{property.Name}' in a Compound Index for type '{typeof(T).Name}'.");
             }
 
-            return PropertyMappingCache.GetJsPropertyName<T>(property);
+            return property;
         }
     }
 }

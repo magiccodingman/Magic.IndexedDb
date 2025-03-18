@@ -557,7 +557,7 @@ export async function* magicQueryYield(dbName, storeName, nestedOrFilter, queryA
     if (!isValidQueryAdditions(queryAdditions)) {
         throw new Error("Invalid addition query provided to where function.");
     }
-    
+
     let db = await getDb(dbName);
     let table = db.table(storeName);
 
@@ -567,39 +567,35 @@ export async function* magicQueryYield(dbName, storeName, nestedOrFilter, queryA
 
         debugLog(`[IndexCache Init] Creating cache for database: ${dbName}, store: ${storeName}`, { schema });
 
+        const primaryKeyInfo = await getPrimaryKey(dbName, storeName);
         indexCache[dbName][storeName] = {
             indexes: new Set(),
-            primaryKey: schema.primKey.name,
+            compoundKeys: new Set(primaryKeyInfo.keys), // Store all keys
             uniqueKeys: new Set(),
-            compoundKeys: new Map(), // Store compound keys properly
-            compoundIndexes: new Map() // Store compound indexes properly
+            compoundIndexes: new Map()
         };
 
-        debugLog(`[IndexCache Init] Primary Key: ${schema.primKey.name}`);
+        debugLog(`[IndexCache Init] Primary Keys: ${primaryKeyInfo.keys.join(", ")}`);
 
         for (const index of schema.indexes) {
             debugLog(`[IndexCache Init] Processing index`, { index });
 
-            // **Handle Normal Indexes**
             if (typeof index.keyPath === "string") {
                 indexCache[dbName][storeName].indexes.add(index.keyPath);
                 debugLog(`[IndexCache Init] Added single index: ${index.keyPath}`);
             }
 
-            // **Handle Unique Indexes**
             if (index.unique) {
                 indexCache[dbName][storeName].uniqueKeys.add(index.keyPath);
                 debugLog(`[IndexCache Init] Added unique index: ${index.keyPath}`);
             }
 
-            // **Handle Compound Indexes**
             if (Array.isArray(index.keyPath)) {
                 const compoundKeySet = new Set(index.keyPath);
                 indexCache[dbName][storeName].compoundIndexes.set(index.keyPath.join(","), compoundKeySet);
 
                 debugLog(`[IndexCache Init] Added compound index: ${index.keyPath.join(", ")}`);
 
-                // **Add each field as an indexed column individually**
                 for (const field of index.keyPath) {
                     if (!indexCache[dbName][storeName].indexes.has(field)) {
                         indexCache[dbName][storeName].indexes.add(field);
@@ -608,131 +604,132 @@ export async function* magicQueryYield(dbName, storeName, nestedOrFilter, queryA
                 }
             }
         }
-
-        // **Handle Compound Primary Keys (Treat them as Compound Indexes)**
-        if (schema.primKey && Array.isArray(schema.primKey.keyPath)) {
-            const primaryCompoundKeySet = new Set(schema.primKey.keyPath);
-            indexCache[dbName][storeName].compoundIndexes.set(schema.primKey.keyPath.join(","), primaryCompoundKeySet);
-
-            debugLog(`[IndexCache Init] Added compound primary key as a compound index: ${schema.primKey.keyPath.join(", ")}`);
-
-            for (const field of schema.primKey.keyPath) {
-                if (!indexCache[dbName][storeName].indexes.has(field)) {
-                    indexCache[dbName][storeName].indexes.add(field);
-                    debugLog(`[IndexCache Init] Marked primary key field as indexed: ${field}`);
-                }
-            }
-        }
-
-        debugLog(`[IndexCache Init] Final Index Cache`, {
-            primaryKey: indexCache[dbName][storeName].primaryKey,
-            indexes: [...indexCache[dbName][storeName].indexes],
-            uniqueKeys: [...indexCache[dbName][storeName].uniqueKeys],
-            compoundIndexes: [...indexCache[dbName][storeName].compoundIndexes.keys()]
-        });
     }
 
+    const primaryKeyInfo = await getPrimaryKey(dbName, storeName);
+    const primaryKeys = primaryKeyInfo.keys;
+    let yieldedPrimaryKeys = new Map(); // **Structured compound key tracking**
 
+    debugLog("Validated schema & cached indexes", { primaryKeys, indexes: indexCache[dbName][storeName].indexes });
 
-
-
-
-    let primaryKey = indexCache[dbName][storeName].primaryKey;
-    let yieldedPrimaryKeys = new Set(); // Track already returned records
-
-    debugLog("Validated schema & cached indexes", { primaryKey, indexes: indexCache[dbName][storeName].indexes });
-
-    // **Step 1: Clean up `nestedOrFilter` to remove empty structures**
     nestedOrFilter = cleanNestedOrFilter(nestedOrFilter);
     debugLog("Cleaned Filter Object", { nestedOrFilter });
 
-    // **Step 2: Check if filter is now empty**
     let isFilterEmpty = !nestedOrFilter || !nestedOrFilter.orGroups || nestedOrFilter.orGroups.length === 0;
-
     debugLog("Filter Check After Cleaning", { isFilterEmpty });
 
-    // **Step 3: Handle empty filter cases**
     if (isFilterEmpty) {
         if (!queryAdditions || queryAdditions.length === 0) {
-            // **Case 1: No filter & No Query Additions -> Fetch Entire Table**
             debugLog("No filtering or query additions. Fetching entire table.");
-
             let allRecords = await table.toArray();
-            while (allRecords.length > 0) {
-                let record = allRecords.shift(); // Remove first item (Frees memory)
-                if (!yieldedPrimaryKeys.has(record[primaryKey])) {
-                    yieldedPrimaryKeys.add(record[primaryKey]);
+
+            for (let record of allRecords) {
+                let recordKey = normalizeCompoundKey(primaryKeys, record);
+                if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                    addYieldedKey(yieldedPrimaryKeys, recordKey);
                     yield record;
                 }
             }
             return;
         } else {
-            // **Case 2: No Filter but Query Additions Exist -> Trick Indexed Query**
             debugLog("Empty filter but query additions exist. Applying primary key GREATER_THAN_OR_EQUAL trick.");
-
             nestedOrFilter = {
                 orGroups: [{
                     andGroups: [{
-                        conditions: [{
-                            property: primaryKey,
+                        conditions: primaryKeys.map(pk => ({
+                            property: pk,
                             operation: QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL,
-                            value: -Infinity // Trick Dexie into fetching everything
-                        }]
+                            value: -Infinity
+                        }))
                     }]
                 }]
             };
         }
     }
 
-
     let requiresCursor = validateQueryAdditions(queryAdditions, indexCache, dbName, storeName)
         || validateQueryCombinations(nestedOrFilter) || forceCursor;
     debugLog("Determined if query requires cursor", { requiresCursor });
 
-
-    // partition function to correctly separate IndexedDB vs. Cursor**
     let { indexedQueries, compoundIndexQueries, cursorConditions } =
         partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, dbName, storeName, requiresCursor);
 
     debugLog("Final Indexed Queries vs. Compound Queries vs. Cursor Queries", { indexedQueries, compoundIndexQueries, cursorConditions });
 
-    // **Only process indexed queries if at least one exists**
     if (indexedQueries.length > 0 || compoundIndexQueries.length > 0) {
         let { optimizedSingleIndexes, optimizedCompoundIndexes } = optimizeIndexedQueries(indexedQueries, compoundIndexQueries);
-
         debugLog("Optimized Indexed Queries", { optimizedSingleIndexes, optimizedCompoundIndexes });
 
-        // **Merge both index types into one execution list**
         let allOptimizedQueries = [...optimizedSingleIndexes, ...optimizedCompoundIndexes];
 
         for (let query of allOptimizedQueries) {
-            let records = await runIndexedQuery(table, query, queryAdditions); // Load batch of records first
+            let records = await runIndexedQuery(table, query, queryAdditions);
 
-            while (records.length > 0) {
-                let record = records.shift(); // Remove first item (Frees memory immediately)
-                if (!yieldedPrimaryKeys.has(record[primaryKey])) {
-                    yieldedPrimaryKeys.add(record[primaryKey]);
+            for (let record of records) {
+                let recordKey = normalizeCompoundKey(primaryKeys, record);
+                if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                    addYieldedKey(yieldedPrimaryKeys, recordKey);
                     yield record;
                 }
             }
         }
     }
 
-
-
-    // Pass yielded primary keys into cursor query to **skip already processed results**
     if (Array.isArray(cursorConditions) && cursorConditions.length > 0) {
-        let cursorResults = await runCursorQuery(table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKey);
+        let cursorResults = await runCursorQuery(table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys);
         debugLog("Cursor Query Results Count", { count: cursorResults.length });
 
-        // Efficiently yield results and free memory
-        while (cursorResults.length > 0) {
-            let record = cursorResults.shift(); // Remove from array to free memory
-            yieldedPrimaryKeys.add(record[primaryKey]);
-            yield record;
+        for (let record of cursorResults) {
+            let recordKey = normalizeCompoundKey(primaryKeys, record);
+            if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                addYieldedKey(yieldedPrimaryKeys, recordKey);
+                yield record;
+            }
         }
     }
 }
+
+/**
+ * Converts a compound key into a structured format.
+ * Ensures keys are **always stored in the correct order**.
+ */
+function normalizeCompoundKey(primaryKeys, record) {
+    return Object.fromEntries(primaryKeys.map(pk => [pk, record[pk]]));
+}
+
+/**
+ * Checks if a compound key has already been yielded.
+ */
+function hasYieldedKey(yieldedPrimaryKeys, recordKey) {
+    let currentMap = yieldedPrimaryKeys;
+
+    for (let key of Object.keys(recordKey).sort()) {
+        if (!currentMap.has(key)) return false;
+        currentMap = currentMap.get(key);
+        if (!currentMap.has(recordKey[key])) return false;
+        currentMap = currentMap.get(recordKey[key]);
+    }
+
+    return currentMap.has("__end__");
+}
+
+/**
+ * Marks a compound key as yielded.
+ */
+function addYieldedKey(yieldedPrimaryKeys, recordKey) {
+    let currentMap = yieldedPrimaryKeys;
+
+    for (let key of Object.keys(recordKey).sort()) {
+        if (!currentMap.has(key)) currentMap.set(key, new Map());
+        currentMap = currentMap.get(key);
+        if (!currentMap.has(recordKey[key])) currentMap.set(recordKey[key], new Map());
+        currentMap = currentMap.get(recordKey[key]);
+    }
+
+    currentMap.set("__end__", true);
+}
+
+
 
 function cleanNestedOrFilter(filter) {
     if (!filter || !Array.isArray(filter.orGroups)) return null;
@@ -792,6 +789,7 @@ function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, db
             let singleFieldConditions = [];
 
             const schema = indexCache[dbName][storeName];
+            const primaryKeys = Array.from(schema.compoundKeys); // Always an array
 
             // **Step 1: Detect if this is a compound query**
             let compoundQuery = detectCompoundQuery(andGroup.conditions, indexCache, dbName, storeName);
@@ -808,7 +806,8 @@ function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, db
                     continue;
                 }
 
-                const isPrimaryKey = condition.property === schema.primaryKey;
+                // **Primary Key Check Must Support Compound Keys**
+                const isPrimaryKey = primaryKeys.includes(condition.property);
                 const isUniqueKey = schema.uniqueKeys.has(condition.property);
                 const isStandaloneIndex = schema.indexes.has(condition.property);
 
@@ -852,8 +851,6 @@ function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, db
     return { indexedQueries, compoundIndexQueries, cursorConditions };
 }
 
-
-
 function detectCompoundQuery(andConditions, indexCache, dbName, storeName) {
     debugLog("Checking if AND conditions match a compound index", { andConditions });
 
@@ -889,14 +886,13 @@ function detectCompoundQuery(andConditions, indexCache, dbName, storeName) {
     return null;
 }
 
-
-
-
-
 function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
     queryAdditions = queryAdditions || []; // Ensure it's always an array
     let seenAdditions = new Set();
     let requiresCursor = false;
+
+    const schema = indexCache[dbName]?.[storeName];
+    const primaryKeys = schema ? Array.from(schema.compoundKeys) : [];
 
     for (const addition of queryAdditions) {
         let validCombos = QUERY_ADDITION_RULES[addition.additionFunction];
@@ -907,10 +903,9 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
             throw new Error(`Unsupported query addition: ${addition.additionFunction} (valid additions: ${Object.keys(QUERY_ADDITION_RULES).join(", ")})`);
         }
 
-
         // **Ensure ORDER_BY targets an indexed property**
         if (addition.additionFunction === QUERY_ADDITIONS.ORDER_BY || addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
-            const isIndexed = indexCache[dbName]?.[storeName]?.indexes?.[addition.property] || false;
+            const isIndexed = schema?.indexes.has(addition.property) || primaryKeys.includes(addition.property);
             if (!isIndexed) {
                 debugLog(`Query requires cursor: ORDER_BY on non-indexed property ${addition.property}`);
                 requiresCursor = true; // Forces cursor usage
@@ -939,9 +934,6 @@ function validateQueryAdditions(queryAdditions, indexCache, dbName, storeName) {
 
     return requiresCursor;
 }
-
-
-
 
 function validateQueryCombinations(nestedOrFilter) {
     debugLog("Validating Query Combinations", { nestedOrFilter });
@@ -1044,18 +1036,32 @@ async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
     let query;
     let firstCondition = indexedConditions[0];
 
-    // **Detect Compound Index Query**
+    // **Handle Compound Index Query**
     if (Array.isArray(firstCondition.properties)) {
         debugLog("Detected Compound Index Query!", { properties: firstCondition.properties });
 
+        // **Extract values in the correct order**
+        const valuesInCorrectOrder = firstCondition.properties.map((_, index) => firstCondition.value[index]);
+
+        debugLog("Compound Index Query - Ordered Properties & Values", {
+            properties: firstCondition.properties,
+            values: valuesInCorrectOrder
+        });
+
         query = table.where(firstCondition.properties);
 
-        if (firstCondition.operation === QUERY_OPERATIONS.IN) {
+        if (firstCondition.operation === QUERY_OPERATIONS.EQUAL) {
+            query = query.equals(valuesInCorrectOrder);
+        }
+        else if (firstCondition.operation === QUERY_OPERATIONS.IN) {
             query = query.anyOf(firstCondition.value);
-        } else {
-            query = query.equals(firstCondition.value);
+        } 
+        else {
+            throw new Error(`Unsupported operation for compound indexes: ${firstCondition.operation}`);
         }
     }
+
+
     // **Handle Single Indexed Query**
     else if (firstCondition.property) {
         debugLog("Detected Single-Index Query!", { property: firstCondition.property });
@@ -1085,7 +1091,8 @@ async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
             default:
                 throw new Error(`Unsupported indexed query operation: ${firstCondition.operation}`);
         }
-    } else {
+    }
+    else {
         throw new Error("Invalid indexed condition—missing `properties` or `property`.");
     }
 
@@ -1148,23 +1155,46 @@ async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
 }
 
 
-
-
-
-
 /**
- *  Optimizes indexed queries by merging `anyOf()` conditions and recognizing compound indexes.
+ * Optimizes indexed queries by merging `anyOf()` conditions and recognizing compound indexes.
  */
 function optimizeIndexedQueries(indexedQueries, compoundIndexQueries) {
     if ((!indexedQueries || indexedQueries.length === 0) && (!compoundIndexQueries || compoundIndexQueries.length === 0)) {
         return { optimizedSingleIndexes: [], optimizedCompoundIndexes: [] };
     }
 
+    debugLog("Optimizing Indexed Queries", { indexedQueries, compoundIndexQueries });
+
+    // Optimize single-index queries normally
+    let optimizedSingleIndexes = optimizeIndexedOnlyQueries(indexedQueries);
+
+    // Optimize compound queries, ensuring fallbackSingleIndexes is always an array
+    let { optimizedCompoundIndexes = [], fallbackSingleIndexes = [] } = optimizeCompoundIndexedOnlyQueries(compoundIndexQueries);
+
+    // **Merge any single-index fallbacks from compound queries**
+    optimizedSingleIndexes.push(...fallbackSingleIndexes);
+
+    if (optimizedSingleIndexes.length === 0 && optimizedCompoundIndexes.length === 0) {
+        throw new Error("OptimizeIndexedQueries failed—No indexed queries were produced! Investigate input conditions.");
+    }
+
+    debugLog("Final Optimized Queries", { optimizedSingleIndexes, optimizedCompoundIndexes });
+
+    return { optimizedSingleIndexes, optimizedCompoundIndexes };
+}
+
+
+
+/**
+ * Optimizes single-field indexed queries (e.g., `where("field")`).
+ */
+function optimizeIndexedOnlyQueries(indexedQueries) {
+    if (!indexedQueries || indexedQueries.length === 0) return [];
+
     let optimizedSingleIndexes = [];
-    let optimizedCompoundIndexes = [];
     let groupedByProperty = {};
 
-    // **Optimize Single-Field Indexed Queries**
+    // Group queries by property name
     for (let query of indexedQueries) {
         for (let condition of query) {
             if (!groupedByProperty[condition.property]) {
@@ -1212,31 +1242,47 @@ function optimizeIndexedQueries(indexedQueries, compoundIndexQueries) {
         }
     }
 
-    // **Optimize Compound Indexed Queries (Fixing the `.map` issue)**
+    return optimizedSingleIndexes;
+}
+
+/**
+ * Optimizes compound-indexed queries (e.g., `where(["field1", "field2"])`).
+ * If a compound query cannot be optimized, it falls back to single-index queries.
+ */
+function optimizeCompoundIndexedOnlyQueries(compoundIndexQueries) {
+    if (!compoundIndexQueries || compoundIndexQueries.length === 0) {
+        return { optimizedCompoundIndexes: [], fallbackSingleIndexes: [] };
+    }
+
+    let optimizedCompoundIndexes = [];
+    let fallbackToSingleIndex = []; // Store compound queries that need to be handled as single-index
+
     for (let compoundQuery of compoundIndexQueries) {
-        let propertyKeys = compoundQuery.properties.join("+"); // Ensure correct key format
-        let conditions = compoundQuery.conditions; // Access conditions safely
+        let conditions = compoundQuery.conditions;
+        let properties = compoundQuery.properties;
 
-        let canMerge = conditions.every(c => c.operation === QUERY_OPERATIONS.EQUAL);
+        let canUseEquals = conditions.every(c => c.operation === QUERY_OPERATIONS.EQUAL);
 
-        if (canMerge) {
+        if (canUseEquals) {
+            // **Use .equals() for compound indexes when possible**
             optimizedCompoundIndexes.push([{
-                properties: compoundQuery.properties, // Keep original properties array
-                operation: QUERY_OPERATIONS.IN,
-                value: [conditions.map(c => c.value)] // Fix: Access conditions properly
+                properties,
+                operation: QUERY_OPERATIONS.EQUAL,
+                value: conditions.map(c => c.value) // Ordered values
             }]);
         } else {
-            optimizedCompoundIndexes.push(conditions);
+            // **If the compound query cannot be optimized, pass conditions to single-index processing**
+            debugLog("Cannot optimize compound index due to unsupported operations. Falling back to single-index processing.", { compoundQuery });
+            fallbackToSingleIndex.push(...conditions);
         }
     }
 
-    if (optimizedSingleIndexes.length === 0 && optimizedCompoundIndexes.length === 0) {
-        throw new Error("OptimizeIndexedQueries failed—No indexed queries were produced! Investigate input conditions.");
-    }
+    // **Run single-index optimization on fallback queries**
+    let fallbackSingleIndexes = fallbackToSingleIndex.length > 0
+        ? optimizeIndexedOnlyQueries([fallbackToSingleIndex])
+        : [];
 
-    debugLog("Optimized Indexed Queries", { optimizedSingleIndexes, optimizedCompoundIndexes });
-
-    return { optimizedSingleIndexes, optimizedCompoundIndexes };
+    return { optimizedCompoundIndexes, fallbackSingleIndexes };
 }
 
 
@@ -1250,17 +1296,17 @@ function optimizeIndexedQueries(indexedQueries, compoundIndexQueries) {
  * @param {Array} conditionsArray - Array of OR groups containing AND conditions.
  * @returns {Promise<Array>} - Filtered results based on conditions.
  */
-async function runCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, primaryKey) {
+async function runCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
     debugLog("Running Cursor Query with Conditions", { conditions, queryAdditions });
 
-    // **Extract metadata (primary keys & sorting properties)**
-    let primaryKeyList = await runMetaDataCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, primaryKey);
+    // **Extract metadata (compound keys & sorting properties)**
+    let primaryKeyList = await runMetaDataCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys);
 
     // **Apply sorting, take, and skip operations**
-    let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, primaryKey);
+    let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys);
 
     // **Fetch only the required records from IndexedDB**
-    let finalRecords = await fetchRecordsByPrimaryKeys(table, finalPrimaryKeys, primaryKey);
+    let finalRecords = await fetchRecordsByPrimaryKeys(table, finalPrimaryKeys, compoundKeys);
 
     debugLog("Final Cursor Query Records Retrieved", { count: finalRecords.length });
     return finalRecords; // Ready for yielding
@@ -1270,21 +1316,21 @@ async function runCursorQuery(table, conditions, queryAdditions, yieldedPrimaryK
  * Extracts only the necessary metadata for cursor-based queries.
  * Returns an array of objects containing the primary key and only the required properties.
  */
-async function runMetaDataCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, primaryKey) {
+async function runMetaDataCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
     debugLog("Extracting Metadata for Cursor Query", { conditions, queryAdditions });
 
-    let primaryKeyList = []; // Store only necessary metadata
+    let primaryKeyList = []; // Store compound keys + metadata
     let requiredProperties = new Set();
-    let magicOrder = 0; // NEW: Counter to track cursor order
+    let magicOrder = 0; // Counter to track cursor order
 
-    // Extract properties used in filtering (conditions)
+    // **Extract properties used in filtering (conditions)**
     for (const andGroup of conditions) {
         for (const condition of andGroup) {
             if (condition.property) requiredProperties.add(condition.property);
         }
     }
 
-    // Extract properties needed for sorting
+    // **Extract properties needed for sorting**
     for (const addition of queryAdditions) {
         if ((addition.additionFunction === QUERY_ADDITIONS.ORDER_BY || addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) &&
             addition.property) {
@@ -1292,31 +1338,41 @@ async function runMetaDataCursorQuery(table, conditions, queryAdditions, yielded
         }
     }
 
-    // Always include the primary key
-    requiredProperties.add(primaryKey);
+    // **Always include all compound keys**
+    for (const key of compoundKeys) {
+        requiredProperties.add(key);
+    }
 
-    // NEW: Include _MagicOrderId in metadata
+    // Include `_MagicOrderId` in metadata for sorting
     requiredProperties.add("_MagicOrderId");
 
     debugLog("Properties needed for cursor processing", { requiredProperties: [...requiredProperties] });
 
-    // Iterate over each record, storing only required properties
+    // **Iterate over each record in IndexedDB**
     await table.each(record => {
-        if (yieldedPrimaryKeys.has(record[primaryKey])) return;
+        // **Extract compound key values in correct order**
+        let recordKey = normalizeCompoundKey(compoundKeys, record);
 
+        // **Skip if the record's key is already in `yieldedPrimaryKeys`**
+        if (hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+            debugLog(`Skipping already yielded record:`, recordKey);
+            return; // Skip already yielded keys
+        }
+
+        // **Apply filtering conditions**
         if (conditions.some(andConditions => andConditions.every(condition => applyCondition(record, condition)))) {
             let sortingProperties = {};
 
-            // Store necessary properties
+            // **Store only necessary properties**
             for (const prop of requiredProperties) {
                 sortingProperties[prop] = record[prop];
             }
 
-            // NEW: Assign a unique order ID based on cursor sequence
+            // **Assign a unique order ID based on cursor sequence**
             sortingProperties["_MagicOrderId"] = magicOrder++;
 
             primaryKeyList.push({
-                primaryKey: record[primaryKey],
+                primaryKey: recordKey, // Store as an ordered object
                 sortingProperties
             });
         }
@@ -1325,7 +1381,6 @@ async function runMetaDataCursorQuery(table, conditions, queryAdditions, yielded
     debugLog("Primary Key List Collected", { count: primaryKeyList.length });
     return primaryKeyList;
 }
-
 
 /**
  *  Applies a single filtering condition on a record.
@@ -1367,16 +1422,30 @@ function applyCondition(record, condition) {
     }
 }
 
-async function fetchRecordsByPrimaryKeys(table, primaryKeys, primaryKeyName, batchSize = 500) {
+async function fetchRecordsByPrimaryKeys(table, primaryKeys, compoundKeys, batchSize = 500) {
     if (!primaryKeys || primaryKeys.length === 0) return [];
 
     debugLog(`Fetching ${primaryKeys.length} final objects in parallel batches of ${batchSize}`, { primaryKeys });
 
     let batchPromises = [];
+    let isCompoundKey = Array.isArray(compoundKeys) && compoundKeys.length > 1;
 
     for (let i = 0; i < primaryKeys.length; i += batchSize) {
         let batch = primaryKeys.slice(i, i + batchSize);
-        batchPromises.push(table.where(primaryKeyName).anyOf(batch).toArray()); // Uses correct primary key
+
+        if (isCompoundKey) {
+            // **Ensure batch is already formatted as arrays of ordered values**
+            let formattedBatch = batch.map(pk => Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]));
+
+            debugLog("Fetching batch with ordered compound key values", { formattedBatch });
+
+            batchPromises.push(table.where(compoundKeys).anyOf(formattedBatch).toArray());
+        } else {
+            // **Single key fetch**
+            debugLog("Fetching batch with single primary key", { batch });
+
+            batchPromises.push(table.where(compoundKeys[0]).anyOf(batch).toArray());
+        }
     }
 
     // Execute all batches in parallel and wait for the slowest one
@@ -1386,8 +1455,7 @@ async function fetchRecordsByPrimaryKeys(table, primaryKeys, primaryKeyName, bat
     return batchResults.flat();
 }
 
-
-function applyCursorQueryAdditions(primaryKeyList, queryAdditions, primaryKey, flipSkipTakeOrder = true) {
+function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, flipSkipTakeOrder = true) {
     if (!queryAdditions || queryAdditions.length === 0) {
         return primaryKeyList.map(item => item.primaryKey);
     }

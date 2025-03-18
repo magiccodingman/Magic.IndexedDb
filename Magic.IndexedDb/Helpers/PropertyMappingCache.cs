@@ -126,12 +126,6 @@ namespace Magic.IndexedDb.Helpers
 
     }
 
-
-
-
-
-
-
     public static class PropertyMappingCache
     {
         internal static readonly ConcurrentDictionary<Type, SearchPropEntry> _propertyCache = new();
@@ -500,10 +494,12 @@ namespace Magic.IndexedDb.Helpers
             var instance = Activator.CreateInstance(type) as IMagicTableBase;
 
             IMagicCompoundKey compoundKey;
+            List<IMagicCompoundIndex>? compoundIndexes = new List<IMagicCompoundIndex>();
             HashSet<string> keyNames = new HashSet<string>();
             if (instance != null)
             {
                 compoundKey = instance.GetKeys();
+                compoundIndexes = instance.GetCompoundIndexes();
                 keyNames = new HashSet<string>(compoundKey.PropertyInfos.Select(p => p.Name));
             }
 
@@ -519,10 +515,18 @@ namespace Magic.IndexedDb.Helpers
 
                 bool isPrimaryKey = keyNames.Contains(property.Name);
 
+                bool isCompoundIndexed = false;
+                if(compoundIndexes != null && compoundIndexes.Any())
+                {
+                    isCompoundIndexed = compoundIndexes.SelectMany(x => x.PropertyInfos).Any(x => x.Name == property.Name);
+                }
+
                 var magicEntry = new MagicPropertyEntry(
                     property,
                     columnAttribute,
-                    property.IsDefined(typeof(MagicIndexAttribute), inherit: true),
+                    property.IsDefined(typeof(MagicIndexAttribute), inherit: true)
+                    || isPrimaryKey || isCompoundIndexed
+                    ,
                     property.IsDefined(typeof(MagicUniqueIndexAttribute), inherit: true),
                     isPrimaryKey,
                     property.IsDefined(typeof(MagicNotMappedAttribute), inherit: true),

@@ -155,7 +155,7 @@ namespace Magic.IndexedDb
         /// <param name="query"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        internal async Task<IEnumerable<T>?> LinqToIndedDb<T>(
+        internal async Task<IEnumerable<T>?> LinqToIndexedDb<T>(
             NestedOrFilter nestedOrFilter, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
@@ -186,7 +186,7 @@ namespace Magic.IndexedDb
         /// <param name="query"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        internal async IAsyncEnumerable<T?> LinqToIndedDbYield<T>(
+        internal async IAsyncEnumerable<T?> LinqToIndexedDbYield<T>(
     NestedOrFilter nestedOrFilter, MagicQuery<T> query,
     [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
         {

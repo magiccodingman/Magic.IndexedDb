@@ -41,7 +41,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         /// <returns></returns>
         public async IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            await foreach (var item in MagicQuery.Manager.LinqToIndedDbYield<T>(nestedOrFilter, MagicQuery, cancellationToken))
+            await foreach (var item in MagicQuery.Manager.LinqToIndexedDbYield<T>(nestedOrFilter, MagicQuery, cancellationToken))
             {
                 if (item is not null) // Ensure non-null items
                 {
@@ -77,7 +77,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         /// <returns></returns>
         public async Task<List<T>> ToListAsync()
         {
-            return (await MagicQuery.Manager.LinqToIndedDb<T>(
+            return (await MagicQuery.Manager.LinqToIndexedDb<T>(
                 nestedOrFilter, MagicQuery, default))?.ToList() ?? new List<T>();
         }
 
