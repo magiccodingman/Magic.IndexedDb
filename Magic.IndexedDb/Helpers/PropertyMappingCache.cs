@@ -498,13 +498,14 @@ namespace Magic.IndexedDb.Helpers
             bool isMagicTable = SchemaHelper.HasMagicTableInterface(type);
 
             var instance = Activator.CreateInstance(type) as IMagicTableBase;
-            if (instance == null)
-            {
-                throw new InvalidOperationException($"Type '{type.Name}' must implement IMagicTableBase.");
-            }
 
-            IMagicCompoundKey compoundKey = instance.GetKeys();
-            HashSet<string> keyNames = new HashSet<string>(compoundKey.PropertyInfos.Select(p => p.Name));
+            IMagicCompoundKey compoundKey;
+            HashSet<string> keyNames = new HashSet<string>();
+            if (instance != null)
+            {
+                compoundKey = instance.GetKeys();
+                keyNames = new HashSet<string>(compoundKey.PropertyInfos.Select(p => p.Name));
+            }
 
             List<MagicPropertyEntry> newMagicPropertyEntry = new List<MagicPropertyEntry>();
             foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy))
@@ -514,13 +515,7 @@ namespace Magic.IndexedDb.Helpers
 
                 string propertyKey = property.Name; // Now stored as string, not PropertyInfo
 
-                var columnAttribute = property.GetCustomAttributes()
-                                              .FirstOrDefault(attr => attr is IColumnNamed) as IColumnNamed;
-
-                if (columnAttribute != null && string.IsNullOrWhiteSpace(columnAttribute.ColumnName))
-                {
-                    columnAttribute = null;
-                }
+                var columnAttribute = GetPropertyColumnAttribute(property);
 
                 bool isPrimaryKey = keyNames.Contains(property.Name);
 
@@ -554,6 +549,24 @@ namespace Magic.IndexedDb.Helpers
                     EnsureTypeIsCached(comp);
                 }
             }
+        }
+
+        internal static IColumnNamed? GetPropertyColumnAttribute(PropertyInfo property)
+        {
+            var columnAttribute = property.GetCustomAttributes()
+                                          .FirstOrDefault(attr => attr is IColumnNamed) as IColumnNamed;
+
+            if (columnAttribute != null && string.IsNullOrWhiteSpace(columnAttribute.ColumnName))
+            {
+                columnAttribute = null;
+            }
+
+            return columnAttribute;
+        }
+
+        internal static string GetJsPropertyNameNoCache(IColumnNamed? columnAttribute, string PropertyName)
+        {
+            return columnAttribute?.ColumnName ?? PropertyName;
         }
     }
 }

@@ -4,11 +4,6 @@
     {
         public string TableName { get; set; }
 
-        /// <summary>
-        /// column name of the primary key
-        /// </summary>
-        public string PrimaryKey { get; set; }
-
         public int Version { get; set; }
 
         /// <summary>

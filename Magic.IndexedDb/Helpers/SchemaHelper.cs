@@ -141,7 +141,7 @@ namespace Magic.IndexedDb.Helpers
                 throw new InvalidOperationException($"Type {type.Name} is not cached.");
             }
 
-            // Ensure the type actually implements IMagicTableBase
+            // Ensure the type implements IMagicTableBase
             if (instance == null)
             {
                 throw new InvalidOperationException($"Type {type.Name} does not implement IMagicTableBase and cannot be used as a Magic Table.");
@@ -156,41 +156,36 @@ namespace Magic.IndexedDb.Helpers
 
             var schema = new StoreSchema
             {
-                TableName = tableName,
-                PrimaryKeyAuto = true
+                TableName = tableName
             };
 
-            // Get the primary key property
-            var primaryKeyProperty = type.GetProperties()
-                .FirstOrDefault(prop => PropertyMappingCache.GetPropertyEntry(prop, type).PrimaryKey);
-
-            if (primaryKeyProperty == null)
+            // ✅ Extract Compound Key
+            var compoundKey = instance.GetKeys();
+            if (compoundKey == null || compoundKey.PropertyInfos.Length == 0)
             {
-                throw new InvalidOperationException($"The entity {type.Name} does not have a primary key attribute.");
+                throw new InvalidOperationException($"The entity {type.Name} does not have a valid primary key.");
             }
 
-            schema.PrimaryKey = PropertyMappingCache.GetJsPropertyName(primaryKeyProperty, type);
+            // ✅ If only one key → Single primary key, otherwise compound key
+            schema.ColumnNamesInCompoundKey = compoundKey.PropertyInfos
+                .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
+                .ToList();
 
-            // Get unique index properties
+            schema.PrimaryKeyAuto = compoundKey.AutoIncrement; // ✅ AutoIncrement only applies to single primary keys
+
+            // ✅ Extract Unique Indexes
             schema.UniqueIndexes = type.GetProperties()
                 .Where(prop => PropertyMappingCache.GetPropertyEntry(prop, type).UniqueIndex)
                 .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
                 .ToList();
 
-            // Get index properties
+            // ✅ Extract Standard Indexes
             schema.Indexes = type.GetProperties()
                 .Where(prop => PropertyMappingCache.GetPropertyEntry(prop, type).Indexed)
                 .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
                 .ToList();
 
-            // Extract Compound Key
-            var compoundKey = instance.GetKeys();
-            if (compoundKey != null)
-            {
-                schema.ColumnNamesInCompoundKey = compoundKey.ColumnNamesInCompoundKey.ToList();
-            }
-
-            // Extract Compound Indexes
+            // ✅ Extract Compound Indexes
             var compoundIndexes = instance.GetCompoundIndexes();
             if (compoundIndexes != null)
             {
@@ -201,7 +196,5 @@ namespace Magic.IndexedDb.Helpers
 
             return schema;
         }
-
-
     }
 }

@@ -32,7 +32,7 @@ namespace Magic.IndexedDb.Helpers
                     errors.AppendLine($"Error: Unable to create an instance of '{type.Name}'.");
                     continue;
                 }
-
+                
                 IMagicCompoundKey compoundKey = instance.GetKeys();
                 List<IMagicCompoundIndex>? compoundIndexes = instance.GetCompoundIndexes();
 

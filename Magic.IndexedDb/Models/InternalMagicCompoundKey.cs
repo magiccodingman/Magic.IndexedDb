@@ -26,7 +26,9 @@ namespace Magic.IndexedDb.Models
                 .ToArray();
 
             ColumnNamesInCompoundKey = PropertyInfos
-                .Select(PropertyMappingCache.GetJsPropertyName<T>)
+                .Select(x => PropertyMappingCache.GetJsPropertyNameNoCache(
+                PropertyMappingCache.GetPropertyColumnAttribute(x)
+                , x.Name))
                 .ToArray();
 
             IsCompoundKey = PropertyInfos.Length > 1; // If more than one key, it's a compound key
