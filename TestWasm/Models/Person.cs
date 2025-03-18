@@ -40,7 +40,6 @@ namespace TestWasm.Models
 
         public Nested Nested { get; set; } = new Nested();
 
-        //[MagicPrimaryKey(true, "id")]
         [MagicName("_id")]
         public int _Id { get; set; }
 
@@ -56,7 +55,7 @@ namespace TestWasm.Models
         [MagicName("Age")]
         public int _Age { get; set; }
 
-        [MagicIndex]
+        [MagicIndex("TestInt")]
         public int TestInt { get; set; }
 
         public DateTime? DateOfBirth { get; set; }
