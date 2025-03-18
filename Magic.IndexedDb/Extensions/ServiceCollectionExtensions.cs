@@ -31,13 +31,13 @@ namespace Magic.IndexedDb
 
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddBlazorDB(this IServiceCollection services, 
+        public static IServiceCollection AddMagicBlazorDB(this IServiceCollection services, 
             BlazorInteropMode interoptMode, bool isDebug)
         {
-            return services.AddBlazorDB((long)interoptMode, isDebug);
+            return services.AddMagicBlazorDB((long)interoptMode, isDebug);
         }
 
-        public static IServiceCollection AddBlazorDB(this IServiceCollection services, 
+        public static IServiceCollection AddMagicBlazorDB(this IServiceCollection services, 
             long jsMessageSizeBytes, bool isDebug)
         {
             services.AddSingleton<IMagicDbFactory>(sp =>
