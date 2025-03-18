@@ -13,6 +13,7 @@ Large Refactor notes:
 [] I've added support for first and last
 
 
+
 [] We now support nested OR operations
 
 [] After flattening we should be making it more optimized and removing redundancies
@@ -97,6 +98,10 @@ new setup to add wasm, signalR or override and service setup
 
 [] Added "Count"
 # Must DO
+
+[] Only unsupported feature for now is 
+
+
 [] Describe translated intent
 [] Validate updates, deletes, and the other methods
 
