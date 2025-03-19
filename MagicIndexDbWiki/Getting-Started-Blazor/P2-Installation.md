@@ -296,6 +296,27 @@ Magic IndexedDB **validates your schema** to **prevent broken tables**: ✔ **En
 
 ---
 
+# **Razor Setup**
+
+### **🔹 Add Magic IndexedDB to `_Imports.razor`**
+
+To avoid writing `@using Magic.IndexedDb` on every page, **add it to your `_Imports.razor`**:
+
+```razor
+@using Magic.IndexedDb
+```
+
+### **🔹 Inject Magic IndexedDB Into Your Pages**
+
+In any **Blazor page or component** where you want to use **Magic IndexedDB**, inject the service at the top:
+
+```razor
+@inject IMagicIndexedDb _MagicDb
+```
+
+Boom! **You're plugged in** and ready to go! 🎉
+
+---
 ## **9. Next Steps – Handling Migrations**
 
 Once you’ve defined your tables, the **next critical step is handling migrations**.  
