@@ -164,13 +164,13 @@
                 await personQuery.ClearTable();
 
                 // Choose an assigned database to Person with strictly typed enforced connected Db's.
-                //IMagicQuery<Person> employeeDbQuery = await _MagicDb.Query<Person>(x => x.Databases.Client);
+                IMagicQuery<Person> employeeDbQuery = await _MagicDb.Query<Person>(x => x.Databases.Client);
 
                 // // Highly not suggested, but you're allowed to target databases not assigned to the Person table
-                // IMagicQuery<Person> animalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
+                IMagicQuery<Person> animalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
 
                 // // DO NOT DO THIS! I only am allowing this for maximum flexibility but this is very dangerous.
-                // IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
+                IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
 
                 //await manager.ClearTableAsync<Person>();
 
@@ -255,6 +255,8 @@
                 await personQuery.AddRangeAsync(persons);
 
                 allPeople = await personQuery.ToListAsync();
+
+
 
                 List<Person> people = await personQuery.ToListAsync();
                 StateHasChanged();
