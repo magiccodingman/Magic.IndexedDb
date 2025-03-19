@@ -31,3 +31,8 @@ Understand how **Magic IndexedDB** works at its core, including **how LINQ queri
     - The **Universal Layer** (works beyond Blazor).
     - How LINQ expressions are **parsed, optimized, and executed**.
     - The **multi-query execution model**: Indexed Queries, Compound Queries, and Cursor-Based Queries.
+2. **[Connect Your Language/Framework To The Universal LINQ to IndexedDB Layer](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Fundamentals/P2-How-To-Connect-Universal-Layer.md)**
+    
+    - You thought this was just for Blazor?!
+    - Integration guide with the universal layer of Magic LINQ to IndexedDB.
+
