@@ -422,7 +422,7 @@ async function getTable(dbName, storeName) {
 export async function wrapperMagicQueryAsync(dbName, storeName, nestedOrFilter, queryAdditions, forceCursor = false) {
     const db = await getDb(dbName); // Get the Dexie instance from your manager
     let table = db.table(storeName);
-    return await magicQueryAsync(table, nestedOrFilter, queryAdditions, forceCursor);
+    return await magicQueryAsync(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }
 
 /**
@@ -432,5 +432,5 @@ export async function wrapperMagicQueryAsync(dbName, storeName, nestedOrFilter, 
 export async function* wrapperMagicQueryYield(dbName, storeName, nestedOrFilter, queryAdditions = [], forceCursor = false) {
     const db = await getDb(dbName); // Get the Dexie instance from your manager
     let table = db.table(storeName);
-    yield* magicQueryYield(table, nestedOrFilter, queryAdditions, forceCursor);
+    yield* magicQueryYield(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }

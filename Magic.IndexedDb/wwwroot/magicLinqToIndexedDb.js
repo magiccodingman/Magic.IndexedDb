@@ -9,14 +9,14 @@ import {
 import { initiateNestedOrFilter } from "./utilities/nestedOrFilterUtilities.js";
 
 
-export async function magicQueryAsync(table, nestedOrFilter,
+export async function magicQueryAsync(db, table, nestedOrFilter,
     QueryAdditions, forceCursor = false) {
     debugLog("whereJson called");
 
 
     let results = []; // Collect results here
 
-    for await (let record of magicQueryYield(table, nestedOrFilter,
+    for await (let record of magicQueryYield(db, table, nestedOrFilter,
         QueryAdditions, forceCursor)) {
         results.push(record);
     }
@@ -26,7 +26,7 @@ export async function magicQueryAsync(table, nestedOrFilter,
     return results; // Return all results at once
 }
 
-export async function* magicQueryYield(table, nestedOrFilterUnclean,
+export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
     queryAdditions = [], forceCursor = false) {
 
     if (!table || !(table instanceof table.constructor)) {
@@ -205,11 +205,10 @@ async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
                 query = query.offset(addition.intValue);
                 break;
             case QUERY_ADDITIONS.TAKE:
-                takeCount = addition.intValue;
+                query = query.limit(addition.intValue);
                 break;
             case QUERY_ADDITIONS.TAKE_LAST:
-                needsReverse = true;
-                takeCount = addition.intValue;
+                query = query.reverse().limit(addition.intValue);
                 break;
             case QUERY_ADDITIONS.FIRST:
                 return query.first().then(result => (result ? [result] : []));
@@ -220,25 +219,7 @@ async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
         }
     }
 
-    // **Ensure TAKE_LAST applies reverse before limiting**
-    let results;
-    if (orderByProperty) {
-        debugLog("Applying ORDER BY operation", { orderByProperty });
-
-        results = await query.sortBy(orderByProperty);
-        if (needsReverse) results.reverse();
-    } else {
-        results = await query.toArray();
-        if (needsReverse) results.reverse();
-    }
-
-    // **Apply TAKE (last or normal)**
-    if (takeCount !== null) {
-        results = results.slice(0, takeCount);
-    }
-
-    debugLog("Final Indexed Query Results Count", { count: results.length });
-    return results;
+    return query.toArray();
 }
 
 
