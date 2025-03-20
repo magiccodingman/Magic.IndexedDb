@@ -405,18 +405,82 @@ function optimizeCompoundIndexedOnlyQueries(compoundIndexQueries) {
 async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
     debugLog("Running Cursor Query with Conditions", { conditions, queryAdditions });
 
-    // **Extract metadata (compound keys & sorting properties)**
-    let primaryKeyList = await runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys);
+    const requiresMetaProcessing = queryAdditions.some(a =>
+        [QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.FIRST, QUERY_ADDITIONS.LAST, QUERY_ADDITIONS.TAKE_LAST].includes(a.additionFunction)
+    );
 
-    // **Apply sorting, take, and skip operations**
-    let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions);
+    if (requiresMetaProcessing) {
+        // **Metadata Path: Extract primary keys and sorting properties**
+        let primaryKeyList = await runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys);
 
-    // **Fetch only the required records from IndexedDB**
-    let finalRecords = await fetchRecordsByPrimaryKeys(table, finalPrimaryKeys, compoundKeys);
+        // **Apply sorting, take, and skip operations**
+        let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions);
 
-    debugLog("Final Cursor Query Records Retrieved", { count: finalRecords.length });
-    return finalRecords; // Ready for yielding
+        // **Fetch only the required records from IndexedDB**
+        let finalRecords = await fetchRecordsByPrimaryKeys(table, finalPrimaryKeys, compoundKeys);
+
+        debugLog("Final Cursor Query Records Retrieved", { count: finalRecords.length });
+        return finalRecords; // Ready for yielding
+    } else {
+        // **Direct Retrieval Path: Skip metadata processing & fetch full records immediately**
+        return await runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, compoundKeys);
+    }
 }
+
+/**
+ * Directly retrieves records that match the conditions without metadata processing.
+ */
+async function runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, compoundKeys) {
+    debugLog("Running Direct Cursor Query");
+
+    let records = [];
+    const optimizedConditions = conditions.map(optimizeConditions);
+
+    let now = Date.now();
+    let shouldLogWarning = !lastCursorWarningTime || now - lastCursorWarningTime > 10 * 60 * 1000;
+    let requiredPropertiesFiltered = [...new Set(conditions.flatMap(group => group.map(c => c.property)))];
+
+    await db.transaction('r', table, async () => {
+        await table.orderBy(compoundKeys[0]).each((record) => {
+            let missingProperties = null;
+
+            for (const prop of requiredPropertiesFiltered) {
+                if (record[prop] === undefined) {
+                    if (!missingProperties) missingProperties = [];
+                    missingProperties.push(prop);
+                    break;
+                }
+            }
+
+            if (missingProperties) {
+                if (shouldLogWarning) {
+                    console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing properties: ${missingProperties.join(", ")}`);
+                    lastCursorWarningTime = now;
+                    shouldLogWarning = false;
+                }
+                return;
+            }
+
+            let recordKey = normalizeCompoundKey(compoundKeys, record);
+
+            if (hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                return;
+            }
+
+            let passesConditions = optimizedConditions.some(andConditions =>
+                andConditions.every(condition => applyCondition(record, condition))
+            );
+
+            if (passesConditions) {
+                records.push(record);
+            }
+        });
+    });
+
+    debugLog("Direct Cursor Query Records Retrieved", { count: records.length });
+    return records;
+}
+
 
 let lastCursorWarningTime = null;
 
