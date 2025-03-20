@@ -1,13 +1,12 @@
 "use strict";
 import { partitionQueryConditions } from "./utilities/partitionLinqQueries.js";
 import { QUERY_OPERATIONS, QUERY_ADDITIONS } from "./utilities/queryConstants.js";
-import { isValidFilterObject, isValidQueryAdditions } from "./utilities/linqValidation.js";
 import {
     buildIndexMetadata, normalizeCompoundKey,
-    hasYieldedKey, addYieldedKey, cleanNestedOrFilter, debugLog
+    hasYieldedKey, addYieldedKey, debugLog
 } from "./utilities/utilityHelpers.js";
 
-
+import { initiateNestedOrFilter } from "./utilities/nestedOrFilterUtilities.js";
 
 
 export async function magicQueryAsync(table, nestedOrFilter,
@@ -27,21 +26,14 @@ export async function magicQueryAsync(table, nestedOrFilter,
     return results; // Return all results at once
 }
 
-export async function* magicQueryYield(table, nestedOrFilter,
+export async function* magicQueryYield(table, nestedOrFilterUnclean,
     queryAdditions = [], forceCursor = false) {
 
     if (!table || !(table instanceof table.constructor)) {
         throw new Error("A valid Dexie table instance must be provided.");
     }
 
-    debugLog("Starting where function", { nestedOrFilter, queryAdditions });
-
-    if (!isValidFilterObject(nestedOrFilter)) {
-        throw new Error("Invalid filter object provided to where function.");
-    }
-    if (!isValidQueryAdditions(queryAdditions)) {
-        throw new Error("Invalid addition query provided to where function.");
-    }
+    debugLog("Starting where function", { nestedOrFilterUnclean, queryAdditions });
 
     let indexCache = buildIndexMetadata(table);
     let primaryKeys = [...indexCache.compoundKeys];
@@ -50,42 +42,25 @@ export async function* magicQueryYield(table, nestedOrFilter,
 
     debugLog("Validated schema & cached indexes", { primaryKeys, indexes: indexCache.indexes });
 
-    nestedOrFilter = cleanNestedOrFilter(nestedOrFilter);
-    debugLog("Cleaned Filter Object", { nestedOrFilter });
+    let { isFilterEmpty, nestedOrFilter } =
+        initiateNestedOrFilter(nestedOrFilterUnclean, queryAdditions, primaryKeys);
 
-    let isFilterEmpty = !nestedOrFilter || !nestedOrFilter.orGroups || nestedOrFilter.orGroups.length === 0;
-    debugLog("Filter Check After Cleaning", { isFilterEmpty });
-
+    // No need for processing anything, we can just immediately return results.
     if (isFilterEmpty) {
-        if (!queryAdditions || queryAdditions.length === 0) {
-            debugLog("No filtering or query additions. Fetching entire table.");
-            let allRecords = await table.toArray();
+        debugLog("No filtering or query additions. Fetching entire table.");
+        let allRecords = await table.toArray();
 
-            for (let record of allRecords) {
-                let recordKey = normalizeCompoundKey(primaryKeys, record);
-                if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
-                    addYieldedKey(yieldedPrimaryKeys, recordKey);
-                    yield record;
-                }
+        while (allRecords.length > 0) {
+            let record = allRecords.shift(); // Remove from memory before processing
+            let recordKey = normalizeCompoundKey(primaryKeys, record);
+
+            if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                addYieldedKey(yieldedPrimaryKeys, recordKey);
+                yield record;
             }
-            return;
-        } else {
-            debugLog("Empty filter but query additions exist. Applying primary key GREATER_THAN_OR_EQUAL trick.");
-            nestedOrFilter = {
-                orGroups: [{
-                    andGroups: [{
-                        conditions: primaryKeys.map(pk => ({
-                            property: pk,
-                            operation: QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL,
-                            value: -Infinity
-                        }))
-                    }]
-                }]
-            };
         }
+        return;
     }
-
-
 
     let { indexedQueries, compoundIndexQueries, cursorConditions } =
         partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, forceCursor);
@@ -101,8 +76,10 @@ export async function* magicQueryYield(table, nestedOrFilter,
         for (let query of allOptimizedQueries) {
             let records = await runIndexedQuery(table, query, queryAdditions);
 
-            for (let record of records) {
+            while (records.length > 0) {
+                let record = records.shift(); // Remove the first record from memory immediately
                 let recordKey = normalizeCompoundKey(primaryKeys, record);
+
                 if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                     addYieldedKey(yieldedPrimaryKeys, recordKey);
                     yield record;
@@ -111,18 +88,22 @@ export async function* magicQueryYield(table, nestedOrFilter,
         }
     }
 
+
     if (Array.isArray(cursorConditions) && cursorConditions.length > 0) {
         let cursorResults = await runCursorQuery(table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys);
         debugLog("Cursor Query Results Count", { count: cursorResults.length });
 
-        for (let record of cursorResults) {
+        while (cursorResults.length > 0) {
+            let record = cursorResults.shift(); // Remove the first record from memory immediately
             let recordKey = normalizeCompoundKey(primaryKeys, record);
+
             if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                 addYieldedKey(yieldedPrimaryKeys, recordKey);
-                yield record;
+                yield record; // The record no longer exists in cursorResults after yielding
             }
         }
     }
+
 }
 
 /**

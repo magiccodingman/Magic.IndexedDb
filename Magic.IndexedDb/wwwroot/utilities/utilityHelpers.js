@@ -49,24 +49,6 @@ export function addYieldedKey(yieldedPrimaryKeys, recordKey) {
 }
 
 
-
-export function cleanNestedOrFilter(filter) {
-    if (!filter || !Array.isArray(filter.orGroups)) return null;
-
-    let cleanedOrGroups = filter.orGroups.map(orGroup => {
-        if (!Array.isArray(orGroup.andGroups)) return null;
-
-        // Remove empty AND groups
-        let cleanedAndGroups = orGroup.andGroups.filter(andGroup =>
-            Array.isArray(andGroup.conditions) && andGroup.conditions.length > 0
-        );
-
-        return cleanedAndGroups.length > 0 ? { andGroups: cleanedAndGroups } : null;
-    }).filter(orGroup => orGroup !== null); // Remove any fully empty OR groups
-
-    return cleanedOrGroups.length > 0 ? { orGroups: cleanedOrGroups } : null;
-}
-
 function getPrimaryKeys(table) {
     const primaryKey = table.schema.primKey; // Always fresh
 
