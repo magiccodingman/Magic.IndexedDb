@@ -463,29 +463,48 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
 
     debugLog("Properties needed for cursor processing", { requiredProperties: [...requiredProperties] });
 
-    let primaryKeyList = [];
     let lastCursorWarningTime = null; // Throttle warnings
+    const optimizedConditions = [];
 
-    const optimizedConditions = conditions.map(optimizeConditions);
+    // **Precompute optimized conditions (avoid `.map()`)**
+    for (const group of conditions) {
+        optimizedConditions.push(optimizeConditions(group));
+    }
+
+    let sortingProperties = Object.create(null); // **Reused object outside loop**
+    let primaryKeyList = new Array(10000); // **Preallocate array**
+    let resultIndex = 0; // **Tracks next available slot in preallocated array**
+
+    let now = Date.now();
+    let shouldLogWarning = !lastCursorWarningTime || now - lastCursorWarningTime > 10 * 60 * 1000;
+    let requiredPropertiesFiltered = requiredProperties.has("_MagicOrderId")
+        ? [...requiredProperties].filter(prop => prop !== "_MagicOrderId")
+        : [...requiredProperties];
 
     // **Transaction-based read for parallel execution**
     await db.transaction('r', table, async () => {
-        let cursor = await table.orderBy(compoundKeys[0]).each((record) => {
-            let missingProperties = [];
+        await table.orderBy(compoundKeys[0]).each((record) => {
 
             // **Check for missing required properties (excluding `_MagicOrderId`)**
-            for (const prop of requiredProperties) {
-                if (prop !== "_MagicOrderId" && record[prop] === undefined) {
+            let missingProperties = null;
+            for (const prop of requiredPropertiesFiltered) {
+                if (record[prop] === undefined) {
+                    if (!missingProperties) missingProperties = [];
                     missingProperties.push(prop);
+
+                    // **Early exit once a missing property is found**
+                    break;
                 }
             }
 
-            if (missingProperties.length > 0) {
-                // **Throttle warning to prevent console spam (once every 10 minutes)**
-                let now = Date.now();
-                if (!lastCursorWarningTime || now - lastCursorWarningTime > 10 * 60 * 1000) {
+            // **Handle missing properties (if any)**
+            if (missingProperties) {
+                if (shouldLogWarning) {
                     console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing properties: ${missingProperties.join(", ")}`);
+
+                    // **Update the last warning time and disable further warnings**
                     lastCursorWarningTime = now;
+                    shouldLogWarning = false;
                 }
                 return; // Skip this record
             }
@@ -498,29 +517,48 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
                 return;
             }
 
-            // **Apply filtering conditions**
-            if (optimizedConditions.some(andConditions => andConditions.every(condition => applyCondition(record, condition)))) {
-                let sortingProperties = {};
-
-                // **Store only necessary properties**
-                for (const prop of requiredProperties) {
-                    sortingProperties[prop] = record[prop];
+            // **Apply filtering conditions using efficient loop with early exit**
+            let passesConditions = false;
+            for (const andConditions of optimizedConditions) {
+                let valid = true;
+                for (const condition of andConditions) {
+                    if (!applyCondition(record, condition)) {
+                        valid = false;
+                        break;
+                    }
                 }
+                if (valid) {
+                    passesConditions = true;
+                    break;
+                }
+            }
+            if (!passesConditions) return;
 
-                sortingProperties["_MagicOrderId"] = magicOrder++;
+            // **Reuse sortingProperties instead of reallocating**
+            for (const prop of requiredProperties) {
+                sortingProperties[prop] = record[prop];
+            }
+            sortingProperties["_MagicOrderId"] = magicOrder++;
 
-                // **Yield records immediately instead of storing in memory**
-                primaryKeyList.push({
-                    primaryKey: recordKey,
-                    sortingProperties
-                });
+            // **Store data using indexed assignment (avoids `.push()`)**
+            primaryKeyList[resultIndex++] = {
+                primaryKey: recordKey,
+                sortingProperties: { ...sortingProperties } // Clone before reuse
+            };
+
+            // **Resize array if needed**
+            if (resultIndex >= primaryKeyList.length) {
+                primaryKeyList.length *= 2; // Double the array size dynamically
             }
         });
     });
 
-    debugLog("Primary Key List Collected", { count: primaryKeyList.length });
-    return primaryKeyList;
+    debugLog("Primary Key List Collected", { count: resultIndex });
+
+    // **Trim unused slots from preallocated array**
+    return primaryKeyList.slice(0, resultIndex);
 }
+
 
 
 function optimizeConditions(conditions) {
