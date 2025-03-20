@@ -581,3 +581,11 @@ To **write the most efficient** IndexedDB queries: ✅ **Use indexed fields when
 > 🔥 Magic IndexedDB **translates** your intent into the most optimized IndexedDB queries possible.
 
 🔗 **Learn More: [Read the Fundamentals Guide](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Fundamentals/P1-How-The-LINQ-To-IndexDB-works.md)**.
+
+# Utility Methods
+
+There's more syntax to be aware of! Did you know you don't need to worry about opening or creating databases?! **Did you know there's syntax that's catastrophic if utilized without the migration CLI?**
+
+There's a bit more to learn to fully understand how to utilized the library, so please continue reading:
+
+🔗 **Learn More: [Read the Utility Guide](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Fundamentals/P1.5-Utility.md)**.

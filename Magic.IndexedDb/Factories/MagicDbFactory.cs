@@ -85,11 +85,7 @@ namespace Magic.IndexedDb.Factories
         {
             if (_databases.TryGetValue(dbName, out var dbManager))
                 return dbManager; // Return cached instance
-/*
-            var registeredStores = _serviceProvider.GetServices<DbStore>();
-            var dbStore = registeredStores.FirstOrDefault(db => db.Name == dbName)
-                ?? throw new MagicException($"Database {dbName} is not registered.");
-*/
+
             var jsModule = await GetJsModuleAsync(); // Ensure shared JS module is ready
 
 
