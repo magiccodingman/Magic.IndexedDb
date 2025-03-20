@@ -466,6 +466,8 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     let primaryKeyList = [];
     let lastCursorWarningTime = null; // Throttle warnings
 
+    const optimizedConditions = conditions.map(optimizeConditions);
+
     // **Transaction-based read for parallel execution**
     await db.transaction('r', table, async () => {
         let cursor = await table.orderBy(compoundKeys[0]).each((record) => {
@@ -497,7 +499,7 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
             }
 
             // **Apply filtering conditions**
-            if (conditions.some(andConditions => andConditions.every(condition => applyCondition(record, condition)))) {
+            if (optimizedConditions.some(andConditions => andConditions.every(condition => applyCondition(record, condition)))) {
                 let sortingProperties = {};
 
                 // **Store only necessary properties**
@@ -521,45 +523,57 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
 }
 
 
-/**
- *  Applies a single filtering condition on a record.
- */
+function optimizeConditions(conditions) {
+    return conditions.map(condition => {
+        let optimizedCondition = { ...condition };
+
+        // Precompute case-insensitive values if applicable
+        if (!condition.caseSensitive && typeof condition.value === "string") {
+            optimizedCondition.value = condition.value.toLowerCase();
+        }
+
+        // Create a direct function reference instead of switch case inside the loop
+        optimizedCondition.comparisonFunction = getComparisonFunction(condition.operation);
+
+        return optimizedCondition;
+    });
+}
+
+function getComparisonFunction(operation) {
+    const operations = {
+        [QUERY_OPERATIONS.EQUAL]: (recordValue, queryValue) => recordValue === queryValue,
+        [QUERY_OPERATIONS.NOT_EQUAL]: (recordValue, queryValue) => recordValue !== queryValue,
+        [QUERY_OPERATIONS.GREATER_THAN]: (recordValue, queryValue) => recordValue > queryValue,
+        [QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => recordValue >= queryValue,
+        [QUERY_OPERATIONS.LESS_THAN]: (recordValue, queryValue) => recordValue < queryValue,
+        [QUERY_OPERATIONS.LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => recordValue <= queryValue,
+        [QUERY_OPERATIONS.STARTS_WITH]: (recordValue, queryValue) =>
+            typeof recordValue === "string" && recordValue.startsWith(queryValue),
+        [QUERY_OPERATIONS.CONTAINS]: (recordValue, queryValue) =>
+            typeof recordValue === "string" && recordValue.includes(queryValue),
+        [QUERY_OPERATIONS.NOT_CONTAINS]: (recordValue, queryValue) =>
+            typeof recordValue === "string" && !recordValue.includes(queryValue),
+        [QUERY_OPERATIONS.IN]: (recordValue, queryValue) =>
+            Array.isArray(queryValue) && queryValue.includes(recordValue)
+    };
+
+    return operations[operation] || (() => {
+        throw new Error(`Unsupported condition: ${operation}`);
+    });
+}
+
 function applyCondition(record, condition) {
     let recordValue = record[condition.property];
-    let queryValue = condition.value;
 
-    if (typeof recordValue === "string" && typeof queryValue === "string") {
-        if (!condition.caseSensitive) {
-            recordValue = recordValue.toLowerCase();
-            queryValue = queryValue.toLowerCase();
-        }
+    // Convert to lowercase only if needed (precomputed query value)
+    if (!condition.caseSensitive && typeof recordValue === "string") {
+        recordValue = recordValue.toLowerCase();
     }
 
-    switch (condition.operation) {
-        case QUERY_OPERATIONS.EQUAL:
-            return recordValue === queryValue;
-        case QUERY_OPERATIONS.NOT_EQUAL:
-            return recordValue !== queryValue;
-        case QUERY_OPERATIONS.GREATER_THAN:
-            return recordValue > queryValue;
-        case QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL:
-            return recordValue >= queryValue;
-        case QUERY_OPERATIONS.LESS_THAN:
-            return recordValue < queryValue;
-        case QUERY_OPERATIONS.LESS_THAN_OR_EQUAL:
-            return recordValue <= queryValue;
-        case QUERY_OPERATIONS.STARTS_WITH:
-            return typeof recordValue === "string" && recordValue.startsWith(queryValue);
-        case QUERY_OPERATIONS.CONTAINS:
-            return typeof recordValue === "string" && recordValue.includes(queryValue);
-        case QUERY_OPERATIONS.NOT_CONTAINS:
-            return typeof recordValue === "string" && !recordValue.includes(queryValue);
-        case QUERY_OPERATIONS.IN:
-            return Array.isArray(queryValue) && queryValue.includes(recordValue);
-        default:
-            throw new Error(`Unsupported condition: ${condition.operation}`);
-    }
+    // Use the precomputed function reference for comparison
+    return condition.comparisonFunction(recordValue, condition.value);
 }
+
 
 async function fetchRecordsByPrimaryKeys(table, primaryKeys, compoundKeys, batchSize = 500) {
     if (!primaryKeys || primaryKeys.length === 0) return [];
