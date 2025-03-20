@@ -74,24 +74,20 @@ export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
         let allOptimizedQueries = [...optimizedSingleIndexes, ...optimizedCompoundIndexes];
 
         // ** Execute queries in parallel and get a streamed result set**
-        let results = await runIndexedQueries(db, table, allOptimizedQueries, queryAdditions, primaryKeys);
+        let results = await runIndexedQueries(db, table, allOptimizedQueries,
+            queryAdditions, primaryKeys, yieldedPrimaryKeys);
 
         // **Process records one at a time, maintaining low memory usage**
         while (results.length > 0) {
             let record = results.shift(); // ** Immediately remove from memory**
-            let recordKey = normalizeCompoundKey(primaryKeys, record);
-
-            if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
-                addYieldedKey(yieldedPrimaryKeys, recordKey);
-                yield record; // ** Streams one record at a time**
-            }
+            yield record;
         }
     }
 
 
 
     if (Array.isArray(cursorConditions) && cursorConditions.length > 0) {
-        let cursorResults = await runCursorQuery(table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys);
+        let cursorResults = await runCursorQuery(db, table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys);
         debugLog("Cursor Query Results Count", { count: cursorResults.length });
 
         while (cursorResults.length > 0) {
@@ -107,14 +103,14 @@ export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
 
 }
 
-async function runIndexedQueries(db, table, universalQueries, queryAdditions, primaryKeys) {
+async function runIndexedQueries(db, table, universalQueries,
+    queryAdditions, primaryKeys, yieldedPrimaryKeys) {
     if (universalQueries.length === 0) {
         debugLog("No indexed conditions provided, returning entire table.");
         return await table.toArray(); // Immediate return if no conditions
     }
 
     let queries = [];
-    let yieldedPrimaryKeys = new Map(); // Tracks unique records across all queries
 
     for (let query of universalQueries) {
         let q = runIndexedQuery(table, query, queryAdditions);
@@ -406,11 +402,11 @@ function optimizeCompoundIndexedOnlyQueries(compoundIndexQueries) {
  * @param {Array} conditionsArray - Array of OR groups containing AND conditions.
  * @returns {Promise<Array>} - Filtered results based on conditions.
  */
-async function runCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
+async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
     debugLog("Running Cursor Query with Conditions", { conditions, queryAdditions });
 
     // **Extract metadata (compound keys & sorting properties)**
-    let primaryKeyList = await runMetaDataCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys);
+    let primaryKeyList = await runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys);
 
     // **Apply sorting, take, and skip operations**
     let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys);
@@ -428,10 +424,17 @@ let lastCursorWarningTime = null;
  * Extracts only the necessary metadata for cursor-based queries.
  * Returns an array of objects containing the primary key and only the required properties.
  */
-async function runMetaDataCursorQuery(table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
+/**
+ * Extracts only necessary metadata using a Dexie cursor in a transaction.
+ * Returns an array of objects containing the primary key and required properties.
+ */
+/**
+ * Extracts only necessary metadata using a Dexie cursor in a transaction.
+ * Returns an array of objects containing the primary key and required properties.
+ */
+async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
     debugLog("Extracting Metadata for Cursor Query", { conditions, queryAdditions });
 
-    let primaryKeyList = []; // Store compound keys + metadata
     let requiredProperties = new Set();
     let magicOrder = 0; // Counter to track cursor order
 
@@ -460,58 +463,63 @@ async function runMetaDataCursorQuery(table, conditions, queryAdditions, yielded
 
     debugLog("Properties needed for cursor processing", { requiredProperties: [...requiredProperties] });
 
-    const now = Date.now();
+    let primaryKeyList = [];
+    let lastCursorWarningTime = null; // Throttle warnings
 
-    // **Iterate over each record in IndexedDB**
-    await table.each(record => {
-        // **Validate all required properties exist (excluding `_MagicOrderId`)**
-        let missingProperties = [];
-        for (const prop of requiredProperties) {
-            if (prop !== "_MagicOrderId" && record[prop] === undefined) {
-                missingProperties.push(prop);
-            }
-        }
+    // **Transaction-based read for parallel execution**
+    await db.transaction('r', table, async () => {
+        let cursor = await table.orderBy(compoundKeys[0]).each((record) => {
+            let missingProperties = [];
 
-        if (missingProperties.length > 0) {
-            // **Throttle warning to prevent spam (once every 10 minutes)**
-            if (!lastCursorWarningTime || startTime - lastCursorWarningTime > 10 * 60 * 1000) {
-                console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing properties: ${missingProperties.join(", ")}`);
-                lastCursorWarningTime = startTime;
-            }
-            return; // Skip this record
-        }
-
-        // **Extract compound key values in correct order**
-        let recordKey = normalizeCompoundKey(compoundKeys, record);
-
-        // **Skip if the record's key is already in `yieldedPrimaryKeys`**
-        if (hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
-            debugLog(`Skipping already yielded record:`, recordKey);
-            return; // Skip already yielded keys
-        }
-
-        // **Apply filtering conditions**
-        if (conditions.some(andConditions => andConditions.every(condition => applyCondition(record, condition)))) {
-            let sortingProperties = {};
-
-            // **Store only necessary properties**
+            // **Check for missing required properties (excluding `_MagicOrderId`)**
             for (const prop of requiredProperties) {
-                sortingProperties[prop] = record[prop];
+                if (prop !== "_MagicOrderId" && record[prop] === undefined) {
+                    missingProperties.push(prop);
+                }
             }
 
-            // **Assign a unique order ID based on cursor sequence**
-            sortingProperties["_MagicOrderId"] = magicOrder++;
+            if (missingProperties.length > 0) {
+                // **Throttle warning to prevent console spam (once every 10 minutes)**
+                let now = Date.now();
+                if (!lastCursorWarningTime || now - lastCursorWarningTime > 10 * 60 * 1000) {
+                    console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing properties: ${missingProperties.join(", ")}`);
+                    lastCursorWarningTime = now;
+                }
+                return; // Skip this record
+            }
 
-            primaryKeyList.push({
-                primaryKey: recordKey, // Store as an ordered object
-                sortingProperties
-            });
-        }
+            // **Extract compound key**
+            let recordKey = normalizeCompoundKey(compoundKeys, record);
+
+            // **Skip already yielded records**
+            if (hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                return;
+            }
+
+            // **Apply filtering conditions**
+            if (conditions.some(andConditions => andConditions.every(condition => applyCondition(record, condition)))) {
+                let sortingProperties = {};
+
+                // **Store only necessary properties**
+                for (const prop of requiredProperties) {
+                    sortingProperties[prop] = record[prop];
+                }
+
+                sortingProperties["_MagicOrderId"] = magicOrder++;
+
+                // **Yield records immediately instead of storing in memory**
+                primaryKeyList.push({
+                    primaryKey: recordKey,
+                    sortingProperties
+                });
+            }
+        });
     });
 
     debugLog("Primary Key List Collected", { count: primaryKeyList.length });
     return primaryKeyList;
 }
+
 
 /**
  *  Applies a single filtering condition on a record.
