@@ -25,7 +25,7 @@ namespace Magic.IndexedDb
         public const string FIND_ITEM = "findItem";
         public const string TOARRAY = "toArray";
         public const string GET_STORAGE_ESTIMATE = "getStorageEstimate";
-        public const string MAGIC_QUERY_ASYNC = "magicQueryAsync";
-        public const string MAGIC_QUERY_YIELD = "magicQueryYield";
+        public const string MAGIC_QUERY_ASYNC = "wrapperMagicQueryAsync";
+        public const string MAGIC_QUERY_YIELD = "wrapperMagicQueryYield";
     }
 }
