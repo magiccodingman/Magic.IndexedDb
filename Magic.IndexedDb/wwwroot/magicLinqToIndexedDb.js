@@ -528,7 +528,8 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     }
 
     for (const addition of queryAdditions) {
-        if ((addition.additionFunction === QUERY_ADDITIONS.ORDER_BY || addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) &&
+        if ((addition.additionFunction === QUERY_ADDITIONS.ORDER_BY
+            || addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) &&
             addition.property) {
             requiredProperties.add(addition.property);
         }
