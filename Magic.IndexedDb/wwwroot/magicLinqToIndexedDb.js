@@ -471,8 +471,15 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
         optimizedConditions.push(optimizeConditions(group));
     }
 
+    let estimatedSize = await table.count(); 
+
+    if (estimatedSize === 0) {
+        debugLog("No records found in the table. Skipping cursor query.");
+        return [];
+    }
+
     let sortingProperties = Object.create(null); // **Reused object outside loop**
-    let primaryKeyList = new Array(10000); // **Preallocate array**
+    let primaryKeyList = new Array(estimatedSize); // **Preallocate array**
     let resultIndex = 0; // **Tracks next available slot in preallocated array**
 
     let now = Date.now();
