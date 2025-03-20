@@ -67,6 +67,10 @@ export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
 
     debugLog("Final Indexed Queries vs. Compound Queries vs. Cursor Queries", { indexedQueries, compoundIndexQueries, cursorConditions });
 
+    /*
+    run indexed queries first. Running the cursor in parallel 
+    will hurt performance drastically instead of helping.
+    */
     if (indexedQueries.length > 0 || compoundIndexQueries.length > 0) {
         let { optimizedSingleIndexes, optimizedCompoundIndexes } = optimizeIndexedQueries(indexedQueries, compoundIndexQueries);
         debugLog("Optimized Indexed Queries", { optimizedSingleIndexes, optimizedCompoundIndexes });
@@ -226,39 +230,58 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
         throw new Error("Invalid indexed condition—missing `properties` or `property`.");
     }
 
-    for (const addition of queryAdditions) {
-        switch (addition.additionFunction) {
-            case QUERY_ADDITIONS.ORDER_BY:
-                if (addition.property) {
-                    orderByProperty = addition.property;
-                }
-                break;
-            case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
-                if (addition.property) {
-                    orderByProperty = addition.property;
-                    needsReverse = true;
-                }
-                break;
-            case QUERY_ADDITIONS.SKIP:
-                query = query.offset(addition.intValue);
-                break;
-            case QUERY_ADDITIONS.TAKE:
-                query = query.limit(addition.intValue);
-                break;
-            case QUERY_ADDITIONS.TAKE_LAST:
-                query = query.reverse().limit(addition.intValue);
-                break;
-            case QUERY_ADDITIONS.FIRST:
-                return query.first();
-            case QUERY_ADDITIONS.LAST:
-                return query.last();
-            default:
-                throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
+    if (requiresQueryAdditions(queryAdditions)) {
+        for (const addition of queryAdditions) {
+            switch (addition.additionFunction) {
+                case QUERY_ADDITIONS.ORDER_BY:
+                    if (addition.property) {
+                        orderByProperty = addition.property;
+                    }
+                    break;
+                case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
+                    if (addition.property) {
+                        orderByProperty = addition.property;
+                        needsReverse = true;
+                    }
+                    break;
+                case QUERY_ADDITIONS.SKIP:
+                    query = query.offset(addition.intValue);
+                    break;
+                case QUERY_ADDITIONS.TAKE:
+                    query = query.limit(addition.intValue);
+                    break;
+                case QUERY_ADDITIONS.TAKE_LAST:
+                    query = query.reverse().limit(addition.intValue);
+                    break;
+                case QUERY_ADDITIONS.FIRST:
+                    return query.first();
+                case QUERY_ADDITIONS.LAST:
+                    return query.last();
+                default:
+                    throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
+            }
         }
     }
 
     return query;
 }
+
+function requiresQueryAdditions(queryAdditions = []) {
+    if (!queryAdditions || queryAdditions.length === 0) {
+        return false; // No query additions at all, skip processing
+    }
+
+    if (queryAdditions.length === 1) {
+        const singleAddition = queryAdditions[0].additionFunction;
+        if (singleAddition === QUERY_ADDITIONS.ORDER_BY || singleAddition === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
+            return false; // Only an order by, which we don't need
+        }
+    }
+
+    return true; // Query additions required
+}
+
+
 
 
 /**
