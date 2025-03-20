@@ -409,7 +409,7 @@ async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrim
     let primaryKeyList = await runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys);
 
     // **Apply sorting, take, and skip operations**
-    let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys);
+    let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions);
 
     // **Fetch only the required records from IndexedDB**
     let finalRecords = await fetchRecordsByPrimaryKeys(table, finalPrimaryKeys, compoundKeys);
@@ -420,14 +420,6 @@ async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrim
 
 let lastCursorWarningTime = null;
 
-/**
- * Extracts only the necessary metadata for cursor-based queries.
- * Returns an array of objects containing the primary key and only the required properties.
- */
-/**
- * Extracts only necessary metadata using a Dexie cursor in a transaction.
- * Returns an array of objects containing the primary key and required properties.
- */
 /**
  * Extracts only necessary metadata using a Dexie cursor in a transaction.
  * Returns an array of objects containing the primary key and required properties.
@@ -471,7 +463,7 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
         optimizedConditions.push(optimizeConditions(group));
     }
 
-    let estimatedSize = await table.count(); 
+    let estimatedSize = await table.count();
 
     if (estimatedSize === 0) {
         debugLog("No records found in the table. Skipping cursor query.");
@@ -566,6 +558,134 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     return primaryKeyList.slice(0, resultIndex);
 }
 
+/**
+ * Extracts only necessary metadata using a Dexie cursor in a transaction.
+ * Returns an array of objects containing the primary key and required properties.
+ */
+async function processCursorRecords(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys, isMetaDataMode) {
+    debugLog(`Processing Cursor Records (Meta-Data Mode: ${isMetaDataMode})`, { conditions, queryAdditions });
+
+    let requiredProperties = new Set();
+    let magicOrder = 0;
+
+    // **Extract filtering properties**
+    for (const andGroup of conditions) {
+        for (const condition of andGroup) {
+            if (condition.property) requiredProperties.add(condition.property);
+        }
+    }
+
+    // **Extract sorting properties if in meta-data mode**
+    if (isMetaDataMode) {
+        for (const addition of queryAdditions) {
+            if ([QUERY_ADDITIONS.ORDER_BY, QUERY_ADDITIONS.ORDER_BY_DESCENDING].includes(addition.additionFunction) &&
+                addition.property) {
+                requiredProperties.add(addition.property);
+            }
+        }
+    }
+
+    // **Always include compound keys**
+    for (const key of compoundKeys) {
+        requiredProperties.add(key);
+    }
+
+    if (isMetaDataMode) {
+        requiredProperties.add("_MagicOrderId"); // Required for sorting in meta-data mode
+    }
+
+    debugLog("Properties needed for cursor processing", { requiredProperties: [...requiredProperties] });
+
+    let estimatedSize = await table.count();
+    if (estimatedSize === 0) {
+        debugLog("No records found in the table. Skipping cursor query.");
+        return [];
+    }
+
+    let sortingProperties = Object.create(null);
+    let primaryKeyList = new Array(estimatedSize);
+    let resultIndex = 0;
+
+    let now = Date.now();
+    let shouldLogWarning = !lastCursorWarningTime || now - lastCursorWarningTime > 10 * 60 * 1000;
+    let requiredPropertiesFiltered = requiredProperties.has("_MagicOrderId")
+        ? [...requiredProperties].filter(prop => prop !== "_MagicOrderId")
+        : [...requiredProperties];
+
+    let results = isMetaDataMode ? [] : new Array(estimatedSize);
+
+    await db.transaction('r', table, async () => {
+        await table.orderBy(compoundKeys[0]).each((record) => {
+            // **Check for missing properties**
+            let missingProperties = null;
+            for (const prop of requiredPropertiesFiltered) {
+                if (record[prop] === undefined) {
+                    if (!missingProperties) missingProperties = [];
+                    missingProperties.push(prop);
+                    break;
+                }
+            }
+
+            if (missingProperties) {
+                if (shouldLogWarning) {
+                    console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing properties: ${missingProperties.join(", ")}`);
+                    lastCursorWarningTime = now;
+                    shouldLogWarning = false;
+                }
+                return;
+            }
+
+            let recordKey = normalizeCompoundKey(compoundKeys, record);
+            if (hasYieldedKey(yieldedPrimaryKeys, recordKey)) return;
+
+            let passesConditions = false;
+            for (const andConditions of conditions) {
+                let valid = true;
+                for (const condition of andConditions) {
+                    if (!applyCondition(record, condition)) {
+                        valid = false;
+                        break;
+                    }
+                }
+                if (valid) {
+                    passesConditions = true;
+                    break;
+                }
+            }
+            if (!passesConditions) return;
+
+            if (isMetaDataMode) {
+                for (const prop of requiredProperties) {
+                    sortingProperties[prop] = record[prop];
+                }
+                sortingProperties["_MagicOrderId"] = magicOrder++;
+
+                primaryKeyList[resultIndex++] = {
+                    primaryKey: recordKey,
+                    sortingProperties: { ...sortingProperties }
+                };
+
+                if (resultIndex >= primaryKeyList.length) {
+                    primaryKeyList.length *= 2;
+                }
+            } else {
+                results[resultIndex++] = record;
+
+                if (resultIndex >= results.length) {
+                    results.length *= 2;
+                }
+            }
+        });
+    });
+
+    debugLog(`Cursor Processing Complete - Mode: ${isMetaDataMode}`, { count: resultIndex });
+
+    return isMetaDataMode
+        ? primaryKeyList.slice(0, resultIndex)
+        : results.slice(0, resultIndex);
+}
+
+
 
 
 function optimizeConditions(conditions) {
@@ -658,7 +778,7 @@ async function fetchRecordsByPrimaryKeys(table, primaryKeys, compoundKeys, batch
 }
 
 
-function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, flipSkipTakeOrder = true) {
+function applyCursorQueryAdditions(primaryKeyList, queryAdditions, flipSkipTakeOrder = true) {
     if (!queryAdditions || queryAdditions.length === 0) {
         return primaryKeyList.map(item => item.primaryKey);
     }
