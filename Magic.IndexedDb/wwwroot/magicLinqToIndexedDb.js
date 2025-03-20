@@ -73,20 +73,21 @@ export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
 
         let allOptimizedQueries = [...optimizedSingleIndexes, ...optimizedCompoundIndexes];
 
-        for (let query of allOptimizedQueries) {
-            let records = await runIndexedQuery(table, query, queryAdditions);
+        // ** Execute queries in parallel and get a streamed result set**
+        let results = await runIndexedQueries(db, table, allOptimizedQueries, queryAdditions, primaryKeys);
 
-            while (records.length > 0) {
-                let record = records.shift(); // Remove the first record from memory immediately
-                let recordKey = normalizeCompoundKey(primaryKeys, record);
+        // **Process records one at a time, maintaining low memory usage**
+        while (results.length > 0) {
+            let record = results.shift(); // ** Immediately remove from memory**
+            let recordKey = normalizeCompoundKey(primaryKeys, record);
 
-                if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
-                    addYieldedKey(yieldedPrimaryKeys, recordKey);
-                    yield record;
-                }
+            if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                addYieldedKey(yieldedPrimaryKeys, recordKey);
+                yield record; // ** Streams one record at a time**
             }
         }
     }
+
 
 
     if (Array.isArray(cursorConditions) && cursorConditions.length > 0) {
@@ -106,19 +107,65 @@ export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
 
 }
 
+async function runIndexedQueries(db, table, universalQueries, queryAdditions, primaryKeys) {
+    if (universalQueries.length === 0) {
+        debugLog("No indexed conditions provided, returning entire table.");
+        return await table.toArray(); // Immediate return if no conditions
+    }
+
+    let queries = [];
+    let yieldedPrimaryKeys = new Map(); // Tracks unique records across all queries
+
+    for (let query of universalQueries) {
+        let q = runIndexedQuery(table, query, queryAdditions);
+        queries.push(q);
+    }
+
+    let finalResults = [];
+
+    await Promise.all(
+        queries.map(async (q) => {
+            await db.transaction('r', table, async () => {
+                // **Check if it's a single-record result (`first()` or `last()`)**
+                if (q instanceof Promise) {
+                    let record = await q; // Get single result
+
+                    if (record) { // Ensure it's not null
+                        let recordKey = normalizeCompoundKey(primaryKeys, record);
+                        if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                            addYieldedKey(yieldedPrimaryKeys, recordKey);
+                            finalResults.push(record);
+                        }
+                    }
+                }
+                // **Otherwise, it's a collection, so process with `.each()`**
+                else {
+                    await q.each((record) => {
+                        let recordKey = normalizeCompoundKey(primaryKeys, record);
+                        if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
+                            addYieldedKey(yieldedPrimaryKeys, recordKey);
+                            finalResults.push(record);
+                        }
+                    });
+                }
+            });
+        })
+    );
+
+    return finalResults;
+}
+
+
+
+
 /**
  * Executes an indexed query using IndexedDB.
  * @param {Object} table - The Dexie table instance.
  * @param {Array} indexedConditions - The array of indexed conditions.
  * @returns {AsyncGenerator} - A generator that yields query results.
  */
-async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
+function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
     debugLog("Executing runIndexedQuery", { indexedConditions, queryAdditions });
-
-    if (indexedConditions.length === 0) {
-        debugLog("No indexed conditions provided, returning entire table.");
-        return await table.toArray();
-    }
 
     let query;
     let firstCondition = indexedConditions[0];
@@ -183,11 +230,6 @@ async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
         throw new Error("Invalid indexed condition—missing `properties` or `property`.");
     }
 
-    // **Process Query Additions**
-    let needsReverse = false;
-    let takeCount = null;
-    let orderByProperty = null;
-
     for (const addition of queryAdditions) {
         switch (addition.additionFunction) {
             case QUERY_ADDITIONS.ORDER_BY:
@@ -211,15 +253,15 @@ async function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
                 query = query.reverse().limit(addition.intValue);
                 break;
             case QUERY_ADDITIONS.FIRST:
-                return query.first().then(result => (result ? [result] : []));
+                return query.first();
             case QUERY_ADDITIONS.LAST:
-                return query.last().then(result => (result ? [result] : []));
+                return query.last();
             default:
                 throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
         }
     }
 
-    return query.toArray();
+    return query;
 }
 
 
