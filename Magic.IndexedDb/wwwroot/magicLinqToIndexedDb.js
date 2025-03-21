@@ -765,24 +765,36 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
     });
 }
 
-
-
-
-
 function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, flipSkipTakeOrder = true) {
     if (!queryAdditions || queryAdditions.length === 0) {
-        return primaryKeyList.map(item => item.primaryKey);
+        return primaryKeyList.map(item =>
+            compoundKeys.map(key => item.sortingProperties[key])
+        );
     }
 
     debugLog("Applying cursor query additions in strict given order", { queryAdditions });
 
-    let additions = [...queryAdditions]; // Copy to avoid modifying the original array
+    let additions = [...queryAdditions]; // Copy to avoid modifying original
     let needsReverse = false;
 
-    // **Handle special IndexedDB SKIP/TAKE order flipping**
+    // **Avoid unnecessary sort if `_MagicOrderId` is already ordered**
+    let isAlreadyOrdered = additions.every(a =>
+        a.additionFunction !== QUERY_ADDITIONS.ORDER_BY &&
+        a.additionFunction !== QUERY_ADDITIONS.ORDER_BY_DESCENDING
+    );
+
+    if (!isAlreadyOrdered) {
+        primaryKeyList.sort((a, b) => a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"]);
+    }
+
+    // **Optimized order-flipping logic**
     if (flipSkipTakeOrder) {
-        let takeIndex = additions.findIndex(a => a.additionFunction === QUERY_ADDITIONS.TAKE);
-        let skipIndex = additions.findIndex(a => a.additionFunction === QUERY_ADDITIONS.SKIP);
+        let takeIndex = -1, skipIndex = -1;
+
+        for (let i = 0; i < additions.length; i++) {
+            if (additions[i].additionFunction === QUERY_ADDITIONS.TAKE) takeIndex = i;
+            if (additions[i].additionFunction === QUERY_ADDITIONS.SKIP) skipIndex = i;
+        }
 
         if (takeIndex !== -1 && skipIndex !== -1 && takeIndex < skipIndex) {
             debugLog("Flipping TAKE and SKIP order for cursor consistency");
@@ -790,10 +802,7 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
         }
     }
 
-    // **Step 1: Sort primary keys by `_MagicOrderId` first (natural row order)**
-    primaryKeyList.sort((a, b) => a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"]);
-
-    // **Step 2: Process Query Additions in Exact Order**
+    // **Step 2: Apply Query Additions in Exact Order**
     for (const addition of additions) {
         switch (addition.additionFunction) {
             case QUERY_ADDITIONS.ORDER_BY:
@@ -817,7 +826,7 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
                 break;
 
             case QUERY_ADDITIONS.TAKE:
-                primaryKeyList = primaryKeyList.slice(0, addition.intValue);
+                primaryKeyList.length = Math.min(primaryKeyList.length, addition.intValue); // **Avoid new array allocation**
                 break;
 
             case QUERY_ADDITIONS.TAKE_LAST:
@@ -826,7 +835,7 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
                 break;
 
             case QUERY_ADDITIONS.FIRST:
-                primaryKeyList = primaryKeyList.length > 0 ? [primaryKeyList[0]] : [];
+                primaryKeyList.length = primaryKeyList.length > 0 ? 1 : 0; // **No new array allocation**
                 break;
 
             case QUERY_ADDITIONS.LAST:
@@ -845,6 +854,7 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
 
     debugLog("Final Ordered Primary Key List", primaryKeyList);
 
+    // **Final Map: Extract only needed keys in the correct order**
     return primaryKeyList.map(item =>
         compoundKeys.map(key => item.sortingProperties[key])
     );
