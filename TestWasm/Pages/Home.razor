@@ -286,6 +286,16 @@
                 RunTest("Force Cursor Equal Test", await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
            allPeople.Where(x => x.Name == "Zack"));
 
+                RunTest("Not Equals Test", await personQuery.Where(x => x.Name != "Zack").ToListAsync(),
+                allPeople.Where(x => x.Name != "Zack"));
+
+                RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                allPeople.Where(x => x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)));
+
+
+                RunTest("Not Contains Test", await personQuery.Where(x => !x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                allPeople.Where(x => !x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)));
+
 
                 RunTest("Basic Index Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
                 allPeople.Where(x => x.Name == "Zack"));
