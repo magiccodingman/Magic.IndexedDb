@@ -13,39 +13,22 @@ export function debugLog(...args) {
  * Ensures keys are **always stored in the correct order**.
  */
 export function normalizeCompoundKey(primaryKeys, record) {
-    return Object.fromEntries(primaryKeys.map(pk => [pk, record[pk]]));
+    let recordKey = primaryKeys.map(pk => String(record[pk])).join("|");
+    return recordKey;
 }
 
 /**
  * Checks if a compound key has already been yielded.
  */
 export function hasYieldedKey(yieldedPrimaryKeys, recordKey) {
-    let currentMap = yieldedPrimaryKeys;
-
-    for (let key of Object.keys(recordKey).sort()) {
-        if (!currentMap.has(key)) return false;
-        currentMap = currentMap.get(key);
-        if (!currentMap.has(recordKey[key])) return false;
-        currentMap = currentMap.get(recordKey[key]);
-    }
-
-    return currentMap.has("__end__");
+    return yieldedPrimaryKeys.has(recordKey);
 }
 
 /**
  * Marks a compound key as yielded.
  */
 export function addYieldedKey(yieldedPrimaryKeys, recordKey) {
-    let currentMap = yieldedPrimaryKeys;
-
-    for (let key of Object.keys(recordKey).sort()) {
-        if (!currentMap.has(key)) currentMap.set(key, new Map());
-        currentMap = currentMap.get(key);
-        if (!currentMap.has(recordKey[key])) currentMap.set(recordKey[key], new Map());
-        currentMap = currentMap.get(recordKey[key]);
-    }
-
-    currentMap.set("__end__", true);
+    yieldedPrimaryKeys.add(recordKey);
 }
 
 

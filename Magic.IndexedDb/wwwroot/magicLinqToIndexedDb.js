@@ -38,7 +38,7 @@ export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
     let indexCache = buildIndexMetadata(table);
     let primaryKeys = [...indexCache.compoundKeys];
 
-    let yieldedPrimaryKeys = new Map(); // **Structured compound key tracking**
+    let yieldedPrimaryKeys = new Set(); // **Structured compound key tracking**
 
     debugLog("Validated schema & cached indexes", { primaryKeys, indexes: indexCache.indexes });
 
@@ -230,6 +230,11 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
         throw new Error("Invalid indexed condition—missing `properties` or `property`.");
     }
 
+    /*
+     LINQ to IndexedDB sacrifices ordering of the return for performance. 
+     Therefore skip entirely even appending an order if that's all that's on there. 
+     As that means the order doesn't have anything to do with the end desired results.
+    */
     if (requiresQueryAdditions(queryAdditions)) {
         for (const addition of queryAdditions) {
             switch (addition.additionFunction) {
@@ -437,10 +442,10 @@ async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrim
         let primaryKeyList = await runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys);
 
         // **Apply sorting, take, and skip operations**
-        let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions);
+        let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys);
 
         // **Fetch only the required records from IndexedDB**
-        let finalRecords = await fetchRecordsByPrimaryKeys(table, finalPrimaryKeys, compoundKeys);
+        let finalRecords = await fetchRecordsByPrimaryKeys(db, table, finalPrimaryKeys, compoundKeys);
 
         debugLog("Final Cursor Query Records Retrieved", { count: finalRecords.length });
         return finalRecords; // Ready for yielding
@@ -648,7 +653,7 @@ function applyCondition(record, condition) {
 }
 
 
-async function fetchRecordsByPrimaryKeys(table, primaryKeys, compoundKeys, batchSize = 500) {
+async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, batchSize = 500) {
     if (!primaryKeys || primaryKeys.length === 0) return [];
 
     debugLog(`Fetching ${primaryKeys.length} final objects in parallel batches of ${batchSize}`, { primaryKeys });
@@ -656,37 +661,41 @@ async function fetchRecordsByPrimaryKeys(table, primaryKeys, compoundKeys, batch
     let batchPromises = [];
     let isCompoundKey = Array.isArray(compoundKeys) && compoundKeys.length > 1;
 
-    for (let i = 0; i < primaryKeys.length; i += batchSize) {
-        let batch = primaryKeys.slice(i, i + batchSize);
+    // **Transaction-based batched retrieval**
+    await db.transaction('r', table, async () => {
+        for (let i = 0; i < primaryKeys.length; i += batchSize) {
+            let batch = primaryKeys.slice(i, i + batchSize);
 
-        if (isCompoundKey) {
-            // **Ensure batch is formatted correctly for compound keys**
-            let formattedBatch = batch.map(pk =>
-                Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]) // Extract key values in order
-            );
+            if (isCompoundKey) {
+                // **Ensure batch is formatted correctly for compound keys**
+                let formattedBatch = batch.map(pk =>
+                    Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]) // Extract key values in order
+                );
 
-            debugLog("Fetching batch with ordered compound key values", { formattedBatch });
+                debugLog("Fetching batch with ordered compound key values", { formattedBatch });
 
-            batchPromises.push(table.where(compoundKeys).anyOf(formattedBatch).toArray());
-        } else {
-            // **Ensure batch contains raw key values for single primary keys**
-            let singleKeyBatch = batch.map(pk => (typeof pk === "object" ? Object.values(pk)[0] : pk));
+                batchPromises.push(table.where(compoundKeys).anyOf(formattedBatch).toArray());
+            } else {
+                // **Ensure batch contains raw key values for single primary keys**
+                let singleKeyBatch = batch.map(pk => (typeof pk === "object" ? Object.values(pk)[0] : pk));
 
-            debugLog("Fetching batch with single primary key", { singleKeyBatch });
+                debugLog("Fetching batch with single primary key", { singleKeyBatch });
 
-            batchPromises.push(table.where(compoundKeys[0]).anyOf(singleKeyBatch).toArray());
+                batchPromises.push(table.where(compoundKeys[0]).anyOf(singleKeyBatch).toArray());
+            }
         }
-    }
+    });
 
-    // Execute all batches in parallel and wait for the slowest one
+    // **Execute all batches in parallel and wait for the slowest one**
     let batchResults = await Promise.all(batchPromises);
 
-    // Flatten the results into a single array
+    // **Flatten the results into a single array**
     return batchResults.flat();
 }
 
 
-function applyCursorQueryAdditions(primaryKeyList, queryAdditions, flipSkipTakeOrder = true) {
+
+function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, flipSkipTakeOrder = true) {
     if (!queryAdditions || queryAdditions.length === 0) {
         return primaryKeyList.map(item => item.primaryKey);
     }
@@ -762,5 +771,7 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, flipSkipTakeO
 
     debugLog("Final Ordered Primary Key List", primaryKeyList);
 
-    return primaryKeyList.map(item => item.primaryKey);
+    return primaryKeyList.map(item =>
+        compoundKeys.map(key => item.sortingProperties[key])
+    );
 }
