@@ -653,45 +653,119 @@ function applyCondition(record, condition) {
 }
 
 
-async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, batchSize = 500) {
+async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, batchSize = 500, maxConcurrentBatches = 5) {
     if (!primaryKeys || primaryKeys.length === 0) return [];
 
     debugLog(`Fetching ${primaryKeys.length} final objects in parallel batches of ${batchSize}`, { primaryKeys });
 
-    let batchPromises = [];
     let isCompoundKey = Array.isArray(compoundKeys) && compoundKeys.length > 1;
 
-    // **Transaction-based batched retrieval**
-    await db.transaction('r', table, async () => {
-        for (let i = 0; i < primaryKeys.length; i += batchSize) {
-            let batch = primaryKeys.slice(i, i + batchSize);
-
+    // **Tier 1: Small datasets (< 1500)  Single Fetch**
+    if (primaryKeys.length < 1500) {
+        return await db.transaction('r', table, async () => {
             if (isCompoundKey) {
-                // **Ensure batch is formatted correctly for compound keys**
-                let formattedBatch = batch.map(pk =>
-                    Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]) // Extract key values in order
+                let formattedBatch = primaryKeys.map(pk =>
+                    Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key])
                 );
-
-                debugLog("Fetching batch with ordered compound key values", { formattedBatch });
-
-                batchPromises.push(table.where(compoundKeys).anyOf(formattedBatch).toArray());
+                return table.where(compoundKeys).anyOf(formattedBatch).toArray();
             } else {
-                // **Ensure batch contains raw key values for single primary keys**
-                let singleKeyBatch = batch.map(pk => (typeof pk === "object" ? Object.values(pk)[0] : pk));
+                return table.where(compoundKeys[0]).anyOf(primaryKeys).toArray();
+            }
+        });
+    }
 
-                debugLog("Fetching batch with single primary key", { singleKeyBatch });
+    // **Tier 2: Medium Datasets (< Large Threshold)  Fire All Batches In Parallel**
+    if (primaryKeys.length < batchSize * maxConcurrentBatches * 3) {
+        let batchPromises = [];
+        await db.transaction('r', table, async () => {
+            for (let i = 0; i < primaryKeys.length; i += batchSize) {
+                let batch = primaryKeys.slice(i, i + batchSize);
+                if (isCompoundKey) {
+                    let formattedBatch = batch.map(pk =>
+                        Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key])
+                    );
+                    batchPromises.push(table.where(compoundKeys).anyOf(formattedBatch).toArray());
+                } else {
+                    batchPromises.push(table.where(compoundKeys[0]).anyOf(batch).toArray());
+                }
+            }
+        });
+        let batchResults = await Promise.all(batchPromises);
+        return batchResults.flat();
+    }
 
-                batchPromises.push(table.where(compoundKeys[0]).anyOf(singleKeyBatch).toArray());
+    // **Tier 3: Massive Datasets  Controlled Concurrency, Shrinking `anyOf()` for faster lookups**
+    // **Tier 3: Massive Datasets - Controlled Concurrency, Shrinking `anyOf()` for faster lookups**
+    return await db.transaction('r', table, async () => {
+        let remainingKeys = [...primaryKeys];
+        let foundKeys = new Set();
+        let results = [];
+
+        // **Queue only maxConcurrentBatches at a time**
+        let activePromises = new Set();
+
+        async function processNextBatch() {
+            if (remainingKeys.length === 0) return;
+
+            let batch = remainingKeys.splice(0, batchSize);
+            let formattedBatch = isCompoundKey
+                ? batch.map(pk => Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]))
+                : batch;
+
+            // **Split the query if it's too large**
+            if (formattedBatch.length > 1000) {
+                let mid = Math.floor(formattedBatch.length / 2);
+                let firstHalf = formattedBatch.slice(0, mid);
+                let secondHalf = formattedBatch.slice(mid);
+
+                let firstQuery = table.where(isCompoundKey ? compoundKeys : compoundKeys[0])
+                    .anyOf(firstHalf)
+                    .toArray();
+
+                let secondQuery = table.where(isCompoundKey ? compoundKeys : compoundKeys[0])
+                    .anyOf(secondHalf)
+                    .toArray();
+
+                let promise = Promise.all([firstQuery, secondQuery]).then(([firstResults, secondResults]) => {
+                    let batchResults = [...firstResults, ...secondResults];
+                    results.push(...batchResults);
+                    batchResults.forEach(record => foundKeys.add(normalizeCompoundKey(compoundKeys, record)));
+                    activePromises.delete(promise);
+                    processNextBatch();
+                });
+
+                activePromises.add(promise);
+            } else {
+                let promise = table.where(isCompoundKey ? compoundKeys : compoundKeys[0])
+                    .anyOf(formattedBatch)
+                    .toArray()
+                    .then(batchResults => {
+                        results.push(...batchResults);
+                        batchResults.forEach(record => foundKeys.add(normalizeCompoundKey(compoundKeys, record)));
+                        activePromises.delete(promise);
+                        processNextBatch();
+                    });
+
+                activePromises.add(promise);
+            }
+
+            if (activePromises.size < maxConcurrentBatches) {
+                processNextBatch();
             }
         }
+
+        // **Start initial batches**
+        for (let i = 0; i < maxConcurrentBatches; i++) {
+            processNextBatch();
+        }
+
+        // **Wait for all batches to complete**
+        await Promise.all(activePromises);
+        return results;
     });
-
-    // **Execute all batches in parallel and wait for the slowest one**
-    let batchResults = await Promise.all(batchPromises);
-
-    // **Flatten the results into a single array**
-    return batchResults.flat();
 }
+
+
 
 
 
