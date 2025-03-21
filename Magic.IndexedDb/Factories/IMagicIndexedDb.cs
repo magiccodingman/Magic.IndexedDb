@@ -1,4 +1,5 @@
 using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.LinqTranslation.Interfaces;
 using Magic.IndexedDb.Models;
 
 namespace Magic.IndexedDb
@@ -15,8 +16,8 @@ namespace Magic.IndexedDb
         /// <param name="databaseNameOverride"></param>
         /// <param name="schemaNameOverride"></param>
         /// <returns></returns>
-        ValueTask<IMagicQuery<T>> QueryOverride<T>(string? databaseNameOverride = null, 
-            string? schemaNameOverride = null) where T : class, IMagicTableBase, new();
+        //ValueTask<IMagicQuery<T>> QueryOverride<T>(string? databaseNameOverride = null, 
+        //    string? schemaNameOverride = null) where T : class, IMagicTableBase, new();
 
         /// <summary>
         /// Opens a ready query to utilize IndexDB database and capabilities utilizing LINQ to IndexDB. 
@@ -44,9 +45,13 @@ namespace Magic.IndexedDb
         /// <typeparam name="T"></typeparam>
         /// <param name="indexedDbSet"></param>
         /// <returns></returns>
-        ValueTask<IMagicQuery<T>> Query<T>(IndexedDbSet indexedDbSet)
-                        where T : class, IMagicTableBase, new();
+        //ValueTask<IMagicQuery<T>> Query<T>(IndexedDbSet indexedDbSet)
+        //                where T : class, IMagicTableBase, new();
 
         Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default);
+
+        //ValueTask<IMagicDatabaseGlobal> Database();
+
+        ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet);
     }
 }

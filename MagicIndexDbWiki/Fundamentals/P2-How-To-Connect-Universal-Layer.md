@@ -29,17 +29,18 @@ Magic IndexedDB **converts LINQ-style operations** into a structured, universal 
 
 ### **📌 Supported Query Operators**
 
-|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
-|---|---|---|---|
-|`==`|`EQUAL`|Exact match|✅ Yes|
-|`!=`|`NOT_EQUAL`|Not equal|✅ Yes|
-|`>`|`GREATER_THAN`|Greater than|✅ Yes|
-|`>=`|`GREATER_THAN_OR_EQUAL`|Greater or equal|✅ Yes|
-|`<`|`LESS_THAN`|Less than|✅ Yes|
-|`<=`|`LESS_THAN_OR_EQUAL`|Less or equal|✅ Yes|
-|`.StartsWith()`|`STARTS_WITH`|String starts with (IndexedDB supports only exact case)|✅ Yes* (unless case-insensitive)|
-|`.Contains()`|`CONTAINS`|String contains|🚫 Cursor Required|
-|`.In()`|`IN`|Matches any value in a list|✅ Yes|
+| **Operator**    | **JavaScript Key**   | **Description**                                         | **IndexedDB Optimized?**         |
+| --------------- | -------------------- | ------------------------------------------------------- | -------------------------------- |
+| `==`            | `Equal`              | Exact match                                             | ✅ Yes                            |
+| `!=`            | `NotEqual`           | Not equal                                               | ✅ Yes                            |
+| `>`             | `GreaterThan`        | Greater than                                            | ✅ Yes                            |
+| `>=`            | `GreaterThanOrEqual` | Greater or equal                                        | ✅ Yes                            |
+| `<`             | `LessThan`           | Less than                                               | ✅ Yes                            |
+| `<=`            | `LessThanOrEqual`    | Less or equal                                           | ✅ Yes                            |
+| `.StartsWith()` | `StartsWith`         | String starts with (IndexedDB supports only exact case) | ✅ Yes* (unless case-insensitive) |
+| `.Contains()`   | `Contains`           | String contains                                         | 🚫 Cursor Required               |
+| `!.Contains()`  | `NotContains`        | String not contains                                     | 🚫 Cursor Required               |
+| `.In()`         | `In`                 | Matches any value in a list                             | ✅ Yes                            |
 
 > **🚨 Important Notes:**
 > 
@@ -52,15 +53,15 @@ Magic IndexedDB **converts LINQ-style operations** into a structured, universal 
 
 ### **📌 Query Additions (Sorting & Pagination)**
 
-|**LINQ Operation**|**JavaScript Key**|**Description**|
-|---|---|---|
-|`.OrderBy()`|`ORDER_BY`|Sort ascending|
-|`.OrderByDescending()`|`ORDER_BY_DESCENDING`|Sort descending|
-|`.FirstOrDefaultAsync()`|`FIRST`|Get first item|
-|`.LastOrDefaultAsync()`|`LAST`|Get last item|
-|`.Skip(x)`|`SKIP`|Skip `x` results|
-|`.Take(x)`|`TAKE`|Take `x` results|
-|`.TakeLast(x)`|`TAKE_LAST`|Take last `x` results|
+| **LINQ Operation**       | **JavaScript Key**  | **Description**       |
+| ------------------------ | ------------------- | --------------------- |
+| `.OrderBy()`             | `orderBy`           | Sort ascending        |
+| `.OrderByDescending()`   | `orderByDescending` | Sort descending       |
+| `.FirstOrDefaultAsync()` | `first`             | Get first item        |
+| `.LastOrDefaultAsync()`  | `last`              | Get last item         |
+| `.Skip(x)`               | `skip`              | Skip `x` results      |
+| `.Take(x)`               | `take`              | Take `x` results      |
+| `.TakeLast(x)`           | `takeLast`          | Take last `x` results |
 
 > **⚠ IndexedDB has a reversed order for `.Take()` and `.Skip()`!**  
 > Always write **`.Take()` before `.Skip()`** for correct execution.
@@ -82,12 +83,12 @@ To integrate **any language or framework**, you need to **convert expressions in
                     "conditions": [
                         {
                             "property": "Age",
-                            "operation": "GREATER_THAN",
+                            "operation": "GreaterThan",
                             "value": 30
                         },
                         {
                             "property": "Name",
-                            "operation": "STARTS_WITH",
+                            "operation": "StartsWith",
                             "value": "J",
                             "isString": true,
                             "caseSensitive": false
@@ -99,11 +100,11 @@ To integrate **any language or framework**, you need to **convert expressions in
     ],
     "queryAdditions": [
         {
-            "additionFunction": "ORDER_BY",
+            "additionFunction": "orderBy",
             "property": "Age"
         },
         {
-            "additionFunction": "TAKE",
+            "additionFunction": "take",
             "intValue": 10
         }
     ]
@@ -122,6 +123,11 @@ await personQuery.Where(x => x.Age > 30 && x.Name.StartsWith("J", StringComparis
 ---
 
 ## **4. IndexedDB Store Structure (DB Schema & Configuration)**
+
+#### IMPORTANT NOTE
+This section for the structure of the DB Schema is highly likely to change until the migration code is completely released. As the future migration implementation will require adjustments here.
+
+---
 
 Before executing queries, **Magic IndexedDB** must understand how your database is structured. The system defines database stores dynamically based on schemas, ensuring proper indexing, compound keys, and validation for optimized queries.
 
@@ -222,23 +228,7 @@ Use `magicQueryAsync()` or `magicQueryYield()` to execute queries.
 
 ## **7. Database & Table Handling**
 
-Magic IndexedDB manages IndexedDB **using Dexie.js**, allowing seamless **database creation, versioning, and migrations**.
-
-### **Example: Creating a Database**
-
-```js
-export function createDb(dbStore) {
-    const db = new Dexie(dbStore.name);
-    const stores = dbStore.storeSchemas.reduce((acc, schema) => {
-        acc[schema.tableName] = `[${schema.columnNamesInCompoundKey.join("+")}]`;
-        return acc;
-    }, {});
-    
-    db.version(dbStore.version).stores(stores);
-}
-```
-
-> **💡 The system automatically detects and handles compound keys!**
+This process is still under development.
 
 ---
 

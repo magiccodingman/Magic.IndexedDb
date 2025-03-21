@@ -41,6 +41,64 @@ namespace Magic.IndexedDb.Helpers
                 .ToList();
         }
 
+        public static List<Type>? GetAllMagicRepositories()
+        {
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            return assemblies
+                .SelectMany(a => a.GetTypes())
+                .Where(t => t.IsClass && !t.IsAbstract && ImplementsIMagicRepository(t))
+                .ToList();
+        }
+
+        public static List<IndexedDbSet> GetAllIndexedDbSets()
+        {
+            var result = new List<IndexedDbSet>();
+
+            var repoTypes = GetAllMagicRepositories();
+            if (repoTypes == null || repoTypes.Count == 0)
+                return result;
+
+            foreach (var type in repoTypes)
+            {
+                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
+
+                foreach (var field in fields)
+                {
+                    if (field.FieldType == typeof(IndexedDbSet))
+                    {
+                        // Handle static or instance field
+                        object? instance = null;
+                        if (!field.IsStatic)
+                        {
+                            try
+                            {
+                                instance = Activator.CreateInstance(type);
+                            }
+                            catch
+                            {
+                                continue; // Can't create instance, skip
+                            }
+                        }
+
+                        var value = field.GetValue(instance);
+                        if (value is IndexedDbSet set)
+                        {
+                            result.Add(set);
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+
+        public static bool ImplementsIMagicRepository(Type type)
+        {
+            return type.GetInterfaces().Any(i => i == typeof(IMagicRepository));
+        }
+
+
         private static readonly ConcurrentDictionary<Type, string> _tableNameCache = new();
         private static readonly ConcurrentDictionary<Type, string> _databaseNameCache = new();
 
@@ -159,21 +217,21 @@ namespace Magic.IndexedDb.Helpers
                 TableName = tableName
             };
 
-            // ✅ Extract Compound Key
+            // Extract Compound Key
             var compoundKey = instance.GetKeys();
             if (compoundKey == null || compoundKey.PropertyInfos.Length == 0)
             {
                 throw new InvalidOperationException($"The entity {type.Name} does not have a valid primary key.");
             }
 
-            // ✅ If only one key → Single primary key, otherwise compound key
+            // If only one key → Single primary key, otherwise compound key
             schema.ColumnNamesInCompoundKey = compoundKey.PropertyInfos
                 .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
                 .ToList();
 
-            schema.PrimaryKeyAuto = compoundKey.AutoIncrement; // ✅ AutoIncrement only applies to single primary keys
+            schema.PrimaryKeyAuto = compoundKey.AutoIncrement; // AutoIncrement only applies to single primary keys
 
-            // ✅ Extract Unique Indexes
+            // Extract Unique Indexes
             schema.UniqueIndexes = type.GetProperties()
                 .Where(prop => PropertyMappingCache.GetPropertyEntry(prop, type).UniqueIndex)
                 .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
@@ -185,7 +243,7 @@ namespace Magic.IndexedDb.Helpers
                 .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
                 .ToList();
 
-            // ✅ Extract Compound Indexes
+            // Extract Compound Indexes
             var compoundIndexes = instance.GetCompoundIndexes();
             if (compoundIndexes != null)
             {

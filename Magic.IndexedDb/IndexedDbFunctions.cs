@@ -6,6 +6,10 @@ namespace Magic.IndexedDb
         public const string CREATE_LEGACY = "createDb";
         public const string CLOSE_ALL = "closeAll";
         public const string DELETE_DB = "deleteDb";
+        public const string CLOSE_DB = "closeDb";
+        public const string OPEN_DB = "openDb";
+        public const string DOES_DB_EXIST = "doesDbExist";
+        public const string IS_DB_CLosed = "isDbOpen";
         public const string ADD_ITEM = "addItem";
         public const string BULKADD_ITEM = "bulkAddItem";
         public const string COUNT_TABLE = "countTable";

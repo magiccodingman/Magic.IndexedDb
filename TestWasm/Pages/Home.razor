@@ -166,15 +166,16 @@
                 // Choose an assigned database to Person with strictly typed enforced connected Db's.
                 IMagicQuery<Person> employeeDbQuery = await _MagicDb.Query<Person>(x => x.Databases.Client);
 
-                // // Highly not suggested, but you're allowed to target databases not assigned to the Person table
-                IMagicQuery<Person> animalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
+                // Not implemented yet
+                // // // Highly not suggested, but you're allowed to target databases not assigned to the Person table
+                // IMagicQuery<Person> animalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
 
-                // // DO NOT DO THIS! I only am allowing this for maximum flexibility but this is very dangerous.
-                IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
+                // // // DO NOT DO THIS! I only am allowing this for maximum flexibility but this is very dangerous.
+                // IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
 
-                //await manager.ClearTableAsync<Person>();
-
-
+                
+                
+                
                 Person[] persons = new Person[] {
                         new Person { Name = "Zack", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
                         new Person { Name = "Luna", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
@@ -261,6 +262,14 @@
                 List<Person> people = await personQuery.ToListAsync();
                 StateHasChanged();
 
+                //await manager.ClearTableAsync<Person>();
+                var db = await _MagicDb.Database(IndexDbContext.Client);
+                //await db.DeleteAsync();
+                await db.CloseAsync();
+                bool doesExist = await db.DoesExistAsync();
+                bool isOpen = await db.IsOpenAsync();
+                await db.OpenAsync();
+                bool isOpenNow = await db.IsOpenAsync();
                 RunTest("Combined Query Test", await personQuery.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10).ToListAsync(),
            allPeople.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10));
 

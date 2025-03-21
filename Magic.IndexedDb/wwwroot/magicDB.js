@@ -22,51 +22,59 @@ import { magicQueryAsync, magicQueryYield } from "./magicLinqToIndexedDb.js";
 
 let databases = new Map(); // Change array to a Map
 
-async function getDb(dbName) {
-    if (!databases.has(dbName)) {
-        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} doesn't exist`);
-        const db1 = new Dexie(dbName);
-        await db1.open();
-        databases.set(dbName, db1);
+export async function openDb(dbName) {
+    if (!dbName || typeof dbName !== "string") {
+        throw new Error("openDb: Invalid database name.");
     }
-    return databases.get(dbName);
-}
-
-
-/*export function createDb(dbName, storeSchemas) {
-    console.log(`Creating database: ${dbName}`);
 
     if (databases.has(dbName)) {
-        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} already exists.`);
-        return databases.get(dbName).db;
+        const existingDb = databases.get(dbName);
+        if (!existingDb.isOpen()) {
+            await existingDb.open(); // Re-open if it was closed
+        }
+        return existingDb;
     }
 
     const db = new Dexie(dbName);
-    const stores = Object.fromEntries(
-        storeSchemas.map(schema => {
-            let def = schema.primaryKeyAuto ? "++" : "";
-            def += schema.primaryKey ? schema.primaryKey : "";
-
-            if (schema.uniqueIndexes && schema.uniqueIndexes.length) {
-                def += "," + schema.uniqueIndexes.map(i => "&" + i).join(",");
-            }
-
-            if (schema.indexes && schema.indexes.length) {
-                def += "," + schema.indexes.join(",");
-            }
-
-            if (schema.compoundKeys && schema.compoundKeys.length) {
-                def += "," + schema.compoundKeys.map(keys => "[" + keys.join("+") + "]").join(",");
-            }
-
-            return [schema.name, def];
-        })
-    );
-
-    db.version(1).stores(stores);
-    databases.set(dbName, { name: dbName, db: db, isOpen: false });
+    await db.open();
+    databases.set(dbName, db);
     return db;
-}*/
+}
+
+
+export async function closeDb(dbName) {
+    const db = databases.get(dbName);
+    if (db?.isOpen()) db.close();
+    databases.delete(dbName);
+}
+
+export function isDbOpen(dbName) {
+    if (!dbName || typeof dbName !== "string") {
+        console.error("isDbOpen: Invalid database name.");
+        return false;
+    }
+
+    const db = databases.get(dbName);
+
+    if (!db) {
+        // Not cached = definitely not open
+        return false;
+    }
+
+    if (typeof db.isOpen === "function") {
+        return db.isOpen(); // Dexie provides this
+    }
+
+    // Fallback just in case
+    return false;
+}
+
+export function listOpenDatabases() {
+    return Array.from(databases.entries())
+        .filter(([_, db]) => db.isOpen?.())
+        .map(([name]) => name);
+}
+
 
 export function createDb(dbStore) {
     console.log("Debug: Received dbStore in createDb", dbStore);
@@ -76,12 +84,13 @@ export function createDb(dbStore) {
         return;
     }
 
+    
     const dbName = dbStore.name;
 
-    if (databases.has(dbName)) {
-        console.warn(`Blazor.IndexedDB.Framework - Database "${dbName}" already exists`);
+    if (isDbOpen(dbName)) {
         return;
     }
+
 
     const db = new Dexie(dbName);
     const stores = {};
@@ -156,43 +165,10 @@ export function createDatabases(dbStores) {
     dbStores.forEach(dbStore => createDb(dbStore.name, dbStore.storeSchemas));
 }
 
-/**
- * Opens a database if it is not already open.
- * @param {string} dbName - The database name.
- */
-export async function openDb(dbName) {
-    if (!databases.has(dbName)) {
-        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} does not exist.`);
-        return null;
-    }
-
-    const entry = databases.get(dbName);
-    if (!entry.isOpen) {
-        await entry.db.open();
-        entry.isOpen = true;
-        console.log(`Database ${dbName} opened successfully.`);
-    }
-
-    return entry.db;
-}
 
 export async function countTable(dbName, storeName) {
     const table = await getTable(dbName, storeName);
     return await table.count();
-}
-
-/**
- * Closes a specific database.
- */
-export function closeDb(dbName) {
-    if (databases.has(dbName)) {
-        const entry = databases.get(dbName);
-        entry.db.close();
-        entry.isOpen = false;
-        console.log(`Database ${dbName} closed successfully.`);
-    } else {
-        console.warn(`Blazor.IndexedDB.Framework - Database ${dbName} not found.`);
-    }
 }
 
 /**
@@ -210,14 +186,108 @@ export function closeAll() {
  * Deletes a specific database.
  */
 export async function deleteDb(dbName) {
-    if (databases.has(dbName)) {
-        const entry = databases.get(dbName);
-        entry.db.close();
-        databases.delete(dbName);
+    if (!dbName || typeof dbName !== "string") {
+        console.error("deleteDb: Invalid database name.");
+        return;
     }
 
-    await Dexie.delete(dbName);
-    console.log(`Database ${dbName} deleted.`);
+    try {
+        const db = new Dexie(dbName);
+
+        try {
+            await db.open();
+            if (db.isOpen()) {
+                db.close();
+            }
+        } catch (openErr) {
+            console.warn(`deleteDb: Couldn't open DB '${dbName}' before deletion. Proceeding anyway.`, openErr);
+            // Still proceed — might be locked or unopened in current context
+        }
+
+        await Dexie.delete(dbName);
+        console.log(`Database '${dbName}' deleted.`);
+    } catch (deleteErr) {
+        console.error(`deleteDb: Failed to delete DB '${dbName}'`, deleteErr);
+    }
+}
+
+export async function doesDbExist(dbName) {
+    if (!dbName || typeof dbName !== "string") {
+        console.error("doesDbExist: Invalid database name.");
+        return false;
+    }
+
+    // Fast path: Chromium
+    if (isChromium()) {
+        try {
+            const dbs = await indexedDB.databases();
+            return dbs.some(db => db.name === dbName);
+        } catch (err) {
+            console.warn("doesDbExist (Chromium): Failed to list databases. Falling back.", err);
+            // Fall through to bulletproof fallback
+        }
+    }
+
+    // Bulletproof fallback (works in all browsers)
+    return new Promise((resolve) => {
+        let resolved = false;
+
+        const request = indexedDB.open(dbName);
+
+        request.onupgradeneeded = function () {
+            request.transaction.abort(); // Prevent creating the DB
+            if (!resolved) {
+                resolved = true;
+                resolve(false);
+            }
+        };
+
+        request.onsuccess = function () {
+            request.result.close();
+            if (!resolved) {
+                resolved = true;
+                resolve(true);
+            }
+        };
+
+        request.onerror = function (event) {
+            const err = event.target.error;
+            if (!resolved) {
+                resolved = true;
+                if (err?.name === "NotFoundError") {
+                    resolve(false);
+                } else {
+                    console.warn("doesDbExist: Unexpected error during fallback check", err);
+                    resolve(false);
+                }
+            }
+        };
+
+        // Just in case nothing fires (paranoia safety)
+        setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                resolve(false);
+            }
+        }, 1000);
+    });
+}
+
+function isChromium() {
+    try {
+        // Modern detection via userAgentData
+        if (navigator.userAgentData?.brands?.some(b => b.brand.includes("Chromium"))) {
+            return true;
+        }
+
+        // Legacy fallback detection
+        return /Chrome/.test(navigator.userAgent) &&
+            !!window.chrome &&
+            typeof indexedDB.databases === "function";
+    } catch (err) {
+        console.warn("isChromium: Detection failed due to unexpected error.", err);
+        return false;
+    }
 }
 
 /**
@@ -410,7 +480,7 @@ export function getStorageEstimate() {
 }
 
 async function getTable(dbName, storeName) {
-    let db = await getDb(dbName);
+    let db = await openDb(dbName);
     let table = db.table(storeName);
     return table;
 }
@@ -420,7 +490,7 @@ async function getTable(dbName, storeName) {
  * Automatically retrieves the Dexie instance from your manager using dbName.
  */
 export async function wrapperMagicQueryAsync(dbName, storeName, nestedOrFilter, queryAdditions, forceCursor = false) {
-    const db = await getDb(dbName); // Get the Dexie instance from your manager
+    const db = await openDb(dbName); // Get the Dexie instance from your manager
     let table = db.table(storeName);
     return await magicQueryAsync(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }
@@ -430,7 +500,7 @@ export async function wrapperMagicQueryAsync(dbName, storeName, nestedOrFilter, 
  * Automatically retrieves the Dexie instance from your manager using dbName.
  */
 export async function* wrapperMagicQueryYield(dbName, storeName, nestedOrFilter, queryAdditions = [], forceCursor = false) {
-    const db = await getDb(dbName); // Get the Dexie instance from your manager
+    const db = await openDb(dbName); // Get the Dexie instance from your manager
     let table = db.table(storeName);
     yield* magicQueryYield(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }

@@ -14,6 +14,8 @@ using Microsoft.Extensions.Options;
 using Magic.IndexedDb.Extensions;
 using System.Runtime.CompilerServices;
 using Magic.IndexedDb.Models.UniversalOperations;
+using Magic.IndexedDb.LinqTranslation.Interfaces;
+using Magic.IndexedDb.LinqTranslation.Models;
 
 namespace Magic.IndexedDb
 {
@@ -41,13 +43,54 @@ namespace Magic.IndexedDb
         /// </summary>
         /// <param name="dbName">The name of database to delete</param>
         /// <returns></returns>
-        internal Task DeleteDbAsync(string dbName, CancellationToken cancellationToken = default)
+        internal Task DeleteDbAsync(string dbName)
         {
             if (string.IsNullOrEmpty(dbName))
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return new MagicJsInvoke(_jsModule).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_DB, cancellationToken, new TypedArgument<string>(dbName));
+            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
+                IndexedDbFunctions.DELETE_DB, dbName);
+        }
+
+        internal Task CloseDbAsync(string dbName)
+        {
+            if (string.IsNullOrEmpty(dbName))
+            {
+                throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
+            }
+            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.CLOSE_DB, dbName);
+        }
+
+        internal Task OpenDbAsync(string dbName)
+        {
+            if (string.IsNullOrEmpty(dbName))
+            {
+                throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
+            }
+            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.OPEN_DB, dbName);
+        }
+
+        internal Task<bool> DoesDbExist(string dbName)
+        {
+            if (string.IsNullOrEmpty(dbName))
+            {
+                throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
+            }
+            return new MagicJsInvoke(_jsModule).CallInvokeDefaultJsAsync<bool>(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.DOES_DB_EXIST, dbName);
+        }
+
+        internal Task<bool> IsDbOpen(string dbName)
+        {
+            if (string.IsNullOrEmpty(dbName))
+            {
+                throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
+            }
+            return new MagicJsInvoke(_jsModule).CallInvokeDefaultJsAsync<bool>(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.IS_DB_CLosed, dbName);
         }
 
         internal async Task<TKey> AddAsync<T, TKey>(T record, string dbName, CancellationToken cancellationToken = default) where T : class
@@ -144,6 +187,11 @@ namespace Magic.IndexedDb
         {
             MagicQuery<T> query = new MagicQuery<T>(databaseName, schemaName, this);
             return query;
+        }
+
+        internal IMagicDatabaseScoped Database(IndexedDbManager manager, IndexedDbSet indexedDbSet)
+        {
+            return new MagicDatabaseScoped(manager, indexedDbSet);
         }
 
         /// <summary>
