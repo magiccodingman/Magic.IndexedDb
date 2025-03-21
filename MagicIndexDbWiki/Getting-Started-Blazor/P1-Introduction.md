@@ -473,14 +473,14 @@ The following **table defines the operations available** and how they interact.
 
 ### **🔹 Indexed Query (`.Where()`) Execution Order**
 
-|**Operation**|**Allowed Before**|**Allowed After**|**Notes**|
-|---|---|---|---|
-|`.Where()`|**Start**|`.Where()`, `.OrderBy()`, `.ToListAsync()`|Supports **indexing optimizations**.|
-|`.OrderBy()`|`.Where()`|`.Take()`, `.Skip()`, `.ToListAsync()`|**Ordering is NOT guaranteed in IndexedDB**. Must reapply after query.|
-|`.Take()`|`.Where()`, `.OrderBy()`|`.Skip()`, `.ToListAsync()`|**Must be before `.Skip()` in IndexedDB**.|
-|`.Skip()`|`.Take()`|`.ToListAsync()`|**Skipping before taking ignores take!**|
-|`.FirstOrDefaultAsync()`|`.Where()`|**End**|Returns **first matching** record.|
-|`.LastOrDefaultAsync()`|`.Where()`|**End**|Returns **last matching** record.|
+| **Operation**            | **Allowed Before**       | **Allowed After**                          | **Notes**                                                              |
+| ------------------------ | ------------------------ | ------------------------------------------ | ---------------------------------------------------------------------- |
+| `.Where()`               | **Start**                | `.Where()`, `.OrderBy()`, `.ToListAsync()` | Supports **indexing optimizations**.                                   |
+| `.OrderBy()`             | `.Where()`               | `.Take()`, `.Skip()`, `.ToListAsync()`     | **Ordering is NOT guaranteed in IndexedDB**. Must reapply after query. |
+| `.Take()`                | `.Where()`, `.OrderBy()` | `.Skip()`, `.ToListAsync()`                | **Must be before `.Skip()` in IndexedDB**.                             |
+| `.Skip()`                | `.Take()`                | `.ToListAsync()`                           | **Skipping before taking ignores take!**                               |
+| `.FirstOrDefaultAsync()` | `.Where()`               | **End**                                    | Returns **first matching** record.                                     |
+| `.LastOrDefaultAsync()`  | `.Where()`               | **End**                                    | Returns **last matching** record.                                      |
 
 ### **🔹 Cursor Query (`.Cursor()`) Execution Order**
 
@@ -497,6 +497,65 @@ The following **table defines the operations available** and how they interact.
 > IndexedDB **does not allow additional `.Where()` operations** **after these**.
 
 ---
+
+### **📌 Supported Query Operators**
+
+| **Operator (C# / LINQ Style)**    | **Description**                                                            | **IndexedDB Optimized?**              |
+| --------------------------------- | -------------------------------------------------------------------------- | ------------------------------------- |
+| `==`                              | Exact match                                                                | ✅ Yes                                 |
+| `!=`                              | Not equal                                                                  | ✅ Yes                                 |
+| `>`                               | Greater than                                                               | ✅ Yes                                 |
+| `>=`                              | Greater or equal                                                           | ✅ Yes                                 |
+| `<`                               | Less than                                                                  | ✅ Yes                                 |
+| `<=`                              | Less or equal                                                              | ✅ Yes                                 |
+| `.StartsWith()`                   | String starts with                                                         | ✅ Yes* (case-insensitive uses cursor) |
+| `!x.StartsWith()`                 | String does not start with                                                 | 🚫 Cursor Required                    |
+| `.EndsWith()`                     | String ends with                                                           | 🚫 Cursor Required                    |
+| `!x.EndsWith()`                   | String does not end with                                                   | 🚫 Cursor Required                    |
+| `.Contains()`                     | String or array contains a value **OR** value exists in provided array     | ✅ Yes* (not for strings)              |
+| `!x.Contains()`                   | String or array does **not** contain a value **OR** value **not** in array | ✅ Yes* (not for strings)              |
+| `.In([a, b, c])`                  | Field matches any value in the provided array                              | ✅ Yes                                 |
+| `.Length == X`                    | Length of a string or array is exactly `X`                                 | 🚫 Cursor Required                    |
+| `.Length > X / >= X / < X / <= X` | Length of a string or array comparisons                                    | 🚫 Cursor Required                    |
+| `x == null`                       | Field is `null` or `undefined`                                             | 🚫 Cursor Required                    |
+| `x != null`                       | Field is **not** `null` or `undefined`                                     | 🚫 Cursor Required                    |
+
+---
+
+### **🕒 Date & Time Query Support (C# Style)**
+
+|**DateTime / DateOnly Operation**|**Description**|**IndexedDB Optimized?**|
+|---|---|---|
+|`x == DateTime(2020, 5, 1)`|Exact DateTime match|✅ Yes (translated to range)|
+|`x > DateTime(2023, 1, 1)`|Greater than a specific DateTime|✅ Yes (translated to range)|
+|`x >= DateTime(2023, 1, 1)`|Greater or equal|✅ Yes (translated to range)|
+|`x < DateTime(2023, 1, 1)`|Less than a specific DateTime|✅ Yes (translated to range)|
+|`x <= DateTime(2023, 1, 1)`|Less or equal|✅ Yes (translated to range)|
+|`x.Date == DateOnly(2023, 10, 15)`|Match by calendar date (ignoring time)|✅ Yes (translated to range)|
+|`x.Year == 2023`|Filters by year|✅ Yes (translated to range)|
+|`x.Month == 7`|Filters by month|✅ Yes (translated to range)|
+|`x.Day == 4`|Filters by day of the month|🚫 Cursor Required|
+|`x.DayOfWeek == DayOfWeek.Monday`|Filters by day of the week (Sunday = 0)|🚫 Cursor Required|
+|`x.DayOfYear == 128`|Filters by day of the year|🚫 Cursor Required|
+
+---
+
+### **🔎 Type-Based Queries**
+
+| **Operator**              | **Description**                                 | **IndexedDB Optimized?** |
+| ------------------------- | ----------------------------------------------- | ------------------------ |
+| `x is type of int/number` | Checks if value is a number                     | 🚫 Cursor Required       |
+| `x is type of string      | Checks if value is a string                     | 🚫 Cursor Required       |
+| `typeof x === "number"`   | Checks if value is a number                     | 🚫 Cursor Required       |
+| `typeof x === "string"`   | Checks if value is a string                     | 🚫 Cursor Required       |
+| `x is DateTime / Date`    | Checks if value is a valid date                 | 🚫 Cursor Required       |
+| `x is Array`              | Checks if value is an array                     | 🚫 Cursor Required       |
+| `x is Object`             | Checks if value is a plain object               | 🚫 Cursor Required       |
+| `x is Blob`               | Checks if value is a Blob                       | 🚫 Cursor Required       |
+| `x is ArrayBuffer`        | Checks if value is ArrayBuffer or a typed array | 🚫 Cursor Required       |
+| `x is File`               | Checks if value is a File                       | 🚫 Cursor Required       |
+
+* Type of both equals and not equals supported. System automatically detects what can or can not be converted to a JS type as IndexedDB is JS, so type checking is not as strict as C#.
 
 ## **5. Cursor Queries – Unlocking Full IndexedDB Power**
 

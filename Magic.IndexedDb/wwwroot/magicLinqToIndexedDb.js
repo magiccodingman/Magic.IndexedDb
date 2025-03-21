@@ -605,17 +605,27 @@ function optimizeConditions(conditions) {
     return conditions.map(condition => {
         let optimizedCondition = { ...condition };
 
-        // Precompute case-insensitive values if applicable
         if (!condition.caseSensitive && typeof condition.value === "string") {
             optimizedCondition.value = condition.value.toLowerCase();
         }
 
-        // Create a direct function reference instead of switch case inside the loop
-        optimizedCondition.comparisonFunction = getComparisonFunction(condition.operation);
+        // Edge case: GETDAY sanity check
+        if (condition.operation === QUERY_OPERATIONS.GETDAY &&
+            typeof condition.value !== "number") {
+            console.warn(`[IndexedDB Warning] GETDAY expects a numeric day (1–31). Got:`, condition.value);
+        }
 
+        if ([QUERY_OPERATIONS.GET_DAY_OF_WEEK, QUERY_OPERATIONS.GET_DAY_OF_YEAR, QUERY_OPERATIONS.GETDAY].includes(condition.operation)) {
+            if (typeof condition.value !== "number") {
+                console.warn(`[IndexedDB Warning] ${condition.operation} expects a numeric value. Got:`, condition.value);
+            }
+        }
+
+        optimizedCondition.comparisonFunction = getComparisonFunction(condition.operation);
         return optimizedCondition;
     });
 }
+
 
 function getComparisonFunction(operation) {
     const operations = {
@@ -627,12 +637,122 @@ function getComparisonFunction(operation) {
         [QUERY_OPERATIONS.LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => recordValue <= queryValue,
         [QUERY_OPERATIONS.STARTS_WITH]: (recordValue, queryValue) =>
             typeof recordValue === "string" && recordValue.startsWith(queryValue),
-        [QUERY_OPERATIONS.CONTAINS]: (recordValue, queryValue) =>
-            typeof recordValue === "string" && recordValue.includes(queryValue),
-        [QUERY_OPERATIONS.NOT_CONTAINS]: (recordValue, queryValue) =>
-            typeof recordValue === "string" && !recordValue.includes(queryValue),
+
+
+        [QUERY_OPERATIONS.CONTAINS]: (recordValue, queryValue) => {
+            if (typeof recordValue === "string") {
+                return recordValue.includes(queryValue);
+            }
+            if (Array.isArray(recordValue)) {
+                return recordValue.includes(queryValue);
+            }
+            if (Array.isArray(queryValue)) {
+                return queryValue.includes(recordValue);
+            }
+            return false;
+        },
+
+
+        [QUERY_OPERATIONS.NOT_CONTAINS]: (recordValue, queryValue) => {
+            if (typeof recordValue === "string") {
+                return !recordValue.includes(queryValue);
+            }
+            if (Array.isArray(recordValue)) {
+                return !recordValue.includes(queryValue);
+            }
+            if (Array.isArray(queryValue)) {
+                return !queryValue.includes(recordValue);
+            }
+            return true;
+        },
+
+
         [QUERY_OPERATIONS.IN]: (recordValue, queryValue) =>
-            Array.isArray(queryValue) && queryValue.includes(recordValue)
+            Array.isArray(queryValue) && queryValue.includes(recordValue),
+
+        [QUERY_OPERATIONS.GET_DAY_OF_WEEK]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) {
+                recordValue = new Date(recordValue);
+                if (isNaN(recordValue)) return false;
+            }
+            return recordValue.getDay() === queryValue; // Sunday = 0, Saturday = 6
+        },
+
+
+
+        [QUERY_OPERATIONS.GETDAY]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) {
+                recordValue = new Date(recordValue);
+                if (isNaN(recordValue)) return false;
+            }
+            return recordValue.getDate() === queryValue;
+        },
+
+        [QUERY_OPERATIONS.GET_DAY_OF_YEAR]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) {
+                recordValue = new Date(recordValue);
+                if (isNaN(recordValue)) return false;
+            }
+
+            const start = new Date(recordValue.getFullYear(), 0, 0);
+            const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60 * 1000);
+            const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+            return dayOfYear === queryValue;
+        },
+
+        [QUERY_OPERATIONS.ENDS_WITH]: (recordValue, queryValue) =>
+            typeof recordValue === "string" && recordValue.endsWith(queryValue),
+
+        [QUERY_OPERATIONS.NOT_ENDS_WITH]: (recordValue, queryValue) =>
+            typeof recordValue === "string" && !recordValue.endsWith(queryValue),
+
+        [QUERY_OPERATIONS.NOT_STARTS_WITH]: (recordValue, queryValue) =>
+            typeof recordValue === "string" && !recordValue.startsWith(queryValue),
+
+
+        [QUERY_OPERATIONS.NOT_LENGTH_EQUAL]: (recordValue, queryValue) =>
+            (typeof recordValue === "string" || Array.isArray(recordValue)) && recordValue.length !== queryValue,
+
+        [QUERY_OPERATIONS.LENGTH_EQUAL]: (recordValue, queryValue) =>
+            (typeof recordValue === "string" || Array.isArray(recordValue)) && recordValue.length === queryValue,
+
+        [QUERY_OPERATIONS.LENGTH_GREATER_THAN]: (recordValue, queryValue) =>
+            (typeof recordValue === "string" || Array.isArray(recordValue)) && recordValue.length > queryValue,
+
+        [QUERY_OPERATIONS.LENGTH_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) =>
+            (typeof recordValue === "string" || Array.isArray(recordValue)) && recordValue.length >= queryValue,
+
+        [QUERY_OPERATIONS.LENGTH_LESS_THAN]: (recordValue, queryValue) =>
+            (typeof recordValue === "string" || Array.isArray(recordValue)) && recordValue.length < queryValue,
+
+        [QUERY_OPERATIONS.LENGTH_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) =>
+            (typeof recordValue === "string" || Array.isArray(recordValue)) && recordValue.length <= queryValue,
+
+        [QUERY_OPERATIONS.TYPEOF_NUMBER]: (value) => typeof value === "number",
+        [QUERY_OPERATIONS.TYPEOF_STRING]: (value) => typeof value === "string",
+        [QUERY_OPERATIONS.TYPEOF_DATE]: (value) => value instanceof Date || (!isNaN(Date.parse(value))),
+        [QUERY_OPERATIONS.TYPEOF_ARRAY]: (value) => Array.isArray(value),
+        [QUERY_OPERATIONS.TYPEOF_OBJECT]: (value) =>
+            typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Date),
+        [QUERY_OPERATIONS.TYPEOF_BLOB]: (value) => typeof Blob !== "undefined" && value instanceof Blob,
+        [QUERY_OPERATIONS.TYPEOF_ARRAYBUFFER]: (value) => value instanceof ArrayBuffer || ArrayBuffer.isView(value),
+        [QUERY_OPERATIONS.TYPEOF_FILE]: (value) => typeof File !== "undefined" && value instanceof File,
+
+
+        [QUERY_OPERATIONS.IS_NULL]: (value) => value === null || value === undefined,
+        [QUERY_OPERATIONS.IS_NOT_NULL]: (value) => value !== null && value !== undefined,
+
+        [QUERY_OPERATIONS.NOT_TYPEOF_NUMBER]: (value) => typeof value !== "number",
+        [QUERY_OPERATIONS.NOT_TYPEOF_STRING]: (value) => typeof value !== "string",
+        [QUERY_OPERATIONS.NOT_TYPEOF_DATE]: (value) => !(value instanceof Date) && isNaN(Date.parse(value)),
+        [QUERY_OPERATIONS.NOT_TYPEOF_ARRAY]: (value) => !Array.isArray(value),
+        [QUERY_OPERATIONS.NOT_TYPEOF_OBJECT]: (value) =>
+            !(typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Date)),
+        [QUERY_OPERATIONS.NOT_TYPEOF_BLOB]: (value) => typeof Blob === "undefined" || !(value instanceof Blob),
+        [QUERY_OPERATIONS.NOT_TYPEOF_ARRAYBUFFER]: (value) =>
+            !(value instanceof ArrayBuffer || ArrayBuffer.isView(value)),
+        [QUERY_OPERATIONS.NOT_TYPEOF_FILE]: (value) => typeof File === "undefined" || !(value instanceof File),
+
     };
 
     return operations[operation] || (() => {
@@ -643,12 +763,27 @@ function getComparisonFunction(operation) {
 function applyCondition(record, condition) {
     let recordValue = record[condition.property];
 
-    // Convert to lowercase only if needed (precomputed query value)
     if (!condition.caseSensitive && typeof recordValue === "string") {
         recordValue = recordValue.toLowerCase();
     }
 
-    // Use the precomputed function reference for comparison
+    const unaryOps = [
+        QUERY_OPERATIONS.TYPEOF_NUMBER,
+        QUERY_OPERATIONS.TYPEOF_STRING,
+        QUERY_OPERATIONS.TYPEOF_DATE,
+        QUERY_OPERATIONS.TYPEOF_ARRAY,
+        QUERY_OPERATIONS.TYPEOF_OBJECT,
+        QUERY_OPERATIONS.TYPEOF_BLOB,
+        QUERY_OPERATIONS.TYPEOF_ARRAYBUFFER,
+        QUERY_OPERATIONS.TYPEOF_FILE,
+        QUERY_OPERATIONS.IS_NULL,
+        QUERY_OPERATIONS.IS_NOT_NULL
+    ];
+
+    if (unaryOps.includes(condition.operation)) {
+        return condition.comparisonFunction(recordValue);
+    }
+
     return condition.comparisonFunction(recordValue, condition.value);
 }
 

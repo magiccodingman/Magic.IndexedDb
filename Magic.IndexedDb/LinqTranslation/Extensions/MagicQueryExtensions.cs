@@ -12,16 +12,17 @@ using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Collections;
 using Magic.IndexedDb.Models.UniversalOperations;
+using Magic.IndexedDb.LinqTranslation.Extensions.TransformExpressions;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
     internal class MagicQueryExtensions<T> :
-        IMagicQueryPaginationTake<T>, IMagicQueryOrderable<T>, 
+        IMagicQueryPaginationTake<T>, IMagicQueryOrderable<T>,
         IMagicQueryOrderableTable<T>, IMagicQueryFinal<T>
         where T : class
     {
         public MagicQuery<T> MagicQuery { get; set; }
-        
+
         public MagicQueryExtensions(MagicQuery<T> _magicQuery)
         {
             MagicQuery = _magicQuery;
@@ -97,7 +98,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             StoredMagicQuery smq = new StoredMagicQuery();
             smq.additionFunction = MagicQueryFunctions.First;
             _MagicQuery.StoredMagicQueries.Add(smq);
-            
+
             var items = await new MagicQueryExtensions<T>(_MagicQuery).ToListAsync();
             return items.FirstOrDefault();
         }
@@ -220,11 +221,21 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                 return new NestedOrFilter { universalFalse = true };
             }
 
+            // Apply your new DateTime transformation visitor
+            //preprocessedPredicate = TransformPredicates(preprocessedPredicate);
+
             // FLATTEN OR CONDITIONS because they are annoying and IndexDB doesn't support that!
             var flattenedPredicate = ExpressionFlattener.FlattenAndOptimize(preprocessedPredicate);
 
             CollectBinaryExpressions(flattenedPredicate.Body, flattenedPredicate, nestedOrFilter);
             return nestedOrFilter;
+        }
+
+        private Expression<Func<T, bool>> TransformPredicates(Expression<Func<T, bool>> predicate)
+        {
+            var visitor = new PredicateTransformationVisitor();
+            var newBody = visitor.Visit(predicate.Body);
+            return Expression.Lambda<Func<T, bool>>(newBody, predicate.Parameters);
         }
 
 
@@ -281,7 +292,6 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             {
                 if (expression is UnaryExpression unaryExpression && unaryExpression.NodeType == ExpressionType.Not)
                 {
-                    // Invert the expression inside NOT
                     if (unaryExpression.Operand is BinaryExpression binaryExpression)
                     {
                         string invertedOperation = binaryExpression.NodeType switch
@@ -299,43 +309,37 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                             invertedOperation,
                             inOrBranch);
                     }
-                    else if (unaryExpression.Operand is MethodCallExpression methodCallExpression)
+                    else if (unaryExpression.Operand is MethodCallExpression methodCall)
                     {
-                        // Handle NotContains, NotStartsWith, NotEquals
-                        if (methodCallExpression.Method.DeclaringType == typeof(string) &&
-                            (methodCallExpression.Method.Name == "Contains" ||
-                             methodCallExpression.Method.Name == "StartsWith" ||
-                             methodCallExpression.Method.Name == "Equals"))
-                        {
-                            var left = methodCallExpression.Object as MemberExpression;
-                            var right = ToConstantExpression(methodCallExpression.Arguments[0]);
-                            var operation = methodCallExpression.Method.Name;
+                        string methodName = methodCall.Method.Name;
 
-                            bool caseSensitive = true;
-                            if (methodCallExpression.Arguments.Count > 1)
+                        if (SupportedMethodNameForNegation(methodName))
+                        {
+                            if (methodCall.Arguments.Count == 0 || methodCall.Arguments[0] == null)
                             {
-                                if (methodCallExpression.Arguments[1] is ConstantExpression comparison &&
-                                    comparison.Value is StringComparison comparisonValue)
-                                {
-                                    caseSensitive = comparisonValue == StringComparison.Ordinal || comparisonValue == StringComparison.CurrentCulture;
-                                }
+                                throw new InvalidOperationException($"Cannot invert method '{methodName}' — missing or null argument.");
                             }
 
-                            string invertedOperation = operation switch
-                            {
-                                "Contains" => "NotContains",
-                                "StartsWith" => "NotStartsWith",
-                                "Equals" => "NotEquals",
-                                _ => throw new InvalidOperationException($"Unsupported NOT method call expression: {methodCallExpression}")
-                            };
+                            string invertedOp = InvertOperation(methodName);
+                            var left = methodCall.Object as MemberExpression;
+                            var right = ToConstantExpression(methodCall.Arguments[0]);
 
-                            AddConditionInternal(left, right, invertedOperation, inOrBranch, caseSensitive);
+                            bool caseSensitive = true;
+                            if (methodCall.Arguments.Count > 1 &&
+                                methodCall.Arguments[1] is ConstantExpression comparison &&
+                                comparison.Value is StringComparison comparisonValue)
+                            {
+                                caseSensitive = comparisonValue == StringComparison.Ordinal || comparisonValue == StringComparison.CurrentCulture;
+                            }
+
+                            AddConditionInternal(left, right, invertedOp, inOrBranch, caseSensitive);
                         }
                         else
                         {
-                            throw new InvalidOperationException($"Unsupported NOT operation on method call: {methodCallExpression}");
+                            throw new InvalidOperationException($"Unsupported NOT operation on method call: {methodCall}");
                         }
                     }
+
                     else
                     {
                         throw new InvalidOperationException($"Unsupported NOT operation: {unaryExpression}");
@@ -370,15 +374,16 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             }
 
 
+
             bool IsParameterMember(Expression expression) => expression is MemberExpression { Expression: ParameterExpression };
 
             ConstantExpression ToConstantExpression(Expression expression) =>
-                expression switch
-                {
-                    ConstantExpression constantExpression => constantExpression,
-                    MemberExpression memberExpression => Expression.Constant(Expression.Lambda(memberExpression).Compile().DynamicInvoke()),
-                    _ => throw new InvalidOperationException($"Unsupported expression type. Expression: {expression}")
-                };
+                    expression switch
+                    {
+                        ConstantExpression constantExpression => constantExpression,
+                        MemberExpression memberExpression => Expression.Constant(Expression.Lambda(memberExpression).Compile().DynamicInvoke()),
+                        _ => throw new InvalidOperationException($"Unsupported or non-constant expression: {expression}")
+                    };
 
             void AddCondition(Expression expression, bool inOrBranch)
             {
@@ -417,43 +422,46 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                         throw new InvalidOperationException($"Unsupported binary expression. Expression: {expression}");
                     }
                 }
-                else if (expression is MethodCallExpression methodCallExpression)
+                else if (expression is MethodCallExpression methodCall)
                 {
-                    if (methodCallExpression.Method.DeclaringType == typeof(string) &&
-                        (methodCallExpression.Method.Name == "Equals" || methodCallExpression.Method.Name == "Contains" || methodCallExpression.Method.Name == "StartsWith"))
-                    {
-                        var left = methodCallExpression.Object as MemberExpression;
-                        var right = ToConstantExpression(methodCallExpression.Arguments[0]);
-                        var operation = methodCallExpression.Method.Name;
-                        var caseSensitive = true;
+                    string? opName = methodCall.Method.Name;
+                    bool caseSensitive = true;
 
-                        if (methodCallExpression.Arguments.Count > 1)
+                    // Normalize known operations
+                    if (opName is "Equals" or "Contains" or "StartsWith" or "EndsWith")
+                    {
+                        var left = methodCall.Object as MemberExpression;
+                        var right = ToConstantExpression(methodCall.Arguments[0]);
+
+                        // Handle Equals(string, StringComparison)
+                        if (methodCall.Arguments.Count > 1 && methodCall.Arguments[1] is ConstantExpression cmp &&
+                            cmp.Value is StringComparison comparisonValue)
                         {
-                            var stringComparison = methodCallExpression.Arguments[1] as ConstantExpression;
-                            if (stringComparison != null && stringComparison.Value is StringComparison comparisonValue)
-                            {
-                                caseSensitive = comparisonValue == StringComparison.Ordinal || comparisonValue == StringComparison.CurrentCulture;
-                            }
+                            caseSensitive = comparisonValue == StringComparison.Ordinal || comparisonValue == StringComparison.CurrentCulture;
                         }
 
-                        AddConditionInternal(left, right, operation == "Equals" ? "StringEquals" : operation, inOrBranch, caseSensitive);
+                        var resolvedOp = opName switch
+                        {
+                            "Equals" => "StringEquals",
+                            _ => opName
+                        };
+
+                        AddConditionInternal(left, right, resolvedOp, inOrBranch, caseSensitive);
                     }
-                    else if (methodCallExpression.Method.DeclaringType == typeof(List<string>) &&
-                        methodCallExpression.Method.Name == "Contains")
+                    // Handle extended methods (e.g., GetDay(), IsNull(), TypeOfNumber(), etc.)
+                    else if (SupportedUnaryMethod(methodCall.Method.Name))
                     {
-                        var collection = ToConstantExpression(methodCallExpression.Object!);
-                        var property = methodCallExpression.Arguments[0] as MemberExpression;
-                        AddConditionInternal(property, collection, "In", inOrBranch);
+                        var left = methodCall.Arguments.FirstOrDefault() as MemberExpression ?? methodCall.Object as MemberExpression;
+                        var right = methodCall.Arguments.ElementAtOrDefault(1) as ConstantExpression;
+
+                        AddConditionInternal(left, right, methodCall.Method.Name, inOrBranch);
                     }
                     else
                     {
-                        throw new InvalidOperationException($"Unsupported method call expression. Expression: {expression}");
+                        throw new InvalidOperationException($"Unsupported method call expression: {methodCall}");
                     }
                 }
-                else
-                {
-                    throw new InvalidOperationException($"Unsupported expression type. Expression: {expression}");
-                }
+
             }
 
             void AddConditionInternal(MemberExpression? left, ConstantExpression? right, string operation, bool inOrBranch, bool caseSensitive = false)
@@ -503,5 +511,26 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             return orFilters;
         }
+
+        private bool SupportedMethodNameForNegation(string name) =>
+    name is "Contains" or "StartsWith" or "EndsWith" or "Equals";
+
+        private bool SupportedUnaryMethod(string name) =>
+            name.StartsWith("GetDay") || name.StartsWith("TypeOf") || name.StartsWith("NotTypeOf") ||
+            name.StartsWith("Length") || name.StartsWith("NotLength") ||
+            name is "IsNull" or "IsNotNull" or "NotContains";
+
+        string InvertOperation(string methodName)
+        {
+            return methodName switch
+            {
+                "Contains" => "NotContains",
+                "StartsWith" => "NotStartsWith",
+                "EndsWith" => "NotEndsWith",
+                "Equals" => "NotEquals",
+                _ => throw new InvalidOperationException($"Cannot invert unsupported method: {methodName}")
+            };
+        }
+
     }
 }

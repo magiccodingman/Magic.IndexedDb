@@ -173,9 +173,9 @@
                 // // // DO NOT DO THIS! I only am allowing this for maximum flexibility but this is very dangerous.
                 // IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
 
-                
-                
-                
+
+
+
                 Person[] persons = new Person[] {
                         new Person { Name = "Zack", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
                         new Person { Name = "Luna", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
@@ -222,7 +222,7 @@
     new Person { Name = "Wendy", TestInt = 50, _Age = 50, GUIY = Guid.NewGuid(), DoNotMapTest = "My age matches my test int" },
     new Person { Name = "Xander", TestInt = 19, _Age = 21, GUIY = Guid.NewGuid(), DoNotMapTest = "I am a college student" },
     new Person { Name = "Yara", TestInt = 90, _Age = 32, GUIY = Guid.NewGuid(), DoNotMapTest = "I work in finance" },
-    new Person { Name = "Zane", TestInt = 101, _Age = 47, GUIY = Guid.NewGuid(), DoNotMapTest = "I love motorcycles" },
+    new Person { Name = "Zane", TestInt = 101, _Age = 47, DateOfBirth = new DateTime(2020, 2, 10), GUIY = Guid.NewGuid(), DoNotMapTest = "I love motorcycles" },
 
      };
 
@@ -270,6 +270,13 @@
                 bool isOpen = await db.IsOpenAsync();
                 await db.OpenAsync();
                 bool isOpenNow = await db.IsOpenAsync();
+
+                var d = new DateTime();
+                var asdf = d.DayOfWeek;
+                var asdf2 = d.DayOfYear;
+           //      RunTest("Date Year Test", await personQuery.Where(x => x.DateOfBirth.Value.Year >= 2020).ToListAsync(),
+           // allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year == 2020));
+
                 RunTest("Combined Query Test", await personQuery.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10).ToListAsync(),
            allPeople.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10));
 
@@ -544,7 +551,6 @@
                 //     allPeople.Where(x => (x._Age > 30 && (x.TestInt == 9 || x.Name.StartsWith("J"))) || (x.TestInt == 3 && x.Name.EndsWith("b", StringComparison.OrdinalIgnoreCase))));
 
 
-                var asdf = allPeople.Where(x => 1 == 1);
                 StateHasChanged();
             }
             catch (Exception ex)

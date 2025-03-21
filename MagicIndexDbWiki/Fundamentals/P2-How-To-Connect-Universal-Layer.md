@@ -27,27 +27,101 @@ Instead of directly wrapping IndexedDB APIs, **Magic IndexedDB acts as a middlew
 
 Magic IndexedDB **converts LINQ-style operations** into a structured, universal query format, optimizing IndexedDB interactions wherever possible. However, due to IndexedDB's inherent limitations, certain operations must be handled using **cursors** instead of direct indexed queries.
 
-### **📌 Supported Query Operators**
 
-| **Operator**    | **JavaScript Key**   | **Description**                                         | **IndexedDB Optimized?**         |
-| --------------- | -------------------- | ------------------------------------------------------- | -------------------------------- |
-| `==`            | `Equal`              | Exact match                                             | ✅ Yes                            |
-| `!=`            | `NotEqual`           | Not equal                                               | ✅ Yes                            |
-| `>`             | `GreaterThan`        | Greater than                                            | ✅ Yes                            |
-| `>=`            | `GreaterThanOrEqual` | Greater or equal                                        | ✅ Yes                            |
-| `<`             | `LessThan`           | Less than                                               | ✅ Yes                            |
-| `<=`            | `LessThanOrEqual`    | Less or equal                                           | ✅ Yes                            |
-| `.StartsWith()` | `StartsWith`         | String starts with (IndexedDB supports only exact case) | ✅ Yes* (unless case-insensitive) |
-| `.Contains()`   | `Contains`           | String contains                                         | 🚫 Cursor Required               |
-| `!.Contains()`  | `NotContains`        | String not contains                                     | 🚫 Cursor Required               |
-| `.In()`         | `In`                 | Matches any value in a list                             | ✅ Yes                            |
+Absolutely — here's the cleaned-up, fully updated, and **well-organized** version of your **📌 Supported Query Operators** table, broken into clear sections (comparison, string, array, date, type, null) for readability:
+
+---
+
+### 📌 **Supported Query Operators**
+
+#### 🧮 Basic Comparison
+
+|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
+|---|---|---|---|
+|`==`|`Equal`|Exact match|✅ Yes|
+|`!=`|`NotEqual`|Not equal|✅ Yes|
+|`>`|`GreaterThan`|Greater than|✅ Yes|
+|`>=`|`GreaterThanOrEqual`|Greater than or equal|✅ Yes|
+|`<`|`LessThan`|Less than|✅ Yes|
+|`<=`|`LessThanOrEqual`|Less than or equal|✅ Yes|
+
+---
+
+#### 🔤 String Matching
+
+|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
+|---|---|---|---|
+|`.startsWith()`|`StartsWith`|String starts with|✅ Yes* (case-insensitive = 🚫)|
+|`!x.startsWith()`|`NotStartsWith`|String does **not** start with|🚫 Cursor Required|
+|`.endsWith()`|`EndsWith`|String ends with|🚫 Cursor Required|
+|`!x.endsWith()`|`NotEndsWith`|String does **not** end with|🚫 Cursor Required|
+|`.contains()`|`Contains`|String/array contains value OR value in array|🚫 Cursor Required|
+|`!x.contains()`|`NotContains`|String/array does **not** contain value OR not in array|🚫 Cursor Required|
+
 
 > **🚨 Important Notes:**
 > 
 > - **Indexed queries are optimized**, but operations like `.Contains()` always require a **cursor scan**.
 > - **`StartsWith()` is indexable in IndexedDB** if the comparison is **case-sensitive** (`caseSensitive: true` in the universal layer).
 > - **If `StringComparison.OrdinalIgnoreCase` or `caseSensitive: false` is used, the query falls back to a cursor**, as IndexedDB does not support case-insensitive indexes.
+> - **This may not be everything!** Please validate connections on, "QUERY_OPERATIONS" within the queryConstants.js
 
+
+---
+
+#### 📚 Array & Length Operations
+
+|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
+|---|---|---|---|
+|`.In([a, b, c])`|`In`|Matches any value in array|✅ Yes|
+|`.length == X`|`LengthEqual`|Length of string/array equals X|🚫 Cursor Required|
+|`.length != X`|`NotLengthEqual`|Length of string/array **not** equal to X|🚫 Cursor Required|
+|`.length > X`|`LengthGreaterThan`|Length greater than X|🚫 Cursor Required|
+|`.length >= X`|`LengthGreaterThanOrEqual`|Length greater than or equal to X|🚫 Cursor Required|
+|`.length < X`|`LengthLessThan`|Length less than X|🚫 Cursor Required|
+|`.length <= X`|`LengthLessThanOrEqual`|Length less than or equal to X|🚫 Cursor Required|
+
+---
+
+#### 📅 Date Operations
+
+|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
+|---|---|---|---|
+|`x.Day == X`|`GetDay`|Day of the month (1-31)|🚫 Cursor Required|
+|`x.DayOfWeek == X`|`GetDayOfWeek`|Day of week (Sunday = 0, Saturday = 6)|🚫 Cursor Required|
+|`x.DayOfYear == X`|`GetDayOfYear`|Day of year (1-366)|🚫 Cursor Required|
+
+---
+
+#### 🧪 Type Checks
+
+|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
+|---|---|---|---|
+|`typeof x === "number"`|`TypeOfNumber`|Value is a number|🚫 Cursor Required|
+|`typeof x === "string"`|`TypeOfString`|Value is a string|🚫 Cursor Required|
+|`x instanceof Date`|`TypeOfDate`|Value is a valid Date|🚫 Cursor Required|
+|`Array.isArray(x)`|`TypeOfArray`|Value is an array|🚫 Cursor Required|
+|`typeof x === "object"`|`TypeOfObject`|Value is a plain object|🚫 Cursor Required|
+|`x instanceof Blob`|`TypeOfBlob`|Value is a Blob|🚫 Cursor Required|
+|`x instanceof ArrayBuffer`|`TypeOfArrayBuffer`|Value is an ArrayBuffer or typed array|🚫 Cursor Required|
+|`x instanceof File`|`TypeOfFile`|Value is a File|🚫 Cursor Required|
+|`!(typeof x === "number")`|`NotTypeOfNumber`|Value is **not** a number|🚫 Cursor Required|
+|`!(typeof x === "string")`|`NotTypeOfString`|Value is **not** a string|🚫 Cursor Required|
+|`!(x instanceof Date)`|`NotTypeOfDate`|Value is **not** a valid Date|🚫 Cursor Required|
+|`!Array.isArray(x)`|`NotTypeOfArray`|Value is **not** an array|🚫 Cursor Required|
+|`!(typeof x === "object")`|`NotTypeOfObject`|Value is **not** a plain object|🚫 Cursor Required|
+|`!(x instanceof Blob)`|`NotTypeOfBlob`|Value is **not** a Blob|🚫 Cursor Required|
+|`!(x instanceof ArrayBuffer)`|`NotTypeOfArrayBuffer`|Value is **not** an ArrayBuffer or typed array|🚫 Cursor Required|
+|`!(x instanceof File)`|`NotTypeOfFile`|Value is **not** a File|🚫 Cursor Required|
+
+---
+
+#### 🚫 Null Checks
+
+|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
+|---|---|---|---|
+|`x == null`|`IsNull`|Value is `null` or `undefined`|🚫 Cursor Required|
+|`x != null`|`IsNotNull`|Value is **not** `null` or `undefined`|🚫 Cursor Required|
 
 ---
 

@@ -48,6 +48,7 @@ namespace Magic.IndexedDb
         //ValueTask<IMagicQuery<T>> Query<T>(IndexedDbSet indexedDbSet)
         //                where T : class, IMagicTableBase, new();
 
+        // I think this should be under a utilities functionality?
         Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default);
 
         //ValueTask<IMagicDatabaseGlobal> Database();

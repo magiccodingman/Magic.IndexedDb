@@ -12,6 +12,44 @@ export const QUERY_OPERATIONS = {
     CONTAINS: "Contains",
     NOT_CONTAINS: "NotContains",
     IN: "In",
+    GETDAY: "GetDay",
+    GET_DAY_OF_WEEK: "GetDayOfWeek",
+    GET_DAY_OF_Year: "GetDayOfYear",
+
+
+    ENDS_WITH: "EndsWith",
+    NOT_ENDS_WITH: "NotEndsWith",
+    NOT_STARTS_WITH: "NotStartsWith",
+
+    NOT_LENGTH_EQUAL: "NotLengthEqual",
+    LENGTH_EQUAL: "LengthEqual",
+    LENGTH_GREATER_THAN: "LengthGreaterThan",
+    LENGTH_GREATER_THAN_OR_EQUAL: "LengthGreaterThanOrEqual",
+    LENGTH_LESS_THAN: "LengthLessThan",
+    LENGTH_LESS_THAN_OR_EQUAL: "LengthLessThanOrEqual",
+
+    TYPEOF_NUMBER: "TypeOfNumber",
+    TYPEOF_STRING: "TypeOfString",
+    TYPEOF_DATE: "TypeOfDate",
+    TYPEOF_ARRAY: "TypeOfArray",
+    TYPEOF_OBJECT: "TypeOfObject",
+    TYPEOF_BLOB: "TypeOfBlob",
+    TYPEOF_ARRAYBUFFER: "TypeOfArrayBuffer",
+    TYPEOF_FILE: "TypeOfFile",
+
+
+    NOT_TYPEOF_NUMBER: "NotTypeOfNumber",
+    NOT_TYPEOF_STRING: "NotTypeOfString",
+    NOT_TYPEOF_DATE: "NotTypeOfDate",
+    NOT_TYPEOF_ARRAY: "NotTypeOfArray",
+    NOT_TYPEOF_OBJECT: "NotTypeOfObject",
+    NOT_TYPEOF_BLOB: "NotTypeOfBlob",
+    NOT_TYPEOF_ARRAYBUFFER: "NotTypeOfArrayBuffer",
+    NOT_TYPEOF_FILE: "NotTypeOfFile",
+
+    IS_NULL: "IsNull",
+    IS_NOT_NULL: "IsNotNull",
+
 };
 
 
