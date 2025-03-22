@@ -391,3 +391,11 @@ While **Magic IndexedDB optimizes cursor queries**, **they are still slower than
 ## **💡 Magic IndexedDB is Evolving—Help Make it Even Better!**
 
 Magic IndexedDB **pushes IndexedDB to its absolute limits**, but **there’s always room for improvement**! Want to see **even more optimizations?** Have an idea for **new features**? **Join the project** and help make IndexedDB the **powerful database it should be!** 🚀
+
+---
+
+# Final Thoughts – Ordering Logic
+
+You've nearly learned all the fundamentals of Magic IndexedDB! **But there's just one more thing, I promise (fingers crossed)**! Did you know that the **ordering isn't applied to the returned results**? Sounds crazy right?! But it makes a ton of sense, but it's an important thing to understand. 
+
+🔗 **Learn More: [Read the 'Understanding Ordering'](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Fundamentals/P3-Understanding-Ordering.md)**.
