@@ -204,15 +204,16 @@ namespace Magic.IndexedDb
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         internal async Task<IEnumerable<T>?> LinqToIndexedDb<T>(
-            NestedOrFilter nestedOrFilter, MagicQuery<T> query,
+            FilterNode nestedOrFilter, MagicQuery<T> query,
             CancellationToken cancellationToken) where T : class
         {
-            if (nestedOrFilter.universalFalse == true)
-                return default;
+            //if (nestedOrFilter.universalFalse == true)
+            //    return default;
+
             var args = new ITypedArgument[] {
                 new TypedArgument<string>(query.DatabaseName),
                 new TypedArgument<string>(query.SchemaName),
-                new TypedArgument<NestedOrFilter>(nestedOrFilter),
+                new TypedArgument<FilterNode>(nestedOrFilter),
                 new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
                 new TypedArgument<bool>(query?.ForceCursorMode??false),
             };
@@ -235,16 +236,14 @@ namespace Magic.IndexedDb
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         internal async IAsyncEnumerable<T?> LinqToIndexedDbYield<T>(
-    NestedOrFilter nestedOrFilter, MagicQuery<T> query,
+    FilterNode nestedOrFilter, MagicQuery<T> query,
     [EnumeratorCancellation] CancellationToken cancellationToken) where T : class
         {
-            if (nestedOrFilter.universalFalse == true)
-                yield break; // Terminate the async iterator immediately.
 
             var args = new ITypedArgument[] {
         new TypedArgument<string>(query.DatabaseName),
         new TypedArgument<string>(query.SchemaName),
-        new TypedArgument<NestedOrFilter>(nestedOrFilter),
+        new TypedArgument<FilterNode>(nestedOrFilter),
         new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
         new TypedArgument<bool>(query?.ForceCursorMode??false),
     };

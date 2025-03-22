@@ -12,6 +12,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Collections;
 using Magic.IndexedDb.Models.UniversalOperations;
+using Magic.IndexedDb.LinqTranslation.Models;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
@@ -66,7 +67,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             return items.Where(predicate.Compile()); // Apply predicate after materialization
         }
 
-        private NestedOrFilter nestedOrFilter { get => GetCollectedBinaryJsonExpressions(); }
+        private FilterNode nestedOrFilter { get => GetCollectedBinaryJsonExpressions(); }
 
         /// <summary>
         /// The order you apply does get applied correctly in the query, 
@@ -209,26 +210,14 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             }
         }
 
-        private NestedOrFilter GetCollectedBinaryJsonExpressions()
+        private FilterNode GetCollectedBinaryJsonExpressions()
         {
-            NestedOrFilter nestedOrFilter = new NestedOrFilter();
             Expression<Func<T, bool>> preprocessedPredicate = PreprocessPredicate();
 
-            // Check if the predicate is a universal false condition
-            if (IsUniversalFalse(preprocessedPredicate))
-            {
-                return new NestedOrFilter { universalFalse = true };
-            }
 
-            // FLATTEN OR CONDITIONS because they are annoying and IndexDB doesn't support that!
-            var flattenedPredicate = ExpressionFlattener.FlattenAndOptimize(preprocessedPredicate);
-
-            var builder = new UniversalExpressionBuilder<T>(flattenedPredicate);
-            nestedOrFilter = builder.Build();
-
-
-            //CollectBinaryExpressions(flattenedPredicate.Body, flattenedPredicate, nestedOrFilter);
-            return nestedOrFilter;
+            var builder = new UniversalExpressionBuilder<T>(preprocessedPredicate);
+            var result = builder.Build();
+            return result;
         }
 
 

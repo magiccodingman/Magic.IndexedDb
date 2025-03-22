@@ -1,4 +1,5 @@
 ﻿using Magic.IndexedDb.Helpers;
+using Magic.IndexedDb.LinqTranslation.Models;
 using Magic.IndexedDb.Models.UniversalOperations;
 using System;
 using System.Collections;
@@ -14,221 +15,266 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
     public class UniversalExpressionBuilder<T>
     {
         private readonly Expression<Func<T, bool>> _predicate;
-        private readonly OrFilterGroup _orFilters = new();
 
         public UniversalExpressionBuilder(Expression<Func<T, bool>> predicate)
         {
             _predicate = predicate;
         }
 
-        public NestedOrFilter Build()
+        /// <summary>
+        /// Builds and returns the FilterNode (root) that represents the entire predicate.
+        /// </summary>
+        public FilterNode Build()
         {
-            var nested = new NestedOrFilter();
-            CollectBinaryExpressions(_predicate.Body, nested);
-            return nested;
+            return ParseExpression(_predicate.Body);
         }
 
-        private void CollectBinaryExpressions(Expression expression, NestedOrFilter nested)
+        private FilterNode ParseExpression(Expression expression)
         {
-            if (expression is BinaryExpression binary && binary.NodeType == ExpressionType.OrElse)
+            return expression switch
             {
-                CollectBinaryExpressions(binary.Left, nested);
-                CollectBinaryExpressions(binary.Right, nested);
+                BinaryExpression binaryExpr => ParseBinaryExpression(binaryExpr),
+                MethodCallExpression methodCall => ParseMethodCallExpression(methodCall),
+                UnaryExpression unaryExpr when unaryExpr.NodeType == ExpressionType.Not => ParseNotExpression(unaryExpr),
+                ConstantExpression constExpr => HandleConstantBoolean(constExpr),
+                MemberExpression memberExpr => HandleMemberBoolean(memberExpr),
+                _ => throw new InvalidOperationException($"Unsupported expression node: {expression}")
+            };
+        }
+
+        private FilterNode HandleConstantBoolean(ConstantExpression expr)
+        {
+            if (expr.Type == typeof(bool))
+            {
+                var condition = new FilterCondition(
+                    _property: "__constant",
+                    _operation: "Equal",
+                    _value: (bool)expr.Value!,
+                    _isString: false,
+                    _caseSensitive: false
+                );
+
+                return new FilterNode
+                {
+                    NodeType = FilterNodeType.Condition,
+                    Condition = condition
+                };
+            }
+
+            throw new InvalidOperationException($"Unsupported constant type: {expr.Type}");
+        }
+
+        private FilterNode HandleMemberBoolean(MemberExpression memberExpr)
+        {
+            if (IsParameterMember(memberExpr))
+            {
+                var propInfo = typeof(T).GetProperty(memberExpr.Member.Name);
+                if (propInfo != null && propInfo.PropertyType == typeof(bool))
+                {
+                    string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
+
+                    var condition = new FilterCondition(
+                        _property: universalProp,
+                        _operation: "Equal",
+                        _value: true,
+                        _isString: false,
+                        _caseSensitive: false
+                    );
+
+                    return new FilterNode
+                    {
+                        NodeType = FilterNodeType.Condition,
+                        Condition = condition
+                    };
+                }
+            }
+
+            throw new InvalidOperationException($"Unsupported member expression: {memberExpr}");
+        }
+
+        private FilterNode ParseBinaryExpression(BinaryExpression bin)
+        {
+            if (bin.NodeType == ExpressionType.AndAlso || bin.NodeType == ExpressionType.OrElse)
+            {
+                var op = bin.NodeType == ExpressionType.AndAlso
+                    ? FilterLogicalOperator.And
+                    : FilterLogicalOperator.Or;
+
+                return new FilterNode
+                {
+                    NodeType = FilterNodeType.Logical,
+                    Operator = op,
+                    Children = new List<FilterNode>
+                {
+                    ParseExpression(bin.Left),
+                    ParseExpression(bin.Right)
+                }
+                };
             }
             else
             {
-                var andGroup = ParseToOrGroup(Expression.Lambda<Func<T, bool>>(expression, _predicate.Parameters));
-                nested.orGroups.Add(andGroup);
+                return BuildComparisonLeaf(bin);
             }
         }
 
-        private OrFilterGroup ParseToOrGroup(Expression<Func<T, bool>> predicate)
+        private FilterNode ParseMethodCallExpression(MethodCallExpression call)
         {
-            var andGroup = new AndFilterGroup();
-            var orGroup = new OrFilterGroup();
-
-            void Traverse(Expression expr, bool isInOr = false)
+            if (TryFlattenContains(call, out var flattenedConditions))
             {
-                switch (expr)
+                return new FilterNode
                 {
-                    case UnaryExpression { NodeType: ExpressionType.Not, Operand: var op }:
-                        HandleNot(op, isInOr);
-                        break;
-
-                    case BinaryExpression bin:
-                        if (bin.NodeType == ExpressionType.AndAlso)
+                    NodeType = FilterNodeType.Logical,
+                    Operator = FilterLogicalOperator.Or,
+                    Children = flattenedConditions
+                        .Select(c => new FilterNode
                         {
-                            Traverse(bin.Left, isInOr);
-                            Traverse(bin.Right, isInOr);
-                        }
-                        else if (bin.NodeType == ExpressionType.OrElse)
-                        {
-                            if (isInOr) throw new InvalidOperationException("Nested OR conditions not supported.");
-                            Traverse(bin.Left, true);
-                            Traverse(bin.Right, true);
-                        }
-                        else
-                        {
-                            AddBinary(bin, isInOr);
-                        }
-                        break;
-
-                    case MethodCallExpression call:
-                        AddMethodCall(call, isInOr);
-                        break;
-                }
-            }
-
-            void HandleNot(Expression inner, bool isInOr)
-            {
-                switch (inner)
-                {
-                    case BinaryExpression bin:
-                        var op = bin.NodeType switch
-                        {
-                            ExpressionType.GreaterThan => "LessThanOrEqual",
-                            ExpressionType.LessThan => "GreaterThanOrEqual",
-                            ExpressionType.GreaterThanOrEqual => "LessThan",
-                            ExpressionType.LessThanOrEqual => "GreaterThan",
-                            ExpressionType.Equal => "NotEquals",
-                            ExpressionType.NotEqual => "StringEquals", // treat double negation of != as normal ==
-                            _ => throw new InvalidOperationException($"Unsupported NOT binary: {bin}")
-                        };
-
-                        AddConditionInternal(bin.Left as MemberExpression, ToConst(bin.Right), op, isInOr);
-                        break;
-
-                    case MethodCallExpression call:
-                        if (SupportedMethodNameForNegation(call.Method.Name))
-                        {
-                            string inverted = Invert(call.Method.Name);
-                            var left = call.Object as MemberExpression;
-                            var right = ToConst(call.Arguments[0]);
-                            bool caseSensitive = ExtractCaseSensitivity(call);
-                            AddConditionInternal(left, right, inverted, isInOr, caseSensitive);
-                        }
-                        else
-                        {
-                            throw new InvalidOperationException($"Unsupported NOT call: {call}");
-                        }
-                        break;
-
-                    default:
-                        throw new InvalidOperationException($"Unsupported NOT: {inner}");
-                }
-            }
-
-            void AddBinary(BinaryExpression bin, bool isInOr)
-            {
-                string op = bin.NodeType.ToString();
-                if (IsParamMember(bin.Left) && !IsParamMember(bin.Right))
-                {
-                    AddConditionInternal(bin.Left as MemberExpression, ToConst(bin.Right), op, isInOr);
-                }
-                else if (!IsParamMember(bin.Left) && IsParamMember(bin.Right))
-                {
-                    op = InvertBinary(op);
-                    AddConditionInternal(bin.Right as MemberExpression, ToConst(bin.Left), op, isInOr);
-                }
-                else
-                {
-                    throw new InvalidOperationException($"Unsupported binary expression: {bin}");
-                }
-            }
-
-            void AddMethodCall(MethodCallExpression call, bool isInOr)
-            {
-                // Flatten value-array.Contains(x.Property) or x.Collection.Contains(value)
-                if (TryFlattenContains(call, isInOr, out var flattened))
-                {
-                    foreach (var cond in flattened)
-                    {
-                        var individualGroup = new AndFilterGroup();
-                        individualGroup.conditions.Add(cond);
-                        orGroup.andGroups.Add(individualGroup); // Treat them as parallel OR options
-                    }
-                    return;
-                }
-
-                string name = call.Method.Name;
-                string resolvedOp = name switch
-                {
-                    "Equals" => "StringEquals",
-                    _ => name
+                            NodeType = FilterNodeType.Condition,
+                            Condition = c
+                        }).ToList()
                 };
-
-                bool caseSensitive = ExtractCaseSensitivity(call);
-
-                // Extended methods like GetDay(), IsNull(), etc.
-                if (SupportedUnaryMethod(resolvedOp))
-                {
-                    var left = call.Arguments.FirstOrDefault() as MemberExpression ?? call.Object as MemberExpression;
-                    var right = call.Arguments.ElementAtOrDefault(1) as ConstantExpression;
-                    AddConditionInternal(left, right, resolvedOp, isInOr, caseSensitive);
-                }
-                // Built-in string methods like Contains("bo", ...)
-                else if (resolvedOp is "StringEquals" or "Contains" or "StartsWith" or "EndsWith")
-                {
-                    var left = call.Object as MemberExpression;
-                    var right = ToConst(call.Arguments[0]);
-                    AddConditionInternal(left, right, resolvedOp, isInOr, caseSensitive);
-                }
-                else
-                {
-                    throw new InvalidOperationException($"Unsupported method: {call}");
-                }
             }
 
-
-            ConstantExpression ToConst(Expression expr) => expr switch
+            string name = call.Method.Name;
+            string operation = name switch
             {
-                ConstantExpression c => c,
-                MemberExpression m => Expression.Constant(Expression.Lambda(m).Compile().DynamicInvoke()),
-                _ => throw new InvalidOperationException($"Unsupported or non-constant: {expr}")
+                "Equals" => "StringEquals",
+                _ => name
             };
 
-            bool IsParamMember(Expression e) => e is MemberExpression { Expression: ParameterExpression };
+            bool caseSensitive = ExtractCaseSensitivity(call);
 
-            void AddConditionInternal(MemberExpression? left, ConstantExpression? right, string op, bool isOr, bool caseSensitive = false)
+            if (operation is "Contains" or "StartsWith" or "EndsWith" or "StringEquals")
             {
-                if (left == null || right == null) return;
-                var prop = typeof(T).GetProperty(left.Member.Name);
-                if (prop == null) return;
+                var leftExpr = call.Object as MemberExpression;
+                var rightVal = ToConst(call.Arguments[0]);
 
-                bool isString = right.Value is string;
-                JsonNode? val = right.Value != null ? JsonValue.Create(right.Value) : null;
-                string jsProp = PropertyMappingCache.GetJsPropertyName<T>(prop);
-                var cond = new FilterCondition(jsProp, op, val, isString, caseSensitive);
+                if (leftExpr == null || rightVal == null)
+                    throw new InvalidOperationException($"Cannot parse method call: {call}");
 
-                if (isOr)
+                var cond = BuildConditionFromMemberAndConstant(leftExpr, rightVal, operation, caseSensitive);
+
+                return new FilterNode
                 {
-                    var group = orGroup.andGroups.LastOrDefault() ?? new AndFilterGroup();
-                    if (!orGroup.andGroups.Contains(group)) orGroup.andGroups.Add(group);
-                    group.conditions.Add(cond);
-                }
-                else
+                    NodeType = FilterNodeType.Condition,
+                    Condition = cond
+                };
+            }
+            else if (SupportedUnaryMethod(operation))
+            {
+                var leftExpr = call.Arguments.FirstOrDefault() as MemberExpression ?? call.Object as MemberExpression;
+                ConstantExpression? rightVal =
+                    call.Arguments.Count > 1 ? call.Arguments[1] as ConstantExpression : null;
+
+                if (leftExpr == null)
+                    throw new InvalidOperationException($"Unsupported method expression: {call}");
+
+                var cond = BuildConditionFromMemberAndConstant(leftExpr, rightVal, operation, caseSensitive);
+
+                return new FilterNode
                 {
-                    andGroup.conditions.Add(cond);
-                }
+                    NodeType = FilterNodeType.Condition,
+                    Condition = cond
+                };
             }
 
-            Traverse(predicate.Body);
+            throw new InvalidOperationException($"Unsupported method call: {call}");
+        }
 
-            if (andGroup.conditions.Any())
-                orGroup.andGroups.Add(andGroup);
+        private FilterNode ParseNotExpression(UnaryExpression notExpr)
+        {
+            var inner = notExpr.Operand;
 
-            return orGroup;
+            return inner switch
+            {
+                BinaryExpression bin => HandleNotBinary(bin),
+                MethodCallExpression call => HandleNotMethod(call),
+                _ => throw new InvalidOperationException($"Unsupported NOT expression: {inner}")
+            };
+        }
+
+        private FilterNode HandleNotBinary(BinaryExpression bin)
+        {
+            string invertedOp = bin.NodeType switch
+            {
+                ExpressionType.GreaterThan => "LessThanOrEqual",
+                ExpressionType.LessThan => "GreaterThanOrEqual",
+                ExpressionType.GreaterThanOrEqual => "LessThan",
+                ExpressionType.LessThanOrEqual => "GreaterThan",
+                ExpressionType.Equal => "NotEquals",
+                ExpressionType.NotEqual => "StringEquals",
+                _ => throw new InvalidOperationException($"Unsupported NOT binary: {bin}")
+            };
+
+            return BuildComparisonLeaf(bin, forceOperation: invertedOp);
+        }
+
+        private FilterNode HandleNotMethod(MethodCallExpression call)
+        {
+            if (!SupportedMethodNameForNegation(call.Method.Name))
+                throw new InvalidOperationException($"Unsupported NOT call: {call}");
+
+            string inverted = Invert(call.Method.Name);
+            var leftExpr = call.Object as MemberExpression;
+            var rightVal = ToConst(call.Arguments[0]);
+            bool caseSensitive = ExtractCaseSensitivity(call);
+
+            if (leftExpr == null || rightVal == null)
+                throw new InvalidOperationException($"Cannot parse NOT method: {call}");
+
+            var cond = BuildConditionFromMemberAndConstant(leftExpr, rightVal, inverted, caseSensitive);
+
+            return new FilterNode
+            {
+                NodeType = FilterNodeType.Condition,
+                Condition = cond
+            };
+        }
+
+        private FilterNode BuildComparisonLeaf(BinaryExpression bin, string? forceOperation = null)
+        {
+            string operation = forceOperation ?? bin.NodeType.ToString();
+
+            if (IsParameterMember(bin.Left) && !IsParameterMember(bin.Right))
+            {
+                var left = bin.Left as MemberExpression;
+                var right = ToConst(bin.Right);
+                var cond = BuildConditionFromMemberAndConstant(left, right, operation);
+
+                return new FilterNode
+                {
+                    NodeType = FilterNodeType.Condition,
+                    Condition = cond
+                };
+            }
+            else if (!IsParameterMember(bin.Left) && IsParameterMember(bin.Right))
+            {
+                operation = InvertBinary(operation);
+                var left = bin.Right as MemberExpression;
+                var right = ToConst(bin.Left);
+                var cond = BuildConditionFromMemberAndConstant(left, right, operation);
+
+                return new FilterNode
+                {
+                    NodeType = FilterNodeType.Condition,
+                    Condition = cond
+                };
+            }
+
+            throw new InvalidOperationException($"Unsupported binary expression: {bin}");
         }
 
 
-        private bool TryFlattenContains(MethodCallExpression call, bool isOr, out IEnumerable<FilterCondition> flattened)
+        // ------------------------------
+        // "Contains" flattening logic:
+        // ------------------------------
+        private bool TryFlattenContains(MethodCallExpression call, out IEnumerable<FilterCondition> flattened)
         {
             flattened = Enumerable.Empty<FilterCondition>();
 
             if (call.Method.Name != "Contains")
                 return false;
 
-            // Case 1: Static-style — myArray.Contains(x._Age)
+            // Case 1: Static-style => myArray.Contains(x.SomeProp)
             if (call.Object == null && call.Arguments.Count == 2)
             {
                 var maybeCollection = call.Arguments[0];
@@ -236,37 +282,32 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
                 if ((maybeCollection is MemberExpression || maybeCollection is ConstantExpression) &&
                     maybeProp is MemberExpression propExpr &&
-                    IsParamMember(propExpr))
+                    IsParameterMember(propExpr))
                 {
-                    var collectionExpr = maybeCollection;
-                    var collection = Expression.Lambda(collectionExpr).Compile().DynamicInvoke();
-
+                    var collection = Expression.Lambda(maybeCollection).Compile().DynamicInvoke();
                     if (collection is IEnumerable enumerable)
                     {
                         var propInfo = typeof(T).GetProperty(propExpr.Member.Name);
-                        if (propInfo == null) 
-                            return false;
+                        if (propInfo == null) return false;
 
-                        string jsProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
+                        // Suppose you have a way to map property name to something universal:
+                        string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
 
                         flattened = enumerable
                             .Cast<object?>()
-                            .Select(val =>
-                                new FilterCondition(
-                                    jsProp,
-                                    "Equal",
-                                    val != null ? JsonValue.Create(val) : null,
-                                    val is string,
-                                    false
-                                )
-                            );
-
+                            .Select(val => new FilterCondition(
+                                universalProp,
+                                "Equal",
+                                val,
+                                val is string,
+                                false
+                            ));
                         return true;
                     }
                 }
             }
 
-            // Case 2: Instance-style — x.CollectionProperty.Contains(10)
+            // Case 2: Instance-style => x.CollectionProperty.Contains(10)
             if (call.Object is MemberExpression collectionMember &&
                 call.Arguments.Count == 1 &&
                 call.Arguments[0] is ConstantExpression constant)
@@ -274,80 +315,132 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                 var propInfo = typeof(T).GetProperty(collectionMember.Member.Name);
                 if (propInfo == null) return false;
 
-                string jsProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
+                string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
 
                 flattened = new[]
                 {
-            new FilterCondition(
-                jsProp,
-                "ArrayContains",
-                JsonValue.Create(constant.Value),
-                constant.Value is string,
-                false
-            )
-        };
-
+                new FilterCondition(
+                    universalProp,
+                    "ArrayContains",
+                    constant.Value,
+                    constant.Value is string,
+                    false
+                )
+            };
                 return true;
             }
 
             return false;
         }
 
+        // ------------------------------
+        // Internal Helpers
+        // ------------------------------
 
+        private FilterCondition BuildConditionFromMemberAndConstant(
+            MemberExpression? memberExpr,
+            ConstantExpression? constExpr,
+            string operation,
+            bool caseSensitive = false)
+        {
+            if (memberExpr == null || constExpr == null)
+            {
+                throw new InvalidOperationException("Cannot build filter condition from null expressions.");
+            }
 
+            var propInfo = typeof(T).GetProperty(memberExpr.Member.Name);
+            if (propInfo == null)
+            {
+                throw new InvalidOperationException($"Property {memberExpr.Member.Name} not found on type {typeof(T).Name}.");
+            }
 
+            // Possibly convert to a JSON node or keep as raw object. 
+            // If you absolutely need a JSON representation, do:
+            // object? val = constExpr.Value != null ? JsonValue.Create(constExpr.Value) : null;
+            // Otherwise, you can just store the raw object in FilterCondition.value:
+            object? val = constExpr.Value;
 
-        private static bool SupportedMethodNameForNegation(string name) =>
-            name is "Contains" or "StartsWith" or "EndsWith" or "Equals";
+            // e.g. "name", "age"
+            string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
 
-        private static bool SupportedUnaryMethod(string name) =>
-            name.StartsWith("GetDay") || name.StartsWith("TypeOf") || name.StartsWith("NotTypeOf") ||
-            name.StartsWith("Length") || name.StartsWith("NotLength") ||
-            name is "IsNull" or "IsNotNull" or "NotContains";
+            // isString is relevant only if the constant is indeed a string
+            bool isString = val is string;
+
+            return new FilterCondition(
+                universalProp,
+                operation,
+                val,
+                isString,
+                caseSensitive
+            );
+        }
+
+        private static bool SupportedMethodNameForNegation(string name)
+            => name is "Contains" or "StartsWith" or "EndsWith" or "Equals";
+
+        private static string Invert(string methodName)
+        {
+            // e.g. Contains -> NotContains, StartsWith -> NotStartsWith, etc.
+            return methodName switch
+            {
+                "Contains" => "NotContains",
+                "StartsWith" => "NotStartsWith",
+                "EndsWith" => "NotEndsWith",
+                "Equals" => "NotEquals",
+                _ => throw new InvalidOperationException($"Cannot invert unsupported method: {methodName}")
+            };
+        }
+
+        private static string InvertBinary(string op)
+        {
+            return op switch
+            {
+                "GreaterThan" => "LessThan",
+                "LessThan" => "GreaterThan",
+                "GreaterThanOrEqual" => "LessThanOrEqual",
+                "LessThanOrEqual" => "GreaterThanOrEqual",
+                _ => op
+            };
+        }
+
+        private static bool SupportedUnaryMethod(string name)
+        {
+            // Your custom logic for "GetDay", "IsNull", etc.
+            return name.StartsWith("GetDay")
+                || name.StartsWith("TypeOf")
+                || name.StartsWith("NotTypeOf")
+                || name.StartsWith("Length")
+                || name.StartsWith("NotLength")
+                || name is "IsNull" or "IsNotNull" or "NotContains";
+        }
 
         private static bool ExtractCaseSensitivity(MethodCallExpression call)
         {
+            // Mimic your logic that checks if a StringComparison was passed in
             if (call.Arguments.Count > 1 && call.Arguments[1] is ConstantExpression cmp && cmp.Value is StringComparison cmpVal)
             {
+                // If it’s ordinal or current-culture, consider it case-sensitive
                 return cmpVal == StringComparison.Ordinal || cmpVal == StringComparison.CurrentCulture;
             }
+            // Otherwise default to "true" or "false" depending on your preference:
             return true;
         }
 
-        private static string Invert(string methodName) => methodName switch
-        {
-            "Contains" => "NotContains",
-            "StartsWith" => "NotStartsWith",
-            "EndsWith" => "NotEndsWith",
-            "Equals" => "NotEquals",
-            _ => throw new InvalidOperationException($"Cannot invert unsupported method: {methodName}")
-        };
-
-        private static string InvertBinary(string op) => op switch
-        {
-            "GreaterThan" => "LessThan",
-            "LessThan" => "GreaterThan",
-            "GreaterThanOrEqual" => "LessThanOrEqual",
-            "LessThanOrEqual" => "GreaterThanOrEqual",
-            _ => op
-        };
-
-        private static ConstantExpression ToConst(Expression expr) => expr switch
-        {
-            ConstantExpression c => c,
-            MemberExpression m => Expression.Constant(Expression.Lambda(m).Compile().DynamicInvoke()),
-            _ => throw new InvalidOperationException($"Unsupported or non-constant: {expr}")
-        };
-
-        private static bool IsParamMember(Expression expr)
+        private static bool IsParameterMember(Expression expr)
         {
             return expr is MemberExpression member &&
                    member.Expression is ParameterExpression;
         }
 
-
-    }
-    // Your supporting model classes (OrFilterGroup, AndFilterGroup, FilterCondition, etc.)
-    // should stay as they are in their own files or namespaces.
+        private static ConstantExpression ToConst(Expression expr)
+        {
+            return expr switch
+            {
+                ConstantExpression c => c,
+                MemberExpression m => Expression.Constant(Expression.Lambda(m).Compile().DynamicInvoke()),
+                _ => throw new InvalidOperationException($"Unsupported or non-constant expression: {expr}")
+            };
+        }
+    }    // should stay as they are in their own files or namespaces.
 }
 

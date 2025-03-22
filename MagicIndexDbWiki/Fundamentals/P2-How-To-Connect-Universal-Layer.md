@@ -150,49 +150,169 @@ To integrate **any language or framework**, you need to **convert expressions in
 
 ```json
 {
-    "orGroups": [
+  "nodeType": "logical",
+  "operator": "And",
+  "children": [
+    {
+      "nodeType": "condition",
+      "condition": {
+        "property": "age",
+        "operation": "GreaterThan",
+        "value": 30,
+        "isString": false,
+        "caseSensitive": false
+      }
+    },
+    {
+      "nodeType": "logical",
+      "operator": "Or",
+      "children": [
         {
-            "andGroups": [
-                {
-                    "conditions": [
-                        {
-                            "property": "Age",
-                            "operation": "GreaterThan",
-                            "value": 30
-                        },
-                        {
-                            "property": "Name",
-                            "operation": "StartsWith",
-                            "value": "J",
-                            "isString": true,
-                            "caseSensitive": false
-                        }
-                    ]
-                }
-            ]
-        }
-    ],
-    "queryAdditions": [
-        {
-            "additionFunction": "orderBy",
-            "property": "Age"
+          "nodeType": "condition",
+          "condition": {
+            "property": "city",
+            "operation": "Equal",
+            "value": "New York"
+          }
         },
         {
-            "additionFunction": "take",
-            "intValue": 10
+          "nodeType": "condition",
+          "condition": {
+            "property": "city",
+            "operation": "Equal",
+            "value": "San Francisco"
+          }
         }
-    ]
+      ]
+    }
+  ]
 }
 ```
 
 **This query is equivalent to:**
 
 ```csharp
-await personQuery.Where(x => x.Age > 30 && x.Name.StartsWith("J", StringComparison.OrdinalIgnoreCase))
-                 .OrderBy(x => x.Age)
-                 .Take(10)
-                 .ToListAsync();
+await personQuery
+	.Where(x => x.Age > 30 && (x.City == "New York" || x.City == "San Francisco"))
+	.ToListAsync();
 ```
+
+---
+
+## 🔍 Overview: Universal Predicate Language (UPL)
+
+**Purpose:**  
+This format allows any programming language to serialize complex, nested logical filters (AND/OR) into a universal, portable structure that can be interpreted by any system (like your Magic IndexedDB engine, SQL, NoSQL, etc.).
+
+---
+
+## 🌲 Visual Map Example (for the JSON you provided)
+
+We’ll start by showing the predicate tree visually so that even non-JSON experts can immediately grasp it:
+
+```
+AND
+├── CONDITION: age > 30
+└── OR
+    ├── CONDITION: city == "New York"
+    └── CONDITION: city == "San Francisco"
+```
+
+This shows:
+
+- A **top-level AND**
+- The left child is a **condition** (`age > 30`)
+- The right child is a **nested OR** with two conditions
+
+---
+
+## 🧱 JSON Structure Explained
+
+```ts
+type PredicateNode =
+  | LogicalNode
+  | ConditionNode;
+
+interface LogicalNode {
+  nodeType: "logical";
+  operator: "And" | "Or";
+  children: PredicateNode[];
+}
+
+interface ConditionNode {
+  nodeType: "condition";
+  condition: {
+    property: string;
+    operation: "Equal" | "NotEqual" | "GreaterThan" | "LessThan" | ...;
+    value: any;
+    isString?: boolean;        // Optional: indicates if value is string (helps with optimization)
+    caseSensitive?: boolean;   // Optional: for string comparisons
+  };
+}
+```
+
+This schema lets you **nest as deeply as needed**, mixing ANDs and ORs, enabling arbitrarily complex logic trees.
+
+---
+
+## 🛠️ Use Case: Translating Native Predicates
+
+Here’s how to implement this in your language:
+
+### C# (LINQ)
+
+```csharp
+x => x.Age > 30 && (x.City == "New York" || x.City == "San Francisco")
+```
+
+Becomes:
+
+```json
+{
+  "nodeType": "logical",
+  "operator": "And",
+  "children": [
+    { "nodeType": "condition", "condition": { "property": "Age", "operation": "GreaterThan", "value": 30 } },
+    {
+      "nodeType": "logical",
+      "operator": "Or",
+      "children": [
+        { "nodeType": "condition", "condition": { "property": "City", "operation": "Equal", "value": "New York" } },
+        { "nodeType": "condition", "condition": { "property": "City", "operation": "Equal", "value": "San Francisco" } }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 📘 Reference: Supported Operations
+
+|Operation|Meaning|
+|---|---|
+|`Equal`|`x == value`|
+|`NotEqual`|`x != value`|
+|`GreaterThan`|`x > value`|
+|`LessThan`|`x < value`|
+|`Contains`|`x contains value` (string)|
+|`In`|`x in [value1, value2]`|
+|`StartsWith`|`x starts with value`|
+|`EndsWith`|`x ends with value`|
+|...|_(add more as needed)_|
+
+---
+
+## 🧠 Developer Notes
+
+- You can nest **any combination** of AND and ORs.
+- Each `logical` node can have **any number of children** (not just 2).
+- Supports easy translation to/from:
+    - LINQ expressions
+    - SQL WHERE clauses
+    - JavaScript `Array.filter` chains
+    - MongoDB query documents
+- You can build a **universal query editor** UI using this structure.
 
 ---
 

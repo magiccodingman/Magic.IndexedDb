@@ -410,18 +410,32 @@ namespace Magic.IndexedDb.Models
         /// </summary>
         private void SerializeComplexProperties(Utf8JsonWriter writer, object value, Dictionary<string, MagicPropertyEntry> properties, JsonSerializerOptions options)
         {
+            var type = value.GetType();
+            var cache = PropertyMappingCache.GetTypeOfTProperties(type);
+
             foreach (var (propertyName, mpe) in properties)
             {
                 if (mpe.NotMapped)
                     continue;
 
-                object? propValue = mpe.Getter(value);
+                // 💡 Handle constructor-only properties by using reflection
+                object? propValue = null;
 
-                if (mpe.PrimaryKey && IsDefaultValue(propValue, mpe))
+                try
                 {
+                    propValue = mpe.Getter(value);
+                }
+                catch
+                {
+                    // If it's a constructor-only param with no backing field or getter, ignore
                     continue;
                 }
 
+                // Skip default primary key if needed
+                if (mpe.PrimaryKey && IsDefaultValue(propValue, mpe))
+                    continue;
+
+                // Figure out the actual output property name
                 string finalPropertyName = mpe.NeverCamelCase
                     ? mpe.JsPropertyName
                     : (options.PropertyNamingPolicy == JsonNamingPolicy.CamelCase
@@ -430,11 +444,11 @@ namespace Magic.IndexedDb.Models
 
                 writer.WritePropertyName(finalPropertyName);
 
+                // Handle primitives/collections
                 if (SerializeIEnumerable(writer, propValue, options) || SerializeSimple(writer, propValue))
-                {
                     continue;
-                }
 
+                // Handle complex types
                 if (propValue != null && mpe.IsComplexType)
                 {
                     var nestedProps = PropertyMappingCache.GetTypeOfTProperties(propValue.GetType());
@@ -444,6 +458,7 @@ namespace Magic.IndexedDb.Models
                 }
             }
         }
+
 
         private bool IsDefaultValue(object? value, MagicPropertyEntry mpe)
         {

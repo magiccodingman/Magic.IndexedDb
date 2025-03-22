@@ -1,6 +1,7 @@
 "use strict";
 import { partitionQueryConditions } from "./utilities/partitionLinqQueries.js";
 import { QUERY_OPERATIONS, QUERY_ADDITIONS } from "./utilities/queryConstants.js";
+import { flattenUniversalPredicate } from "./utilities/FlattenFilterNode.js";
 import {
     buildIndexMetadata, normalizeCompoundKey,
     hasYieldedKey, addYieldedKey, debugLog
@@ -9,14 +10,13 @@ import {
 import { initiateNestedOrFilter } from "./utilities/nestedOrFilterUtilities.js";
 
 
-export async function magicQueryAsync(db, table, nestedOrFilter,
+export async function magicQueryAsync(db, table, universalSerializedPredicate,
     QueryAdditions, forceCursor = false) {
     debugLog("whereJson called");
 
-
     let results = []; // Collect results here
 
-    for await (let record of magicQueryYield(db, table, nestedOrFilter,
+    for await (let record of magicQueryYield(db, table, universalSerializedPredicate,
         QueryAdditions, forceCursor)) {
         results.push(record);
     }
@@ -26,12 +26,35 @@ export async function magicQueryAsync(db, table, nestedOrFilter,
     return results; // Return all results at once
 }
 
-export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
+export async function* magicQueryYield(db, table, universalSerializedPredicate,
     queryAdditions = [], forceCursor = false) {
 
     if (!table || !(table instanceof table.constructor)) {
         throw new Error("A valid Dexie table instance must be provided.");
     }
+
+    console.log('universal serialized predicate');
+    console.log(universalSerializedPredicate);
+    const { nestedOrFilterUnclean, isUniversalTrue, isUniversalFalse } = flattenUniversalPredicate(universalSerializedPredicate);
+
+    if (isUniversalFalse === true) {
+        debugLog("Universal False, sending back no data");
+        return;
+    }
+
+    if (isUniversalTrue === true) {
+        debugLog("Universal True, sending back all data");
+        let allRecords = await table.toArray();
+
+        while (allRecords.length > 0) {
+            let record = allRecords.shift(); // Remove from memory before processing
+            yield record;
+        }
+        return;
+    }
+
+    console.log('flattened serialized predicate');
+    console.log(nestedOrFilterUnclean);
 
     debugLog("Starting where function", { nestedOrFilterUnclean, queryAdditions });
 
@@ -52,12 +75,7 @@ export async function* magicQueryYield(db, table, nestedOrFilterUnclean,
 
         while (allRecords.length > 0) {
             let record = allRecords.shift(); // Remove from memory before processing
-            let recordKey = normalizeCompoundKey(primaryKeys, record);
-
-            if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
-                addYieldedKey(yieldedPrimaryKeys, recordKey);
-                yield record;
-            }
+            yield record;
         }
         return;
     }
