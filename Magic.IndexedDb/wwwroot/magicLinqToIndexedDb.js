@@ -222,6 +222,19 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
             case QUERY_OPERATIONS.STARTS_WITH:
                 query = table.where(firstCondition.property).startsWith(firstCondition.value);
                 break;
+
+            case "between":
+                if (Array.isArray(firstCondition.value) && firstCondition.value.length === 2) {
+                    query = table.where(firstCondition.property).between(
+                        firstCondition.value[0],
+                        firstCondition.value[1],
+                        true, true // inclusive bounds
+                    );
+                } else {
+                    throw new Error("Invalid 'between' value format. Expected [min, max]");
+                }
+                break;
+
             default:
                 throw new Error(`Unsupported indexed query operation: ${firstCondition.operation}`);
         }
