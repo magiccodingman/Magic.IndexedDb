@@ -4,7 +4,10 @@ import {
     resolveNodeType,
     resolveLogicalOperator
 } from "./predicateEnumHelpers.js";
-
+import { QUERY_OPERATIONS } from "./queryConstants.js";
+import { areConditionsCompatible } from "./areConditionsCompatible.js";
+import { advancedOptimizeNestedOrFilter } from "./optimizeConditions.js";
+import { optimizeOrGroupStructure } from "./optimizeOrGroupStructure.js";
 /**
  * Flattens a Universal Predicate Tree into a nestedOrFilter structure.
  * This creates `orGroups -> andGroups -> conditions[]`
@@ -34,9 +37,10 @@ export function flattenUniversalPredicate(rootNode) {
         ]
     }));
 
+    let orGroupsOptimized = optimizeOrGroupStructure(advancedOptimizeNestedOrFilter(orGroups));
     const result = {
         nestedOrFilterUnclean: {
-            orGroups
+            orGroups: orGroupsOptimized
         },
         isUniversalTrue: detection.isUniversalTrue,
         isUniversalFalse: detection.isUniversalFalse
@@ -48,60 +52,54 @@ export function flattenUniversalPredicate(rootNode) {
 
 function flattenNodeToAndGroups(node) {
     const nodeType = resolveNodeType(node.nodeType);
-
-    if (!nodeType) {
-        debugLog("Skipping node with null/invalid nodeType", node);
-        return [];
-    }
+    if (!nodeType) return [];
 
     if (nodeType === "Condition") {
-        if (!node.condition) {
-            debugLog("Skipping condition node with null condition", node);
-            return [];
-        }
-        return [[node.condition]];
+        if (!node.condition) return [];
+        const normalized = normalizeCondition(node.condition);
+        return [[normalized]];
     }
 
     if (nodeType === "Logical") {
         const operator = resolveLogicalOperator(node.operator);
         const { children } = node;
 
-        if (!operator || !Array.isArray(children)) {
-            debugLog("Skipping logical node with null operator or children", node);
-            return [];
-        }
+        if (!operator || !Array.isArray(children)) return [];
 
         if (operator === "And") {
             let result = [[]];
+
             for (const child of children) {
-                const childFlattened = flattenNodeToAndGroups(child);
+                const childGroups = flattenNodeToAndGroups(child);
                 const newResult = [];
 
-                for (const resGroup of result) {
-                    for (const childGroup of childFlattened) {
-                        newResult.push([...resGroup, ...childGroup]);
+                for (const groupA of result) {
+                    for (const groupB of childGroups) {
+                        if (areConditionsCompatible(groupA, groupB)) {
+                            newResult.push([...groupA, ...groupB]);
+                        } else {
+                            debugLog("Skipping incompatible group merge", { groupA, groupB });
+                        }
                     }
                 }
 
                 result = newResult;
             }
+
             return result;
         }
 
         if (operator === "Or") {
             let result = [];
             for (const child of children) {
-                const childFlattened = flattenNodeToAndGroups(child);
-                result = result.concat(childFlattened);
+                result = result.concat(flattenNodeToAndGroups(child));
             }
             return result;
         }
 
-        debugLog("Unknown operator encountered during flattening", operator);
         return [];
     }
 
-    debugLog("Unknown node type encountered during flattening", nodeType);
     return [];
 }
 
@@ -126,3 +124,27 @@ function detectUniversalTruth(node) {
         isUniversalFalse: value === false
     };
 }
+
+
+/**
+ * Normalizes a condition before execution.
+ * Handles special logic like null-equality conversion, case handling, etc.
+ */
+function normalizeCondition(condition) {
+    const normalized = { ...condition };
+
+    if (
+        (condition.operation === QUERY_OPERATIONS.EQUAL || condition.operation === QUERY_OPERATIONS.NOT_EQUAL) &&
+        (condition.value === null || condition.value === undefined)
+    ) {
+        normalized.operation = condition.operation === QUERY_OPERATIONS.EQUAL
+            ? QUERY_OPERATIONS.IS_NULL
+            : QUERY_OPERATIONS.IS_NOT_NULL;
+
+        // Leave value in place to pass validation
+        normalized.value = null;
+    }
+
+    return normalized;
+}
+

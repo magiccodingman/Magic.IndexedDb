@@ -33,8 +33,8 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         throw new Error("A valid Dexie table instance must be provided.");
     }
 
-    console.log('universal serialized predicate');
-    console.log(universalSerializedPredicate);
+    debugLog('universal serialized predicate');
+    debugLog(universalSerializedPredicate);
     const { nestedOrFilterUnclean, isUniversalTrue, isUniversalFalse } = flattenUniversalPredicate(universalSerializedPredicate);
 
     if (isUniversalFalse === true) {
@@ -42,8 +42,8 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         return;
     }
 
-    console.log('flattened serialized predicate');
-    console.log(nestedOrFilterUnclean);
+    debugLog('flattened serialized predicate');
+    debugLog(nestedOrFilterUnclean);
 
     debugLog("Starting where function", { nestedOrFilterUnclean, queryAdditions });
 
@@ -68,6 +68,9 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         }
         return;
     }
+
+    debugLog('Flattened or groups');
+    debugLog(nestedOrFilter);
 
     let { indexedQueries, compoundIndexQueries, cursorConditions } =
         partitionQueryConditions(nestedOrFilter, queryAdditions, indexCache, forceCursor);

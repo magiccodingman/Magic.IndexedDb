@@ -460,9 +460,55 @@
 
                 // 🧩 Complex Nested Conditions
                 RunTest("Nested OR within AND",
-                    await personQuery.Where(x => x._Age > 30 && (x.Name.StartsWith("J") || x.TestInt == 3))
+                    await personQuery.Where(// EXAMPLE of a deeply nested expression:
+    p =>
+    (
+    // Group 1: TestInt matches
+    (p.TestInt == 9 || p.TestInt == 3 || p.TestInt == 7)
+
+    &&
+
+    // Group 2: Specific names or age range
+    (
+        (p.Name == "Luna" || p.Name == "Jerry" || p.Name == "Jamie")
+        || (p._Age >= 35 && p._Age <= 40)
+        || (p.Name == "Zane" && p._Age > 45)
+    )
+
+    &&
+
+    // Group 3: Age-based logic only
+    (
+        p._Age < 30 || p._Age > 50 || p._Age == 35
+    )
+    )
+
+    )
                                      .ToListAsync(),
-                    allPeople.Where(x => x._Age > 30 && (x.Name.StartsWith("J") || x.TestInt == 3)));
+                    allPeople.Where(// EXAMPLE of a deeply nested expression:
+       p =>
+    (
+    // Group 1: TestInt matches
+    (p.TestInt == 9 || p.TestInt == 3 || p.TestInt == 7)
+
+    &&
+
+    // Group 2: Specific names or age range
+    (
+        (p.Name == "Luna" || p.Name == "Jerry" || p.Name == "Jamie")
+        || (p._Age >= 35 && p._Age <= 40)
+        || (p.Name == "Zane" && p._Age > 45)
+    )
+
+    &&
+
+    // Group 3: Age-based logic only
+    (
+        p._Age < 30 || p._Age > 50 || p._Age == 35
+    )
+    )
+
+    ));
 
                 RunTest("Nested AND within OR",
                     await personQuery.Where(x => (x._Age > 40 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase))

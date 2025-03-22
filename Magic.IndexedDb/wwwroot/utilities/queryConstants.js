@@ -52,6 +52,30 @@ export const QUERY_OPERATIONS = {
 
 };
 
+export const OPERATION_CLASSES = {
+    EQUALITY: new Set(["Equal", "NotEqual", "In"]),
+    NULL_CHECK: new Set(["IsNull", "IsNotNull"]),
+    RANGE: new Set(["GreaterThan", "GreaterThanOrEqual", "LessThan", "LessThanOrEqual"]),
+    STRING_CONTAINS: new Set(["Contains", "NotContains"]),
+    STRING_EDGE: new Set(["StartsWith", "NotStartsWith", "EndsWith", "NotEndsWith"]),
+    LENGTH: new Set([
+        "LengthEqual", "NotLengthEqual",
+        "LengthGreaterThan", "LengthGreaterThanOrEqual",
+        "LengthLessThan", "LengthLessThanOrEqual"
+    ]),
+    TYPE: new Set([
+        "TypeOfNumber", "NotTypeOfNumber",
+        "TypeOfString", "NotTypeOfString",
+        "TypeOfDate", "NotTypeOfDate",
+        "TypeOfArray", "NotTypeOfArray",
+        "TypeOfObject", "NotTypeOfObject",
+        "TypeOfBlob", "NotTypeOfBlob",
+        "TypeOfArrayBuffer", "NotTypeOfArrayBuffer",
+        "TypeOfFile", "NotTypeOfFile"
+    ])
+};
+
+
 
 //  Query Additions (Sorting & Pagination)
 export const QUERY_ADDITIONS = {

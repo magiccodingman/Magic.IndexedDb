@@ -184,13 +184,39 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         {
             var inner = notExpr.Operand;
 
-            return inner switch
+            if (inner is BinaryExpression bin)
             {
-                BinaryExpression bin => HandleNotBinary(bin),
-                MethodCallExpression call => HandleNotMethod(call),
-                _ => throw new InvalidOperationException($"Unsupported NOT expression: {inner}")
-            };
+                if (bin.NodeType == ExpressionType.OrElse || bin.NodeType == ExpressionType.AndAlso)
+                {
+                    // De Morgan’s Law: !(A || B) => !A && !B,  !(A && B) => !A || !B
+                    var invertedOperator = bin.NodeType == ExpressionType.OrElse
+                        ? FilterLogicalOperator.And
+                        : FilterLogicalOperator.Or;
+
+                    return new FilterNode
+                    {
+                        NodeType = FilterNodeType.Logical,
+                        Operator = invertedOperator,
+                        Children = new List<FilterNode>
+                {
+                    ParseNotExpression(Expression.Not(bin.Left)),
+                    ParseNotExpression(Expression.Not(bin.Right))
+                }
+                    };
+                }
+                else
+                {
+                    return HandleNotBinary(bin);
+                }
+            }
+            else if (inner is MethodCallExpression call)
+            {
+                return HandleNotMethod(call);
+            }
+
+            throw new InvalidOperationException($"Unsupported NOT expression: {inner}");
         }
+
 
         private FilterNode HandleNotBinary(BinaryExpression bin)
         {
