@@ -225,15 +225,16 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
 
             case "between":
                 if (Array.isArray(firstCondition.value) && firstCondition.value.length === 2) {
-                    query = table.where(firstCondition.property).between(
-                        firstCondition.value[0],
-                        firstCondition.value[1],
-                        true, true // inclusive bounds
-                    );
+                    const [lower, upper] = firstCondition.value;
+                    const includeLower = firstCondition.includeLower !== false; // default to true
+                    const includeUpper = firstCondition.includeUpper !== false; // default to true
+
+                    query = table.where(firstCondition.property).between(lower, upper, includeLower, includeUpper);
                 } else {
                     throw new Error("Invalid 'between' value format. Expected [min, max]");
                 }
                 break;
+
 
             default:
                 throw new Error(`Unsupported indexed query operation: ${firstCondition.operation}`);
@@ -374,13 +375,17 @@ function optimizeIndexedOnlyQueries(indexedQueries) {
                 conditions.some(c => c.operation.includes("Greater")) &&
                 conditions.some(c => c.operation.includes("Less"))
             ) {
-                let min = conditions.find(c => c.operation.includes("Greater")).value;
-                let max = conditions.find(c => c.operation.includes("Less")).value;
+                const minCondition = conditions.find(c => c.operation.includes("Greater"));
+                const maxCondition = conditions.find(c => c.operation.includes("Less"));
+
                 optimizedSingleIndexes.push([{
                     property,
                     operation: "between",
-                    value: [min, max]
+                    value: [minCondition.value, maxCondition.value],
+                    includeLower: minCondition.operation === QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL,
+                    includeUpper: maxCondition.operation === QUERY_OPERATIONS.LESS_THAN_OR_EQUAL
                 }]);
+
             } else {
                 optimizedSingleIndexes.push(conditions);
             }
