@@ -3,7 +3,7 @@ import { debugLog } from "./utilityHelpers.js";
 import { isValidFilterObject, isValidQueryAdditions } from "./linqValidation.js";
 import { QUERY_OPERATIONS } from "./queryConstants.js";
 
-export function initiateNestedOrFilter(nestedOrFilter, queryAdditions, primaryKeys) {
+export function initiateNestedOrFilter(nestedOrFilter, queryAdditions, primaryKeys, isUniversalTrue) {
     if (!isValidFilterObject(nestedOrFilter)) {
         throw new Error("Invalid filter object provided to where function.");
     }
@@ -14,7 +14,7 @@ export function initiateNestedOrFilter(nestedOrFilter, queryAdditions, primaryKe
     nestedOrFilter = cleanNestedOrFilter(nestedOrFilter);
     debugLog("Cleaned Filter Object", { nestedOrFilter });
 
-    let isFilterEmpty = !nestedOrFilter || !nestedOrFilter.orGroups || nestedOrFilter.orGroups.length === 0;
+    let isFilterEmpty = !nestedOrFilter || !nestedOrFilter.orGroups || isUniversalTrue || nestedOrFilter.orGroups.length === 0;
 
     debugLog("Filter Check After Cleaning", { isFilterEmpty });
 

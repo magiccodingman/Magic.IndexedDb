@@ -42,17 +42,6 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         return;
     }
 
-    if (isUniversalTrue === true) {
-        debugLog("Universal True, sending back all data");
-        let allRecords = await table.toArray();
-
-        while (allRecords.length > 0) {
-            let record = allRecords.shift(); // Remove from memory before processing
-            yield record;
-        }
-        return;
-    }
-
     console.log('flattened serialized predicate');
     console.log(nestedOrFilterUnclean);
 
@@ -66,7 +55,7 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
     debugLog("Validated schema & cached indexes", { primaryKeys, indexes: indexCache.indexes });
 
     let { isFilterEmpty, nestedOrFilter } =
-        initiateNestedOrFilter(nestedOrFilterUnclean, queryAdditions, primaryKeys);
+        initiateNestedOrFilter(nestedOrFilterUnclean, queryAdditions, primaryKeys, isUniversalTrue);
 
     // No need for processing anything, we can just immediately return results.
     if (isFilterEmpty) {
