@@ -89,8 +89,11 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                             ExpressionType.LessThan => "GreaterThanOrEqual",
                             ExpressionType.GreaterThanOrEqual => "LessThan",
                             ExpressionType.LessThanOrEqual => "GreaterThan",
+                            ExpressionType.Equal => "NotEquals",
+                            ExpressionType.NotEqual => "StringEquals", // treat double negation of != as normal ==
                             _ => throw new InvalidOperationException($"Unsupported NOT binary: {bin}")
                         };
+
                         AddConditionInternal(bin.Left as MemberExpression, ToConst(bin.Right), op, isInOr);
                         break;
 

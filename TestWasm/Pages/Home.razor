@@ -5,6 +5,7 @@
 @using Magic.IndexedDb.Testing.Models
 @using TestWasm.Models
 @using TestWasm.Repository
+@using System.Linq;
 
 @inject IMagicIndexedDb _MagicDb
 
@@ -274,8 +275,20 @@
                 var d = new DateTime();
                 var asdf = d.DayOfWeek;
                 var asdf2 = d.DayOfYear;
-           //      RunTest("Date Year Test", await personQuery.Where(x => x.DateOfBirth.Value.Year >= 2020).ToListAsync(),
-           // allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year == 2020));
+                //      RunTest("Date Year Test", await personQuery.Where(x => x.DateOfBirth.Value.Year >= 2020).ToListAsync(),
+                // allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year == 2020));
+
+
+                RunTest("Ends With Test", await personQuery.Where(x => x.Name.EndsWith("ack")).ToListAsync(),
+                allPeople.Where(x => x.Name.EndsWith("ack")));
+
+                RunTest("Ends With Negative Test", await personQuery.Where(x => !x.Name.EndsWith("ack")).ToListAsync(),
+                allPeople.Where(x => !x.Name.EndsWith("ack")));
+
+                int[] myArray = { 38, 39 };
+
+                RunTest("Contains Test", await personQuery.Where(x => myArray.Contains(x._Age)).ToListAsync(),
+                allPeople.Where(x => myArray.Contains(x._Age)));
 
                 RunTest("Combined Query Test", await personQuery.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10).ToListAsync(),
            allPeople.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10));
