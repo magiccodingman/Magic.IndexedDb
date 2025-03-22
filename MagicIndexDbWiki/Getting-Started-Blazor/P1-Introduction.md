@@ -360,6 +360,7 @@ await personQuery.Where(x => (x.Age > 40 && x.TestInt == 9) || x.Name.Contains("
 
 - **IndexedDB does not natively support this!**
 - **Magic IndexedDB’s flattening algorithm makes it possible**.
+	- Though it's highly advised to limit your nested || conditions. And when you are utilizing such nested conditions, it's best to utilize as many indexed queries as possible.
 
 ---
 
@@ -519,6 +520,8 @@ The following **table defines the operations available** and how they interact.
 | `.Length > X / >= X / < X / <= X` | Length of a string or array comparisons                                    | 🚫 Cursor Required                    |
 | `x == null`                       | Field is `null` or `undefined`                                             | 🚫 Cursor Required                    |
 | `x != null`                       | Field is **not** `null` or `undefined`                                     | 🚫 Cursor Required                    |
+
+* **Contains for non strings** - when working with arrays the system tries to flatten the predicate to the universal language on your behalf. 
 
 ---
 

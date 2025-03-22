@@ -1,6 +1,7 @@
 ﻿using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Models.UniversalOperations;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -137,6 +138,18 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             void AddMethodCall(MethodCallExpression call, bool isInOr)
             {
+                // Flatten value-array.Contains(x.Property) or x.Collection.Contains(value)
+                if (TryFlattenContains(call, isInOr, out var flattened))
+                {
+                    foreach (var cond in flattened)
+                    {
+                        var individualGroup = new AndFilterGroup();
+                        individualGroup.conditions.Add(cond);
+                        orGroup.andGroups.Add(individualGroup); // Treat them as parallel OR options
+                    }
+                    return;
+                }
+
                 string name = call.Method.Name;
                 string resolvedOp = name switch
                 {
@@ -207,6 +220,83 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             return orGroup;
         }
 
+
+        private bool TryFlattenContains(MethodCallExpression call, bool isOr, out IEnumerable<FilterCondition> flattened)
+        {
+            flattened = Enumerable.Empty<FilterCondition>();
+
+            if (call.Method.Name != "Contains")
+                return false;
+
+            // Case 1: Static-style — myArray.Contains(x._Age)
+            if (call.Object == null && call.Arguments.Count == 2)
+            {
+                var maybeCollection = call.Arguments[0];
+                var maybeProp = call.Arguments[1];
+
+                if ((maybeCollection is MemberExpression || maybeCollection is ConstantExpression) &&
+                    maybeProp is MemberExpression propExpr &&
+                    IsParamMember(propExpr))
+                {
+                    var collectionExpr = maybeCollection;
+                    var collection = Expression.Lambda(collectionExpr).Compile().DynamicInvoke();
+
+                    if (collection is IEnumerable enumerable)
+                    {
+                        var propInfo = typeof(T).GetProperty(propExpr.Member.Name);
+                        if (propInfo == null) 
+                            return false;
+
+                        string jsProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
+
+                        flattened = enumerable
+                            .Cast<object?>()
+                            .Select(val =>
+                                new FilterCondition(
+                                    jsProp,
+                                    "Equal",
+                                    val != null ? JsonValue.Create(val) : null,
+                                    val is string,
+                                    false
+                                )
+                            );
+
+                        return true;
+                    }
+                }
+            }
+
+            // Case 2: Instance-style — x.CollectionProperty.Contains(10)
+            if (call.Object is MemberExpression collectionMember &&
+                call.Arguments.Count == 1 &&
+                call.Arguments[0] is ConstantExpression constant)
+            {
+                var propInfo = typeof(T).GetProperty(collectionMember.Member.Name);
+                if (propInfo == null) return false;
+
+                string jsProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
+
+                flattened = new[]
+                {
+            new FilterCondition(
+                jsProp,
+                "ArrayContains",
+                JsonValue.Create(constant.Value),
+                constant.Value is string,
+                false
+            )
+        };
+
+                return true;
+            }
+
+            return false;
+        }
+
+
+
+
+
         private static bool SupportedMethodNameForNegation(string name) =>
             name is "Contains" or "StartsWith" or "EndsWith" or "Equals";
 
@@ -241,6 +331,21 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             "LessThanOrEqual" => "GreaterThanOrEqual",
             _ => op
         };
+
+        private static ConstantExpression ToConst(Expression expr) => expr switch
+        {
+            ConstantExpression c => c,
+            MemberExpression m => Expression.Constant(Expression.Lambda(m).Compile().DynamicInvoke()),
+            _ => throw new InvalidOperationException($"Unsupported or non-constant: {expr}")
+        };
+
+        private static bool IsParamMember(Expression expr)
+        {
+            return expr is MemberExpression member &&
+                   member.Expression is ParameterExpression;
+        }
+
+
     }
     // Your supporting model classes (OrFilterGroup, AndFilterGroup, FilterCondition, etc.)
     // should stay as they are in their own files or namespaces.
