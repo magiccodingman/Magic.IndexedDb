@@ -300,6 +300,9 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             if (call.Method.Name != "Contains")
                 return false;
 
+            if (call.Method.DeclaringType == typeof(string))
+                return false;
+
             // Case 1: Static-style => myArray.Contains(x.SomeProp)
             if (call.Object == null && call.Arguments.Count == 2)
             {

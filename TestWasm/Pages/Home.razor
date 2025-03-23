@@ -280,6 +280,13 @@
                 // allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year == 2020));
 
 
+                RunTest("One Char contains", await personQuery.Where(x => x.TestInt >= 1 && x.TestInt < 10).ToListAsync(),
+                 allPeople.Where(x => x.TestInt >= 1 && x.TestInt < 10));
+
+
+                    RunTest("One Char contains", await personQuery.Where(x => x.Name.Contains("J")).ToListAsync(),
+                 allPeople.Where(x => x.Name.Contains("J")));
+
                      RunTest("Ends With Test", await personQuery.Where(x => x.Name.EndsWith("ack")).ToListAsync(),
                      allPeople.Where(x => x.Name.EndsWith("ack")));
 
