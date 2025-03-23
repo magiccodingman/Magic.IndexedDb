@@ -393,9 +393,11 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         {
             node = null!;
 
-            var memberPath = GetMemberAccessPath(bin.Left);
+            Expression leftExpr = UnwrapConvert(bin.Left);
+            var memberPath = GetMemberAccessPath(leftExpr);
             if (memberPath == null || memberPath.Count < 2)
                 return false;
+
 
             var finalSegment = memberPath[^1];
             var rootSegment = memberPath[^2];
@@ -410,7 +412,8 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             if (!IsDateType(mpe.Property.PropertyType))
                 return false;
 
-            object? rawConst = ToConst(bin.Right).Value;
+            var rightUnwrapped = UnwrapConvert(bin.Right);
+            object? rawConst = ToConst(rightUnwrapped).Value;
 
             if (rawConst == null)
                 return false;
@@ -434,7 +437,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
                     return true;
 
                 case "DayOfYear":
-                    node = BuildComponentCondition(jsProp, rawConst, operation, "GetDayOfYear");
+                    node = BuildComponentCondition(jsProp, rawConst, operation, "DayOfYear");
                     return true;
 
                 case "DayOfWeek":
@@ -453,12 +456,12 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             string finalOp = operation switch
             {
-                "Equal" => "DateYearEqual",
-                "NotEqual" => "NotDateYearEqual",
-                "GreaterThan" => "DateYearGreaterThan",
-                "GreaterThanOrEqual" => "DateYearGreaterThanOrEqual",
-                "LessThan" => "DateYearLessThan",
-                "LessThanOrEqual" => "DateYearLessThanOrEqual",
+                "Equal" => "YearEqual",
+                "NotEqual" => "NotYearEqual",
+                "GreaterThan" => "YearGreaterThan",
+                "GreaterThanOrEqual" => "YearGreaterThanOrEqual",
+                "LessThan" => "YearLessThan",
+                "LessThanOrEqual" => "YearLessThanOrEqual",
                 _ => throw new InvalidOperationException($"Unsupported operator '{operation}' for .Year")
             };
 
@@ -546,15 +549,25 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
         private FilterNode BuildDayOfWeekNode(string jsProp, Expression expr, string operation)
         {
-            // Don't use ToConst because it wraps Convert(DayOfWeek.X) incorrectly
-            object? result = Expression.Lambda(expr).Compile().DynamicInvoke();
+            // Unwrap the Convert to get the raw int expression (already a DayOfWeek enum converted to int)
+            Expression cleanExpr = UnwrapConvert(expr);
 
-            if (result is not DayOfWeek enumVal)
-                throw new InvalidOperationException("Expected DayOfWeek enum in .DayOfWeek comparison");
+            object? result = Expression.Lambda(cleanExpr).Compile().DynamicInvoke();
 
-            int jsDayOfWeek = (int)enumVal; // Sunday = 0 ... Saturday = 6
+            if (result is not int jsDayOfWeek)
+                throw new InvalidOperationException("Expected integer value for .DayOfWeek comparison");
 
-            return BuildComponentCondition(jsProp, jsDayOfWeek, operation, "GetDayOfWeek");
+            return BuildComponentCondition(jsProp, jsDayOfWeek, operation, "DayOfWeek");
+        }
+
+
+        private static Expression UnwrapConvert(Expression expr)
+        {
+            while (expr.NodeType == ExpressionType.Convert || expr.NodeType == ExpressionType.ConvertChecked)
+            {
+                expr = ((UnaryExpression)expr).Operand;
+            }
+            return expr;
         }
 
 
@@ -717,8 +730,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         private static bool SupportedUnaryMethod(string name)
         {
             // Your custom logic for "GetDay", "IsNull", etc.
-            return name.StartsWith("GetDay")
-                || name.StartsWith("TypeOf")
+            return name.StartsWith("TypeOf")
                 || name.StartsWith("NotTypeOf")
                 || name.StartsWith("Length")
                 || name.StartsWith("NotLength")

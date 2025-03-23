@@ -287,8 +287,8 @@
                 allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)));
 
                 RunTest("Date Not Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Date != new DateTime(2020, 2, 11)).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date != new DateTime(2020, 2, 11)));
+                    await personQuery.Where(x => x.DateOfBirth.Value.Date != new DateTime(2020, 2, 10)).ToListAsync(),
+                    allPeople.Where(x => !x.DateOfBirth.HasValue || x.DateOfBirth.Value.Date != new DateTime(2020, 2, 10)));
 
                 RunTest("Date Greater Than",
                     await personQuery.Where(x => x.DateOfBirth.Value.Date > new DateTime(2020, 2, 9)).ToListAsync(),
@@ -341,6 +341,27 @@
                 RunTest("Date Day Of Year Equal",
                     await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear == 41).ToListAsync(),
                     allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear == 41));
+
+                RunTest("Date Day Of Year Not Equal",
+                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear != 41).ToListAsync(),
+                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear != 41));
+
+                RunTest("Date Day Of Year Greater Than",
+                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear > 40).ToListAsync(),
+                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear > 40));
+
+                RunTest("Date Day Of Year Greater Than Or Equal",
+                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear >= 41).ToListAsync(),
+                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear >= 41));
+
+                RunTest("Date Day Of Year Less Than",
+                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear < 42).ToListAsync(),
+                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear < 42));
+
+                RunTest("Date Day Of Year Less Than Or Equal",
+                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear <= 41).ToListAsync(),
+                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear <= 41));
+
 
                 RunTest("Date Day Of Week Equal",
                     await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek == DayOfWeek.Monday).ToListAsync(),

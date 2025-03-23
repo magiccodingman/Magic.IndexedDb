@@ -132,18 +132,7 @@ function optimizeSingleCondition(condition) {
     // Lowercase normalization for string values if not case-sensitive
     if (!condition.caseSensitive && typeof condition.value === "string") {
         optimized.value = condition.value.toLowerCase();
-    }
-
-
-    // Generic numeric validation for date-based derived operations
-    if (
-        [QUERY_OPERATIONS.GET_DAY_OF_WEEK, QUERY_OPERATIONS.GET_DAY_OF_YEAR]
-            .includes(condition.operation)
-    ) {
-        if (typeof condition.value !== "number") {
-            console.warn(`[IndexedDB Warning] ${condition.operation} expects a numeric value. Got:`, condition.value);
-        }
-    }
+    }    
 
     optimized.comparisonFunction = getComparisonFunction(condition.operation);
     return optimized;
@@ -288,35 +277,7 @@ function getComparisonFunction(operation) {
         [QUERY_OPERATIONS.IN]: (recordValue, queryValue) =>
             Array.isArray(queryValue) && queryValue.includes(recordValue),
 
-        [QUERY_OPERATIONS.GET_DAY_OF_WEEK]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) {
-                recordValue = new Date(recordValue);
-                if (isNaN(recordValue)) return false;
-            }
-            return recordValue.getDay() === queryValue; // Sunday = 0, Saturday = 6
-        },
 
-
-        [QUERY_OPERATIONS.GET_DAY_OF_YEAR]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) {
-                recordValue = new Date(recordValue);
-                if (isNaN(recordValue)) return false;
-            }
-
-            const start = new Date(recordValue.getFullYear(), 0, 0);
-            const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60 * 1000);
-            const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
-            return dayOfYear === queryValue;
-        },
-
-        [QUERY_OPERATIONS.GET_DAY_OF_WEEK]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) {
-                recordValue = new Date(recordValue);
-                if (isNaN(recordValue)) return false;
-            }
-
-            return recordValue.getDay() === queryValue;
-        },
 
         // ------ MONTH OPERATIONS ------
         [QUERY_OPERATIONS.MONTH_EQUAL]: (recordValue, queryValue) => {
@@ -379,6 +340,144 @@ function getComparisonFunction(operation) {
             if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
             return !isNaN(recordValue) && recordValue.getDate() <= queryValue;
         },
+
+
+        // ------ DAY OF WEEK OPERATIONS ------
+        [QUERY_OPERATIONS.DAY_OF_WEEK_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDay() === queryValue;
+        },
+
+        [QUERY_OPERATIONS.NOT_DAY_OF_WEEK_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDay() !== queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_OF_WEEK_GREATER_THAN]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDay() > queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_OF_WEEK_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDay() >= queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_OF_WEEK_LESS_THAN]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDay() < queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_OF_WEEK_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDay() <= queryValue;
+        },
+
+
+        // ------ YEAR OPERATIONS ------
+        [QUERY_OPERATIONS.YEAR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getFullYear() === queryValue;
+        },
+
+        [QUERY_OPERATIONS.NOT_YEAR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getFullYear() !== queryValue;
+        },
+
+        [QUERY_OPERATIONS.YEAR_GREATER_THAN]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getFullYear() > queryValue;
+        },
+
+        [QUERY_OPERATIONS.YEAR_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getFullYear() >= queryValue;
+        },
+
+        [QUERY_OPERATIONS.YEAR_LESS_THAN]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getFullYear() < queryValue;
+        },
+
+        [QUERY_OPERATIONS.YEAR_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getFullYear() <= queryValue;
+        },
+
+        // ------ DAY OF YEAR OPERATIONS ------
+        [QUERY_OPERATIONS.DAY_OF_YEAR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            if (isNaN(recordValue)) return false;
+            const start = new Date(recordValue.getFullYear(), 0, 0);
+            const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
+            const dayOfYear = Math.floor(diff / 86400000);
+            return dayOfYear === queryValue;
+        },
+
+        [QUERY_OPERATIONS.NOT_DAY_OF_YEAR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            if (isNaN(recordValue)) return false;
+            const start = new Date(recordValue.getFullYear(), 0, 0);
+            const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
+            const dayOfYear = Math.floor(diff / 86400000);
+            return dayOfYear !== queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_OF_YEAR_GREATER_THAN]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            if (isNaN(recordValue)) return false;
+            const start = new Date(recordValue.getFullYear(), 0, 0);
+            const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
+            const dayOfYear = Math.floor(diff / 86400000);
+            return dayOfYear > queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_OF_YEAR_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            if (isNaN(recordValue)) return false;
+            const start = new Date(recordValue.getFullYear(), 0, 0);
+            const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
+            const dayOfYear = Math.floor(diff / 86400000);
+            return dayOfYear >= queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_OF_YEAR_LESS_THAN]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            if (isNaN(recordValue)) return false;
+            const start = new Date(recordValue.getFullYear(), 0, 0);
+            const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
+            const dayOfYear = Math.floor(diff / 86400000);
+            return dayOfYear < queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_OF_YEAR_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (recordValue === null || recordValue === undefined) return false;
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            if (isNaN(recordValue)) return false;
+            const start = new Date(recordValue.getFullYear(), 0, 0);
+            const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
+            const dayOfYear = Math.floor(diff / 86400000);
+            return dayOfYear <= queryValue;
+        },
+
 
 
         [QUERY_OPERATIONS.ENDS_WITH]: (recordValue, queryValue) =>

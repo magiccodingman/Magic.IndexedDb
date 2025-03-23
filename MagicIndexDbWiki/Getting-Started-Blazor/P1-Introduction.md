@@ -564,20 +564,66 @@ The following **table defines the operations available** and how they interact.
 
 ### **🕒 Date & Time Query Support (C# Style)**
 
-| **DateTime / DateOnly Operation**  | **Description**                         | **IndexedDB Optimized?**    |
-| ---------------------------------- | --------------------------------------- | --------------------------- |
-| `x == DateTime(2020, 5, 1)`        | Exact DateTime match                    | ✅ Yes (translated to range) |
-| `x > DateTime(2023, 1, 1)`         | Greater than a specific DateTime        | ✅ Yes (translated to range) |
-| `x >= DateTime(2023, 1, 1)`        | Greater or equal                        | ✅ Yes (translated to range) |
-| `x < DateTime(2023, 1, 1)`         | Less than a specific DateTime           | ✅ Yes (translated to range) |
-| `x <= DateTime(2023, 1, 1)`        | Less or equal                           | ✅ Yes (translated to range) |
-| `x.Date == DateOnly(2023, 10, 15)` | Match by calendar date (ignoring time)  | ✅ Yes (translated to range) |
-| `x.MyDate.Year == 2023`            | Filters by year                         | ✅ Yes (translated to range) |
-| `x.MyDate.Month == 7`              | Filters by month                        | ✅ Yes (translated to range) |
-| `x.Day == 4`                       | Filters by day of the month             | 🚫 Cursor Required          |
-| `x.DayOfWeek == DayOfWeek.Monday`  | Filters by day of the week (Sunday = 0) | 🚫 Cursor Required          |
-| `x.DayOfYear == 128`               | Filters by day of the year              | 🚫 Cursor Required          |
-- Supported operations: `Date`, `Month`, `Year`, `Day`, `DayOfWeek`, or `DayOfYear`.
+| **C# Expression**                      | **Description**                                  | **IndexedDB Optimized?**    |
+| -------------------------------------- | ------------------------------------------------ | --------------------------- |
+| `x == DateTime(2020, 5, 1)`            | Exact DateTime match                             | ✅ Yes (translated to range) |
+| `x != DateTime(2020, 5, 1)`            | Not Equals to date time                          | 🚫 Cursor Required          |
+| `x > DateTime(2023, 1, 1)`             | Greater than DateTime                            | ✅ Yes                       |
+| `x >= DateTime(2023, 1, 1)`            | Greater or equal                                 | ✅ Yes                       |
+| `x < DateTime(2023, 1, 1)`             | Less than DateTime                               | ✅ Yes                       |
+| `x <= DateTime(2023, 1, 1)`            | Less or equal                                    | ✅ Yes                       |
+| `x.Date == new DateTime(2023, 10, 15)` | Match by calendar date (ignoring time)           | ✅ Yes (translated to range) |
+| `x.Year == 2023`                       | Filters by year                                  | ✅ Yes                       |
+| `x.Year != 2023`                       | Year not equal                                   | 🚫 Cursor Required          |
+| `x.Year > 2022`                        | Year greater than                                | ✅ Yes                       |
+| `x.Year >= 2023`                       | Year greater than or equal                       | ✅ Yes                       |
+| `x.Year < 2024`                        | Year less than                                   | ✅ Yes                       |
+| `x.Year <= 2023`                       | Year less than or equal                          | ✅ Yes                       |
+| `x.Month == 7`                         | Filters by month (1-12)                          | 🚫 Cursor Required          |
+| `x.Month != 12`                        | Not equal to month                               | 🚫 Cursor Required          |
+| `x.Month > 6`                          | Month greater than                               | 🚫 Cursor Required          |
+| `x.Month >= 1`                         | Month greater than or equal                      | 🚫 Cursor Required          |
+| `x.Month < 12`                         | Month less than                                  | 🚫 Cursor Required          |
+| `x.Month <= 7`                         | Month less than or equal                         | 🚫 Cursor Required          |
+| `x.Day == 4`                           | Day of the month                                 | 🚫 Cursor Required          |
+| `x.Day != 5`                           | Not equal to day                                 | 🚫 Cursor Required          |
+| `x.Day > 2`                            | Day greater than                                 | 🚫 Cursor Required          |
+| `x.Day >= 10`                          | Day greater than or equal                        | 🚫 Cursor Required          |
+| `x.Day < 20`                           | Day less than                                    | 🚫 Cursor Required          |
+| `x.Day <= 15`                          | Day less than or equal                           | 🚫 Cursor Required          |
+| `x.DayOfWeek == DayOfWeek.Monday`      | Exact match for day of week (Sunday = 0)         | 🚫 Cursor Required          |
+| `x.DayOfWeek != DayOfWeek.Friday`      | Not equal to day of week                         | 🚫 Cursor Required          |
+| `x.DayOfWeek > DayOfWeek.Sunday`       | Greater than day of week (e.g., Monday > Sunday) | 🚫 Cursor Required          |
+| `x.DayOfWeek >= DayOfWeek.Tuesday`     | Greater or equal to day of week                  | 🚫 Cursor Required          |
+| `x.DayOfWeek < DayOfWeek.Saturday`     | Less than day of week                            | 🚫 Cursor Required          |
+| `x.DayOfWeek <= DayOfWeek.Monday`      | Less than or equal to day of week                | 🚫 Cursor Required          |
+| `x.DayOfYear == 128`                   | Exact match for day of the year (1–366)          | 🚫 Cursor Required          |
+| `x.DayOfYear != 129`                   | Not equal to day of year                         | 🚫 Cursor Required          |
+| `x.DayOfYear > 50`                     | Greater than day of year                         | 🚫 Cursor Required          |
+| `x.DayOfYear >= 100`                   | Greater or equal to day of year                  | 🚫 Cursor Required          |
+| `x.DayOfYear < 200`                    | Less than day of year                            | 🚫 Cursor Required          |
+| `x.DayOfYear <= 365`                   | Less than or equal to day of year                | 🚫 Cursor Required          |
+
+---
+
+### ✅ **BONUS: Nullable Support**
+
+All of the above operations also support:
+
+- `x.DateOfBirth.Value` (nullable structs)
+- Automatic `.Value` stripping where safe
+- Error-handling for invalid usage like `x.DateOfBirth.Value` (without member access)
+
+---
+
+### 💡 **Pro Tip**
+
+Operations like `.Date`, `.Year`, `.Month`, `.Day`, `.DayOfWeek`, and `.DayOfYear` are all internally optimized and recognized as **special operations** — no reflection, no guesswork, no slowdowns.  
+This is **next-gen** IndexedDB querying.
+
+---
+
+Would you like me to generate a markdown table or documentation file version too?
 
 ---
 

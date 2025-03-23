@@ -13,8 +13,6 @@ export const QUERY_OPERATIONS = {
     NOT_CONTAINS: "NotContains",
     IN: "In",
     
-    GET_DAY_OF_WEEK: "GetDayOfWeek",
-    GET_DAY_OF_Year: "GetDayOfYear",
 
     NOT_MONTH_EQUAL: "NotMonthEqual",
     MONTH_EQUAL: "MonthEqual",
@@ -29,6 +27,26 @@ export const QUERY_OPERATIONS = {
     DAY_GREATER_THAN_OR_EQUAL: "DayGreaterThanOrEqual",
     DAY_LESS_THAN: "DayLessThan",
     DAY_LESS_THAN_OR_EQUAL: "DayLessThanOrEqual",
+    DAY_OF_WEEK_EQUAL: "DayOfWeekEqual",
+    NOT_DAY_OF_WEEK_EQUAL: "NotDayOfWeekEqual",
+    DAY_OF_WEEK_GREATER_THAN: "DayOfWeekGreaterThan",
+    DAY_OF_WEEK_GREATER_THAN_OR_EQUAL: "DayOfWeekGreaterThanOrEqual",
+    DAY_OF_WEEK_LESS_THAN: "DayOfWeekLessThan",
+    DAY_OF_WEEK_LESS_THAN_OR_EQUAL: "DayOfWeekLessThanOrEqual",
+
+    DAY_OF_YEAR_EQUAL: "DayOfYearEqual",
+    NOT_DAY_OF_YEAR_EQUAL: "NotDayOfYearEqual",
+    DAY_OF_YEAR_GREATER_THAN: "DayOfYearGreaterThan",
+    DAY_OF_YEAR_GREATER_THAN_OR_EQUAL: "DayOfYearGreaterThanOrEqual",
+    DAY_OF_YEAR_LESS_THAN: "DayOfYearLessThan",
+    DAY_OF_YEAR_LESS_THAN_OR_EQUAL: "DayOfYearLessThanOrEqual",
+
+    YEAR_EQUAL: "YearEqual",
+    NOT_YEAR_EQUAL: "NotYearEqual",
+    YEAR_GREATER_THAN: "YearGreaterThan",
+    YEAR_GREATER_THAN_OR_EQUAL: "YearGreaterThanOrEqual",
+    YEAR_LESS_THAN: "YearLessThan",
+    YEAR_LESS_THAN_OR_EQUAL: "YearLessThanOrEqual",
 
 
 

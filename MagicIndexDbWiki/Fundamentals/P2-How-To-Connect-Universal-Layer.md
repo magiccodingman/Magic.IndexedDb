@@ -85,10 +85,38 @@ Absolutely — here's the cleaned-up, fully updated, and **well-organized** vers
 
 #### 📅 Date Operations
 
-| **Operator**       | **JavaScript Key** | **Description**                        | **IndexedDB Optimized?** |
-| ------------------ | ------------------ | -------------------------------------- | ------------------------ |
-| `x.DayOfWeek == X` | `GetDayOfWeek`     | Day of week (Sunday = 0, Saturday = 6) | 🚫 Cursor Required       |
-| `x.DayOfYear == X` | `GetDayOfYear`     | Day of year (1-366)                    | 🚫 Cursor Required       |
+|**Operator**|**JavaScript Key**|**IndexedDB Optimized?**|
+|---|---|---|
+|`x.Month == 7`|`MonthEqual`|🚫 Cursor Required|
+|`x.Month != 7`|`NotMonthEqual`|🚫 Cursor Required|
+|`x.Month > 7`|`MonthGreaterThan`|🚫 Cursor Required|
+|`x.Month >= 7`|`MonthGreaterThanOrEqual`|🚫 Cursor Required|
+|`x.Month < 7`|`MonthLessThan`|🚫 Cursor Required|
+|`x.Month <= 7`|`MonthLessThanOrEqual`|🚫 Cursor Required|
+|`x.Day == 15`|`DayEqual`|🚫 Cursor Required|
+|`x.Day != 15`|`NotDayEqual`|🚫 Cursor Required|
+|`x.Day > 15`|`DayGreaterThan`|🚫 Cursor Required|
+|`x.Day >= 15`|`DayGreaterThanOrEqual`|🚫 Cursor Required|
+|`x.Day < 15`|`DayLessThan`|🚫 Cursor Required|
+|`x.Day <= 15`|`DayLessThanOrEqual`|🚫 Cursor Required|
+|`x.DayOfWeek == X`|`DayOfWeekEqual`|🚫 Cursor Required|
+|`x.DayOfWeek != X`|`NotDayOfWeekEqual`|🚫 Cursor Required|
+|`x.DayOfWeek > X`|`DayOfWeekGreaterThan`|🚫 Cursor Required|
+|`x.DayOfWeek >= X`|`DayOfWeekGreaterThanOrEqual`|🚫 Cursor Required|
+|`x.DayOfWeek < X`|`DayOfWeekLessThan`|🚫 Cursor Required|
+|`x.DayOfWeek <= X`|`DayOfWeekLessThanOrEqual`|🚫 Cursor Required|
+|`x.DayOfYear == 128`|`DayOfYearEqual`|🚫 Cursor Required|
+|`x.DayOfYear != 128`|`NotDayOfYearEqual`|🚫 Cursor Required|
+|`x.DayOfYear > 128`|`DayOfYearGreaterThan`|🚫 Cursor Required|
+|`x.DayOfYear >= 128`|`DayOfYearGreaterThanOrEqual`|🚫 Cursor Required|
+|`x.DayOfYear < 128`|`DayOfYearLessThan`|🚫 Cursor Required|
+|`x.DayOfYear <= 128`|`DayOfYearLessThanOrEqual`|🚫 Cursor Required|
+|`x.Year == 2024`|`YearEqual`|✅ Yes|
+|`x.Year != 2024`|`NotYearEqual`|🚫 Cursor Required|
+|`x.Year > 2024`|`YearGreaterThan`|✅ Yes|
+|`x.Year >= 2024`|`YearGreaterThanOrEqual`|✅ Yes|
+|`x.Year < 2024`|`YearLessThan`|✅ Yes|
+|`x.Year <= 2024`|`YearLessThanOrEqual`|✅ Yes|
 
 ---
 
