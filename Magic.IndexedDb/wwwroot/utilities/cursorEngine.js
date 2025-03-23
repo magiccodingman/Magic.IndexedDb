@@ -53,21 +53,33 @@ async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys
     const now = Date.now();
     let shouldLogWarning = !lastCursorWarningTime || now - lastCursorWarningTime > 10 * 60 * 1000;
 
-    // Dynamically extract all required properties from the predicate tree
     const requiredPropertiesFiltered = new Set();
-    collectPropertiesFromTree(predicateTree, requiredPropertiesFiltered);
+
+    // Only collect properties if we actually have a filter tree with children
+    const hasConditions =
+        predicateTree &&
+        (
+            predicateTree.nodeType === "condition" ||
+            (predicateTree.children && predicateTree.children.length > 0)
+        );
+
+    if (hasConditions) {
+        collectPropertiesFromTree(predicateTree, requiredPropertiesFiltered);
+    }
 
     await db.transaction('r', table, async () => {
         await table.orderBy(compoundKeys[0]).each((record) => {
-            // Skip if required property is missing
-            for (const prop of requiredPropertiesFiltered) {
-                if (record[prop] === undefined) {
-                    if (shouldLogWarning) {
-                        console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing property: ${prop}`);
-                        lastCursorWarningTime = now;
-                        shouldLogWarning = false;
+            // Still apply property checks *only* if we have any to check
+            if (requiredPropertiesFiltered.size > 0) {
+                for (const prop of requiredPropertiesFiltered) {
+                    if (record[prop] === undefined) {
+                        if (shouldLogWarning) {
+                            console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing property: ${prop}`);
+                            lastCursorWarningTime = now;
+                            shouldLogWarning = false;
+                        }
+                        return;
                     }
-                    return;
                 }
             }
 
@@ -76,46 +88,75 @@ async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys
                 return;
             }
 
-            // Evaluate the structured predicate tree
-            if (!evaluatePredicateTree(predicateTree, record)) return;
+            // Only evaluate if we actually have predicate logic
+            if (hasConditions && !evaluatePredicateTree(predicateTree, record))
+                return;
 
             recordHandler(record, recordKey);
         });
     });
 }
 
+
 function collectPropertiesFromTree(node, propertySet) {
     if (node.nodeType === "condition") {
         propertySet.add(node.condition.property);
         return;
     }
-    for (const child of node.children) {
+    for (const child of node.children ?? []) {
         collectPropertiesFromTree(child, propertySet);
     }
 }
 
 function evaluatePredicateTree(node, record) {
     if (node.nodeType === "condition") {
-        const condition = optimizeSingleCondition(node.condition);
-        return applyCondition(record, condition);
+        if (!node.optimized) {
+            node.optimized = optimizeSingleCondition(node.condition);
+        }
+        return applyCondition(record, node.optimized);
     }
 
-    const results = node.children.map(child => evaluatePredicateTree(child, record));
+    const results = (node.children ?? []).map(child => evaluatePredicateTree(child, record));
     return node.operator === "And"
         ? results.every(r => r)
         : results.some(r => r);
 }
 
 function optimizeSingleCondition(condition) {
-    let optimized = { ...condition };
+    if (condition.value === -Infinity || condition.value === Infinity) {
+        return condition; // Already a no-op filter, skip transformation
+    }
 
+    const optimized = { ...condition };
+
+    // Lowercase normalization for string values if not case-sensitive
     if (!condition.caseSensitive && typeof condition.value === "string") {
         optimized.value = condition.value.toLowerCase();
+    }
+
+    // Edge case: GETDAY sanity check
+    if (
+        condition.operation === QUERY_OPERATIONS.GETDAY &&
+        typeof condition.value !== "number"
+    ) {
+        console.warn(`[IndexedDB Warning] GETDAY expects a numeric day (1–31). Got:`, condition.value);
+    }
+
+    // Generic numeric validation for date-based derived operations
+    if (
+        [QUERY_OPERATIONS.GET_DAY_OF_WEEK, QUERY_OPERATIONS.GET_DAY_OF_YEAR, QUERY_OPERATIONS.GETDAY]
+            .includes(condition.operation)
+    ) {
+        if (typeof condition.value !== "number") {
+            console.warn(`[IndexedDB Warning] ${condition.operation} expects a numeric value. Got:`, condition.value);
+        }
     }
 
     optimized.comparisonFunction = getComparisonFunction(condition.operation);
     return optimized;
 }
+
+
 
 
 /**
@@ -158,11 +199,13 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     let requiredProperties = new Set();
     let magicOrder = 0;
 
-    for (const andGroup of conditions) {
-        for (const condition of andGroup) {
-            if (condition.property) requiredProperties.add(condition.property);
-        }
+    if (conditions?.nodeType === "logical" && !conditions.children) {
+        // No conditions — grab everything
+        debugLog("Detected no-op predicate. All records will be evaluated.");
+    } else {
+        collectPropertiesFromTree(conditions, requiredProperties);
     }
+
 
     for (const addition of queryAdditions) {
         if ((addition.additionFunction === QUERY_ADDITIONS.ORDER_BY
@@ -208,33 +251,6 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     debugLog("Primary Key List Collected", { count: resultIndex });
     return primaryKeyList.slice(0, resultIndex);
 }
-
-
-function optimizeConditions(conditions) {
-    return conditions.map(condition => {
-        let optimizedCondition = { ...condition };
-
-        if (!condition.caseSensitive && typeof condition.value === "string") {
-            optimizedCondition.value = condition.value.toLowerCase();
-        }
-
-        // Edge case: GETDAY sanity check
-        if (condition.operation === QUERY_OPERATIONS.GETDAY &&
-            typeof condition.value !== "number") {
-            console.warn(`[IndexedDB Warning] GETDAY expects a numeric day (1–31). Got:`, condition.value);
-        }
-
-        if ([QUERY_OPERATIONS.GET_DAY_OF_WEEK, QUERY_OPERATIONS.GET_DAY_OF_YEAR, QUERY_OPERATIONS.GETDAY].includes(condition.operation)) {
-            if (typeof condition.value !== "number") {
-                console.warn(`[IndexedDB Warning] ${condition.operation} expects a numeric value. Got:`, condition.value);
-            }
-        }
-
-        optimizedCondition.comparisonFunction = getComparisonFunction(condition.operation);
-        return optimizedCondition;
-    });
-}
-
 
 function getComparisonFunction(operation) {
     const operations = {
