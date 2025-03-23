@@ -12,9 +12,24 @@ export const QUERY_OPERATIONS = {
     CONTAINS: "Contains",
     NOT_CONTAINS: "NotContains",
     IN: "In",
-    GETDAY: "GetDay",
+    
     GET_DAY_OF_WEEK: "GetDayOfWeek",
     GET_DAY_OF_Year: "GetDayOfYear",
+
+    NOT_MONTH_EQUAL: "NotMonthEqual",
+    MONTH_EQUAL: "MonthEqual",
+    MONTH_GREATER_THAN: "MonthGreaterThan",
+    MONTH_GREATER_THAN_OR_EQUAL: "MonthGreaterThanOrEqual",
+    MONTH_LESS_THAN: "MonthLessThan",
+    MONTH_LESS_THAN_OR_EQUAL: "MonthLessThanOrEqual",
+
+    NOT_DAY_EQUAL: "NotDayEqual",
+    DAY_EQUAL: "DayEqual",
+    DAY_GREATER_THAN: "DayGreaterThan",
+    DAY_GREATER_THAN_OR_EQUAL: "DayGreaterThanOrEqual",
+    DAY_LESS_THAN: "DayLessThan",
+    DAY_LESS_THAN_OR_EQUAL: "DayLessThanOrEqual",
+
 
 
     ENDS_WITH: "EndsWith",

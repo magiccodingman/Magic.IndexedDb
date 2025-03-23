@@ -1,5 +1,6 @@
 ﻿using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.LinqTranslation.Models;
+using Magic.IndexedDb.Models;
 using Magic.IndexedDb.Models.UniversalOperations;
 using System;
 using System.Collections;
@@ -260,6 +261,11 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         {
             string operation = forceOperation ?? bin.NodeType.ToString();
 
+            if (TryRecognizeSpecialOperation(bin, operation, out var specialNode))
+            {
+                return specialNode;
+            }
+
             if (IsParameterMember(bin.Left) && !IsParameterMember(bin.Right))
             {
                 var left = bin.Left as MemberExpression;
@@ -288,6 +294,282 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
             throw new InvalidOperationException($"Unsupported binary expression: {bin}");
         }
+
+        private bool TryRecognizeSpecialOperation(BinaryExpression bin, string operation, out FilterNode node)
+        {
+            node = null!;
+
+
+            if (TryRecognizeLengthProperty(bin, operation, out node))
+                return true;
+
+            // Recognize things like: x => x.DateOfBirth.Value.Year >= 2020
+            if (TryRecognizeDateProperty(bin, operation, out node))
+                return true;
+
+            // Future recognizers:
+            // if (TryRecognizeEnumFlag(bin, operation, out node)) return true;
+
+            return false;
+        }
+
+
+        private bool TryRecognizeLengthProperty(BinaryExpression bin, string operation, out FilterNode node)
+        {
+            node = null!;
+            var memberPath = GetMemberAccessPath(bin.Left);
+
+            if (memberPath == null || memberPath.Count == 0)
+                return false;
+
+            // Error if .Value is the last thing appended (illegal usage)
+            if (memberPath[^1] == "Value")
+            {
+                throw new InvalidOperationException("You cannot end an expression with '.Value'. Only specific extensions like '.Length' are allowed.");
+            }
+
+            // Only allow if the final segment is "Length"
+            if (memberPath[^1] != "Length")
+                return false;
+
+            // Must have at least 2 parts: root + Length
+            if (memberPath.Count < 2)
+                return false;
+
+            SearchPropEntry spe = PropertyMappingCache.GetTypeOfTProperties(typeof(T));
+
+            //string rootPropName = memberPath[memberPath.Count - 2]; // i.e., "Name"
+            string rootPropName = ExtractRootProperty(memberPath);
+
+            MagicPropertyEntry mpe = spe.GetPropertyByCsharpName(rootPropName);
+            string jsProp = mpe.JsPropertyName;
+
+            
+            var value = ToConst(bin.Right).Value;
+            if (value == null || value is not int)
+                return false;
+
+            string op = operation switch
+            {
+                "Equal" => "LengthEqual",
+                "NotEqual" => "NotLengthEqual",
+                "GreaterThan" => "LengthGreaterThan",
+                "GreaterThanOrEqual" => "LengthGreaterThanOrEqual",
+                "LessThan" => "LengthLessThan",
+                "LessThanOrEqual" => "LengthLessThanOrEqual",
+                _ => throw new InvalidOperationException($"Unsupported operator '{operation}' for .Length")
+            };
+
+            // TODO: Replace this with your isString detection logic
+            bool isString = mpe.Property.PropertyType == typeof(string);
+
+            node = new FilterNode
+            {
+                NodeType = FilterNodeType.Condition,
+                Condition = new FilterCondition(
+                    jsProp,
+                    op,
+                    value,
+                    isString,
+                    false
+                )
+            };
+
+            return true;
+        }
+
+        private static string ExtractRootProperty(List<string> path)
+        {
+            if (path.Count < 2)
+                throw new InvalidOperationException("Invalid member access path.");
+
+            return path[^2] == "Value" && path.Count >= 3
+                ? path[^3]
+                : path[^2];
+        }
+
+
+        private bool TryRecognizeDateProperty(BinaryExpression bin, string operation, out FilterNode node)
+        {
+            node = null!;
+
+            var memberPath = GetMemberAccessPath(bin.Left);
+            if (memberPath == null || memberPath.Count < 2)
+                return false;
+
+            var finalSegment = memberPath[^1];
+            var rootSegment = memberPath[^2];
+
+            SearchPropEntry spe = PropertyMappingCache.GetTypeOfTProperties(typeof(T));
+
+            string rootPropName =  ExtractRootProperty(memberPath);
+            MagicPropertyEntry mpe = spe.GetPropertyByCsharpName(rootPropName);
+
+            string jsProp = mpe.JsPropertyName;            
+
+            if (!IsDateType(mpe.Property.PropertyType))
+                return false;
+
+            object? rawConst = ToConst(bin.Right).Value;
+
+            if (rawConst == null)
+                return false;
+
+            switch (finalSegment)
+            {
+                case "Date":
+                    node = BuildDateEqualityRange(jsProp, rawConst, operation);
+                    return true;
+
+                case "Year":
+                    node = BuildDateYearNode(jsProp, rawConst, operation);
+                    return true;
+
+                case "Month":
+                    node = BuildComponentCondition(jsProp, rawConst, operation, "Month");
+                    return true;
+
+                case "Day":
+                    node = BuildComponentCondition(jsProp, rawConst, operation, "Day");
+                    return true;
+
+                case "DayOfYear":
+                    node = BuildComponentCondition(jsProp, rawConst, operation, "GetDayOfYear");
+                    return true;
+
+                case "DayOfWeek":
+                    node = BuildDayOfWeekNode(jsProp, bin.Right, operation);
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        private FilterNode BuildDateYearNode(string jsProp, object value, string operation)
+        {
+            if (value is not int year)
+                throw new InvalidOperationException("Expected integer constant for .Year comparison");
+
+            string finalOp = operation switch
+            {
+                "Equal" => "DateYearEqual",
+                "NotEqual" => "NotDateYearEqual",
+                "GreaterThan" => "DateYearGreaterThan",
+                "GreaterThanOrEqual" => "DateYearGreaterThanOrEqual",
+                "LessThan" => "DateYearLessThan",
+                "LessThanOrEqual" => "DateYearLessThanOrEqual",
+                _ => throw new InvalidOperationException($"Unsupported operator '{operation}' for .Year")
+            };
+
+            return new FilterNode
+            {
+                NodeType = FilterNodeType.Condition,
+                Condition = new FilterCondition(
+                    jsProp,
+                    finalOp,
+                    year,
+                    false,
+                    false
+                )
+            };
+        }
+
+
+
+        private static bool IsDateType(Type type)
+        {
+            var actual = Nullable.GetUnderlyingType(type) ?? type;
+            return actual == typeof(DateTime) || actual == typeof(DateOnly);
+        }
+
+
+        private FilterNode BuildDateEqualityRange(string jsProp, object rawConst, string op)
+        {
+            if (rawConst is not DateTime dt)
+                throw new InvalidOperationException("Expected DateTime constant for .Date comparison");
+
+            DateTime startOfDay = dt.Date;
+            DateTime nextDay = startOfDay.AddDays(1);
+
+            if (op is "Equal")
+            {
+                return new FilterNode
+                {
+                    NodeType = FilterNodeType.Logical,
+                    Operator = FilterLogicalOperator.And,
+                    Children = new List<FilterNode>
+            {
+                new FilterNode
+                {
+                    NodeType = FilterNodeType.Condition,
+                    Condition = new FilterCondition(jsProp, "GreaterThanOrEqual", startOfDay, false, false)
+                },
+                new FilterNode
+                {
+                    NodeType = FilterNodeType.Condition,
+                    Condition = new FilterCondition(jsProp, "LessThan", nextDay, false, false)
+                }
+            }
+                };
+            }
+
+            // For <, <=, >, >=, NotEqual, etc.
+            return new FilterNode
+            {
+                NodeType = FilterNodeType.Condition,
+                Condition = new FilterCondition(jsProp, op, startOfDay, false, false)
+            };
+        }
+
+
+        private FilterNode BuildComponentCondition(string jsProp, object value, string operation, string component)
+        {
+            string finalOp = operation switch
+            {
+                "Equal" => $"{component}Equal",
+                "NotEqual" => $"Not{component}Equal",
+                "GreaterThan" => $"{component}GreaterThan",
+                "GreaterThanOrEqual" => $"{component}GreaterThanOrEqual",
+                "LessThan" => $"{component}LessThan",
+                "LessThanOrEqual" => $"{component}LessThanOrEqual",
+                _ => throw new InvalidOperationException($"Unsupported operator '{operation}' for .{component}")
+            };
+
+            return new FilterNode
+            {
+                NodeType = FilterNodeType.Condition,
+                Condition = new FilterCondition(jsProp, finalOp, value, false, false)
+            };
+        }
+
+
+        private FilterNode BuildDayOfWeekNode(string jsProp, Expression expr, string operation)
+        {
+            // Don't use ToConst because it wraps Convert(DayOfWeek.X) incorrectly
+            object? result = Expression.Lambda(expr).Compile().DynamicInvoke();
+
+            if (result is not DayOfWeek enumVal)
+                throw new InvalidOperationException("Expected DayOfWeek enum in .DayOfWeek comparison");
+
+            int jsDayOfWeek = (int)enumVal; // Sunday = 0 ... Saturday = 6
+
+            return BuildComponentCondition(jsProp, jsDayOfWeek, operation, "GetDayOfWeek");
+        }
+
+
+        private List<string>? GetMemberAccessPath(Expression expr)
+        {
+            var path = new List<string>();
+            while (expr is MemberExpression memberExpr)
+            {
+                path.Insert(0, memberExpr.Member.Name);
+                expr = memberExpr.Expression!;
+            }
+
+            return expr is ParameterExpression ? path : null;
+        }
+
 
 
         // ------------------------------
@@ -375,7 +657,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
             if (memberExpr == null || constExpr == null)
             {
                 throw new InvalidOperationException("Cannot build filter condition from null expressions.");
-            }
+            }           
 
             var propInfo = typeof(T).GetProperty(memberExpr.Member.Name);
             if (propInfo == null)
@@ -463,13 +745,28 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
         private static ConstantExpression ToConst(Expression expr)
         {
+            expr = StripConvert(expr); // <-- handle Convert wrappers
+
             return expr switch
             {
                 ConstantExpression c => c,
-                MemberExpression m => Expression.Constant(Expression.Lambda(m).Compile().DynamicInvoke()),
+
+                // e.g., new DateTime(...) or anything not marked constant but compile-safe
+                NewExpression or MemberExpression or MethodCallExpression =>
+                    Expression.Constant(Expression.Lambda(expr).Compile().DynamicInvoke()),
+
                 _ => throw new InvalidOperationException($"Unsupported or non-constant expression: {expr}")
             };
         }
-    }    // should stay as they are in their own files or namespaces.
+
+        private static Expression StripConvert(Expression expr)
+        {
+            while (expr is UnaryExpression unary && expr.NodeType == ExpressionType.Convert)
+            {
+                expr = unary.Operand;
+            }
+            return expr;
+        }
+    }
 }
 

@@ -357,6 +357,24 @@ namespace Magic.IndexedDb.Helpers
             return jsPropertyName; // Fallback to original name if not found
         }
 
+        public static MagicPropertyEntry GetPropertyByCsharpName(this SearchPropEntry propCachee, string csharpName)
+        {
+            string errorMsg = $"Error retrieving C# property by the name of '{csharpName}'.";
+            try
+            {
+                if (propCachee.propertyEntries.TryGetValue(csharpName, out var entry))
+                {
+                    return entry;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception(errorMsg, ex);
+            }
+
+            throw new Exception(errorMsg);
+        }
+
         public static string GetCsharpPropertyName(this SearchPropEntry propCachee, string jsPropertyName)
         {
             try

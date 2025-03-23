@@ -134,17 +134,10 @@ function optimizeSingleCondition(condition) {
         optimized.value = condition.value.toLowerCase();
     }
 
-    // Edge case: GETDAY sanity check
-    if (
-        condition.operation === QUERY_OPERATIONS.GETDAY &&
-        typeof condition.value !== "number"
-    ) {
-        console.warn(`[IndexedDB Warning] GETDAY expects a numeric day (1–31). Got:`, condition.value);
-    }
 
     // Generic numeric validation for date-based derived operations
     if (
-        [QUERY_OPERATIONS.GET_DAY_OF_WEEK, QUERY_OPERATIONS.GET_DAY_OF_YEAR, QUERY_OPERATIONS.GETDAY]
+        [QUERY_OPERATIONS.GET_DAY_OF_WEEK, QUERY_OPERATIONS.GET_DAY_OF_YEAR]
             .includes(condition.operation)
     ) {
         if (typeof condition.value !== "number") {
@@ -304,15 +297,6 @@ function getComparisonFunction(operation) {
         },
 
 
-
-        [QUERY_OPERATIONS.GETDAY]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) {
-                recordValue = new Date(recordValue);
-                if (isNaN(recordValue)) return false;
-            }
-            return recordValue.getDate() === queryValue;
-        },
-
         [QUERY_OPERATIONS.GET_DAY_OF_YEAR]: (recordValue, queryValue) => {
             if (!(recordValue instanceof Date)) {
                 recordValue = new Date(recordValue);
@@ -324,6 +308,78 @@ function getComparisonFunction(operation) {
             const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
             return dayOfYear === queryValue;
         },
+
+        [QUERY_OPERATIONS.GET_DAY_OF_WEEK]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) {
+                recordValue = new Date(recordValue);
+                if (isNaN(recordValue)) return false;
+            }
+
+            return recordValue.getDay() === queryValue;
+        },
+
+        // ------ MONTH OPERATIONS ------
+        [QUERY_OPERATIONS.MONTH_EQUAL]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && (recordValue.getMonth() + 1) === queryValue;
+        },
+
+        [QUERY_OPERATIONS.NOT_MONTH_EQUAL]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && (recordValue.getMonth() + 1) !== queryValue;
+        },
+
+        [QUERY_OPERATIONS.MONTH_GREATER_THAN]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && (recordValue.getMonth() + 1) > queryValue;
+        },
+
+        [QUERY_OPERATIONS.MONTH_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && (recordValue.getMonth() + 1) >= queryValue;
+        },
+
+        [QUERY_OPERATIONS.MONTH_LESS_THAN]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && (recordValue.getMonth() + 1) < queryValue;
+        },
+
+        [QUERY_OPERATIONS.MONTH_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && (recordValue.getMonth() + 1) <= queryValue;
+        },
+
+        // ------ DAY OPERATIONS ------
+        [QUERY_OPERATIONS.DAY_EQUAL]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDate() === queryValue;
+        },
+
+        [QUERY_OPERATIONS.NOT_DAY_EQUAL]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDate() !== queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_GREATER_THAN]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDate() > queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDate() >= queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_LESS_THAN]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDate() < queryValue;
+        },
+
+        [QUERY_OPERATIONS.DAY_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
+            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            return !isNaN(recordValue) && recordValue.getDate() <= queryValue;
+        },
+
 
         [QUERY_OPERATIONS.ENDS_WITH]: (recordValue, queryValue) =>
             typeof recordValue === "string" && recordValue.endsWith(queryValue),

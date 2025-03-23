@@ -355,12 +355,36 @@ await personQuery.Where(x => x.Name.Equals("John", StringComparison.OrdinalIgnor
 ### **✅ Deeply Nested `||` Conditions**
 
 ```csharp
-await personQuery.Where(x => (x.Age > 40 && x.TestInt == 9) || x.Name.Contains("bo")).ToListAsync();
+await personQuery.Where(p =>
+(
+    (p.TestInt == 9 || p.TestInt == 3 || p.TestInt == 7) &&
+    (
+        (p.Name == "Luna" || p.Name == "Jerry" || p.Name == "Jamie") ||
+        (p._Age >= 35 && p._Age <= 40) ||
+        (p.Name == "Zane" && p._Age > 45)
+    ) &&
+    (p._Age < 30 || p._Age > 50 || p._Age == 35)
+)).ToListAsync();
 ```
 
-- **IndexedDB does not natively support this!**
-- **Magic IndexedDB’s flattening algorithm makes it possible**.
-	- Though it's highly advised to limit your nested || conditions. And when you are utilizing such nested conditions, it's best to utilize as many indexed queries as possible.
+- **IndexedDB can’t handle this.**
+- **Magic IndexedDB eats it for breakfast.** 😎
+    - The universal layer **flattens, optimizes, and rewires** your predicates without reflection or runtime overhead. It's all occurring through the universal layer with tree mappings.    
+    - **Yes, it’s real. No, it’s not lazy.** This is hyper optimized.
+    - You write clean logic — **Magic IndexedDB handles the madness.**
+    - Shouldn't this take **720+ operations** when flattened? 
+
+##### ❓**Mini FAQ — Wait, What?!**
+
+> **🧮 Shouldn’t this take like 720+ operations when flattened?**  
+> **Nope.** Magic’s partitioning engine actually collapses this example it into just **1 or 2 operations**.  
+
+---
+
+> **🔍 But you can’t use Indexed queries with logic like this, right?**  
+> **Why do you keep thinking there's limitations? This is Magic!**  
+> If your schema supports the fields, **Magic still uses Indexed queries**.  
+> I'm a _“make my cake and eat it too”_ kind of guy — and Magic IndexedDB is the entire damn bakery.
 
 ---
 
@@ -460,7 +484,20 @@ await personQuery.Where(x => x.Name.Equals("John", StringComparison.OrdinalIgnor
 ### **✅ Deeply Nested `||` Conditions**
 
 ```csharp
-await personQuery.Where(x => (x.Age > 40 && x.TestInt == 9) || x.Name.Contains("bo")).ToListAsync();
+await personQuery.Where(p =>
+(
+(p.TestInt == 9 || p.TestInt == 3 || p.TestInt == 7)
+&&
+(
+    (p.Name == "Luna" || p.Name == "Jerry" || p.Name == "Jamie")
+    || (p._Age >= 35 && p._Age <= 40)
+    || (p.Name == "Zane" && p._Age > 45)
+)
+&&
+(
+    p._Age < 30 || p._Age > 50 || p._Age == 35
+)
+)).ToListAsync();
 ```
 
 > **IndexedDB does NOT support deeply nested `||` operations** by default.  
@@ -527,19 +564,20 @@ The following **table defines the operations available** and how they interact.
 
 ### **🕒 Date & Time Query Support (C# Style)**
 
-|**DateTime / DateOnly Operation**|**Description**|**IndexedDB Optimized?**|
-|---|---|---|
-|`x == DateTime(2020, 5, 1)`|Exact DateTime match|✅ Yes (translated to range)|
-|`x > DateTime(2023, 1, 1)`|Greater than a specific DateTime|✅ Yes (translated to range)|
-|`x >= DateTime(2023, 1, 1)`|Greater or equal|✅ Yes (translated to range)|
-|`x < DateTime(2023, 1, 1)`|Less than a specific DateTime|✅ Yes (translated to range)|
-|`x <= DateTime(2023, 1, 1)`|Less or equal|✅ Yes (translated to range)|
-|`x.Date == DateOnly(2023, 10, 15)`|Match by calendar date (ignoring time)|✅ Yes (translated to range)|
-|`x.Year == 2023`|Filters by year|✅ Yes (translated to range)|
-|`x.Month == 7`|Filters by month|✅ Yes (translated to range)|
-|`x.Day == 4`|Filters by day of the month|🚫 Cursor Required|
-|`x.DayOfWeek == DayOfWeek.Monday`|Filters by day of the week (Sunday = 0)|🚫 Cursor Required|
-|`x.DayOfYear == 128`|Filters by day of the year|🚫 Cursor Required|
+| **DateTime / DateOnly Operation**  | **Description**                         | **IndexedDB Optimized?**    |
+| ---------------------------------- | --------------------------------------- | --------------------------- |
+| `x == DateTime(2020, 5, 1)`        | Exact DateTime match                    | ✅ Yes (translated to range) |
+| `x > DateTime(2023, 1, 1)`         | Greater than a specific DateTime        | ✅ Yes (translated to range) |
+| `x >= DateTime(2023, 1, 1)`        | Greater or equal                        | ✅ Yes (translated to range) |
+| `x < DateTime(2023, 1, 1)`         | Less than a specific DateTime           | ✅ Yes (translated to range) |
+| `x <= DateTime(2023, 1, 1)`        | Less or equal                           | ✅ Yes (translated to range) |
+| `x.Date == DateOnly(2023, 10, 15)` | Match by calendar date (ignoring time)  | ✅ Yes (translated to range) |
+| `x.MyDate.Year == 2023`            | Filters by year                         | ✅ Yes (translated to range) |
+| `x.MyDate.Month == 7`              | Filters by month                        | ✅ Yes (translated to range) |
+| `x.Day == 4`                       | Filters by day of the month             | 🚫 Cursor Required          |
+| `x.DayOfWeek == DayOfWeek.Monday`  | Filters by day of the week (Sunday = 0) | 🚫 Cursor Required          |
+| `x.DayOfYear == 128`               | Filters by day of the year              | 🚫 Cursor Required          |
+- Supported operations: `Date`, `Month`, `Year`, `Day`, `DayOfWeek`, or `DayOfYear`.
 
 ---
 
@@ -621,7 +659,23 @@ await personQuery.OrderBy(x => x.Age).LastOrDefaultAsync();
 
 ---
 
-## **8. Summary – Writing Efficient LINQ to IndexedDB Queries**
+## **Quick "good to know"**
+
+1.) Use `Contains` for both strings and arrays:
+```cs
+int[] myArray = { 38, 39 };
+await personQuery.Where(x => myArray.Contains(x._Age)
+```
+- This works for arrays in both directions.
+
+2.) `.Cursor(x => Your_Predicate)` allows different paths than the `.Where` and supports current and future planned operations like `.Min`, `.Max`, and `.Select`.
+- Biggest TLDR of why `.Cursor` is different from `.Where` is that when using `.Cursor` there is no way an indexed query will fire. The `.Where` doesn't guarantee an index query fires, but it means it's not impossible.
+
+3.) Utilizing capabilities like `x.Item == null` || `x.Item != null` is fully supported. But it's important to remember this translation asks if it's both directly set as null, is string empty (if a string), or is an undefined column.
+
+4.) Try to avoid when possible querying with, `x.Item.Value` on nullable variables. It can throw the serializer off. For supported appended operations like, `.Length`, `.Year`, `.GetDay`, `.GetDayOfWeek`, `.GetDayOfYear`. These and a few others are the only time you should use the `.Value` appended to your predicate, as in Csharp it's the only way to allow you to do this to nullable values, `x.Item.Value.Length`. Which is the only reason it's supported in any scenario.
+
+## **Writing Efficient LINQ to IndexedDB Queries**
 
 ✅ **Use `.Where()` for optimal IndexedDB queries.**  
 ✅ **Use `.Cursor()` only when necessary** (e.g., advanced filtering).  
@@ -651,3 +705,4 @@ There's more syntax to be aware of! Did you know you don't need to worry about o
 There's a bit more to learn to fully understand how to utilized the library, so please continue reading:
 
 🔗 **Learn More: [Read the Utility Guide](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Fundamentals/P1.5-Utility.md)**.
+

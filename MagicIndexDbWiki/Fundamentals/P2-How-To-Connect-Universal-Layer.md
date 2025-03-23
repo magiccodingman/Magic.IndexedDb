@@ -85,34 +85,33 @@ Absolutely — here's the cleaned-up, fully updated, and **well-organized** vers
 
 #### 📅 Date Operations
 
-|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
-|---|---|---|---|
-|`x.Day == X`|`GetDay`|Day of the month (1-31)|🚫 Cursor Required|
-|`x.DayOfWeek == X`|`GetDayOfWeek`|Day of week (Sunday = 0, Saturday = 6)|🚫 Cursor Required|
-|`x.DayOfYear == X`|`GetDayOfYear`|Day of year (1-366)|🚫 Cursor Required|
+| **Operator**       | **JavaScript Key** | **Description**                        | **IndexedDB Optimized?** |
+| ------------------ | ------------------ | -------------------------------------- | ------------------------ |
+| `x.DayOfWeek == X` | `GetDayOfWeek`     | Day of week (Sunday = 0, Saturday = 6) | 🚫 Cursor Required       |
+| `x.DayOfYear == X` | `GetDayOfYear`     | Day of year (1-366)                    | 🚫 Cursor Required       |
 
 ---
 
 #### 🧪 Type Checks
 
-|**Operator**|**JavaScript Key**|**Description**|**IndexedDB Optimized?**|
-|---|---|---|---|
-|`typeof x === "number"`|`TypeOfNumber`|Value is a number|🚫 Cursor Required|
-|`typeof x === "string"`|`TypeOfString`|Value is a string|🚫 Cursor Required|
-|`x instanceof Date`|`TypeOfDate`|Value is a valid Date|🚫 Cursor Required|
-|`Array.isArray(x)`|`TypeOfArray`|Value is an array|🚫 Cursor Required|
-|`typeof x === "object"`|`TypeOfObject`|Value is a plain object|🚫 Cursor Required|
-|`x instanceof Blob`|`TypeOfBlob`|Value is a Blob|🚫 Cursor Required|
-|`x instanceof ArrayBuffer`|`TypeOfArrayBuffer`|Value is an ArrayBuffer or typed array|🚫 Cursor Required|
-|`x instanceof File`|`TypeOfFile`|Value is a File|🚫 Cursor Required|
-|`!(typeof x === "number")`|`NotTypeOfNumber`|Value is **not** a number|🚫 Cursor Required|
-|`!(typeof x === "string")`|`NotTypeOfString`|Value is **not** a string|🚫 Cursor Required|
-|`!(x instanceof Date)`|`NotTypeOfDate`|Value is **not** a valid Date|🚫 Cursor Required|
-|`!Array.isArray(x)`|`NotTypeOfArray`|Value is **not** an array|🚫 Cursor Required|
-|`!(typeof x === "object")`|`NotTypeOfObject`|Value is **not** a plain object|🚫 Cursor Required|
-|`!(x instanceof Blob)`|`NotTypeOfBlob`|Value is **not** a Blob|🚫 Cursor Required|
-|`!(x instanceof ArrayBuffer)`|`NotTypeOfArrayBuffer`|Value is **not** an ArrayBuffer or typed array|🚫 Cursor Required|
-|`!(x instanceof File)`|`NotTypeOfFile`|Value is **not** a File|🚫 Cursor Required|
+| **Operator**                  | **JavaScript Key**     | **Description**                                | **IndexedDB Optimized?** |
+| ----------------------------- | ---------------------- | ---------------------------------------------- | ------------------------ |
+| `typeof x === "number"`       | `TypeOfNumber`         | Value is a number                              | 🚫 Cursor Required       |
+| `typeof x === "string"`       | `TypeOfString`         | Value is a string                              | 🚫 Cursor Required       |
+| `x instanceof Date`           | `TypeOfDate`           | Value is a valid Date                          | 🚫 Cursor Required       |
+| `Array.isArray(x)`            | `TypeOfArray`          | Value is an array                              | 🚫 Cursor Required       |
+| `typeof x === "object"`       | `TypeOfObject`         | Value is a plain object                        | 🚫 Cursor Required       |
+| `x instanceof Blob`           | `TypeOfBlob`           | Value is a Blob                                | 🚫 Cursor Required       |
+| `x instanceof ArrayBuffer`    | `TypeOfArrayBuffer`    | Value is an ArrayBuffer or typed array         | 🚫 Cursor Required       |
+| `x instanceof File`           | `TypeOfFile`           | Value is a File                                | 🚫 Cursor Required       |
+| `!(typeof x === "number")`    | `NotTypeOfNumber`      | Value is **not** a number                      | 🚫 Cursor Required       |
+| `!(typeof x === "string")`    | `NotTypeOfString`      | Value is **not** a string                      | 🚫 Cursor Required       |
+| `!(x instanceof Date)`        | `NotTypeOfDate`        | Value is **not** a valid Date                  | 🚫 Cursor Required       |
+| `!Array.isArray(x)`           | `NotTypeOfArray`       | Value is **not** an array                      | 🚫 Cursor Required       |
+| `!(typeof x === "object")`    | `NotTypeOfObject`      | Value is **not** a plain object                | 🚫 Cursor Required       |
+| `!(x instanceof Blob)`        | `NotTypeOfBlob`        | Value is **not** a Blob                        | 🚫 Cursor Required       |
+| `!(x instanceof ArrayBuffer)` | `NotTypeOfArrayBuffer` | Value is **not** an ArrayBuffer or typed array | 🚫 Cursor Required       |
+| `!(x instanceof File)`        | `NotTypeOfFile`        | Value is **not** a File                        | 🚫 Cursor Required       |
 
 ---
 

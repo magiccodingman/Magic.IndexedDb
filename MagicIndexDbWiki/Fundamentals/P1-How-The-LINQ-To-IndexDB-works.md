@@ -388,6 +388,23 @@ While **Magic IndexedDB optimizes cursor queries**, **they are still slower than
 
 ---
 
+## Cursor Undefined Columns Danger
+
+A major philosophy of this project is to never fail client side. Because failure would be catastrophic for disconnected client side storage. So, lets go over an example of a real world scenario that the cursor can handle, but how it handles it is important.
+
+#### Example
+You create a table with the columns of, "id, name, age". This is now on the table for all users. But then you add a new column in a future update that isn't indexed and is called, "dateOfBirth". If you then write a LINQ query looking for "dateOfBirth", the cursor will try to access this column that's undefined. Since part of the users database in history had only 3 columns, but now all future additions have 4 columns, this creates a disconnect where the table has a difference in columns between rows.
+
+### Cursor Fallback
+In this scenario, the cursor will recognize that it's about to access a column that's undefined. It will proceed to skip this entire row from the query entirely. If it can't fire all your desired predicate operations, then none will fire on that row. This is to prevent client side failure and retrieval of data that is unwanted.
+
+### The Fix?
+Well there isn't necessary a "fix". Instead best practices should always be at play. As the Magic IndexedDB migration system is rolling out, this will help handle and prevent these scenarios by updating old records on your behalf to defaults during the migration process, making this a non issue.
+
+But until that's fully released or if you're not utilizing Magic IndexedDB's migration system. Then you will want to be sure when updating your schema to always make sure columns are defined and set to proper defaults.
+
+---
+
 ## **💡 Magic IndexedDB is Evolving—Help Make it Even Better!**
 
 Magic IndexedDB **pushes IndexedDB to its absolute limits**, but **there’s always room for improvement**! Want to see **even more optimizations?** Have an idea for **new features**? **Join the project** and help make IndexedDB the **powerful database it should be!** 🚀
