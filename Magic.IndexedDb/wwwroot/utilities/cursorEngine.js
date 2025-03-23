@@ -14,11 +14,10 @@ import { rebuildCursorConditionsToPredicateTree } from "./rebuildNestedPredicate
  * @returns {Promise<Array>} - Filtered results based on conditions.
  */
 export async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
-    var test = rebuildCursorConditionsToPredicateTree(conditions);
-    debugLog(test);
-    //t4
-    //debugLog(conditionsoks);
-    debugLog("Running Cursor Query with Conditions", { conditions, queryAdditions });
+
+    const structuredPredicateTree = rebuildCursorConditionsToPredicateTree(conditions);
+
+    debugLog("Running Cursor Query with Conditions", { structuredPredicateTree, queryAdditions });
 
     const requiresMetaProcessing = queryAdditions.some(a =>
         [QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.FIRST, QUERY_ADDITIONS.LAST, QUERY_ADDITIONS.TAKE_LAST].includes(a.additionFunction)
@@ -26,7 +25,7 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
 
     if (requiresMetaProcessing) {
         // **Metadata Path: Extract primary keys and sorting properties**
-        let primaryKeyList = await runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys);
+        let primaryKeyList = await runMetaDataCursorQuery(db, table, structuredPredicateTree, queryAdditions, yieldedPrimaryKeys, compoundKeys);
 
         // **Apply sorting, take, and skip operations**
         let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys);
@@ -38,7 +37,7 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
         return finalRecords; // Ready for yielding
     } else {
         // **Direct Retrieval Path: Skip metadata processing & fetch full records immediately**
-        return await runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, compoundKeys);
+        return await runDirectCursorQuery(db, table, structuredPredicateTree, yieldedPrimaryKeys, compoundKeys);
     }
 }
 
@@ -48,53 +47,76 @@ let lastCursorWarningTime = null;
  * Generalized cursor processing function for both metadata extraction and direct record retrieval.
  * @param {Function} recordHandler - Callback function to process each record.
  */
-async function processCursorRecords(db, table, conditions, yieldedPrimaryKeys, compoundKeys, recordHandler) {
+async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys, compoundKeys, recordHandler) {
     debugLog("Processing Cursor Records");
 
-    let now = Date.now();
+    const now = Date.now();
     let shouldLogWarning = !lastCursorWarningTime || now - lastCursorWarningTime > 10 * 60 * 1000;
-    let optimizedConditions = conditions.map(optimizeConditions);
-    let requiredPropertiesFiltered = [...new Set(conditions.flatMap(group => group.map(c => c.property)))];
+
+    // Dynamically extract all required properties from the predicate tree
+    const requiredPropertiesFiltered = new Set();
+    collectPropertiesFromTree(predicateTree, requiredPropertiesFiltered);
 
     await db.transaction('r', table, async () => {
         await table.orderBy(compoundKeys[0]).each((record) => {
-            let missingProperties = null;
-
-            // **Check for missing required properties**
+            // Skip if required property is missing
             for (const prop of requiredPropertiesFiltered) {
                 if (record[prop] === undefined) {
-                    if (!missingProperties) missingProperties = [];
-                    missingProperties.push(prop);
-                    break;
+                    if (shouldLogWarning) {
+                        console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing property: ${prop}`);
+                        lastCursorWarningTime = now;
+                        shouldLogWarning = false;
+                    }
+                    return;
                 }
             }
 
-            if (missingProperties) {
-                if (shouldLogWarning) {
-                    console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing properties: ${missingProperties.join(", ")}`);
-                    lastCursorWarningTime = now;
-                    shouldLogWarning = false;
-                }
-                return;
-            }
-
-            let recordKey = normalizeCompoundKey(compoundKeys, record);
-
+            const recordKey = normalizeCompoundKey(compoundKeys, record);
             if (hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                 return;
             }
 
-            // **Apply filtering conditions using early exit**
-            let passesConditions = optimizedConditions.some(andConditions =>
-                andConditions.every(condition => applyCondition(record, condition))
-            );
-            if (!passesConditions) return;
+            // Evaluate the structured predicate tree
+            if (!evaluatePredicateTree(predicateTree, record)) return;
 
-            // **Delegate to the handler (metadata or direct retrieval)**
             recordHandler(record, recordKey);
         });
     });
 }
+
+function collectPropertiesFromTree(node, propertySet) {
+    if (node.nodeType === "condition") {
+        propertySet.add(node.condition.property);
+        return;
+    }
+    for (const child of node.children) {
+        collectPropertiesFromTree(child, propertySet);
+    }
+}
+
+function evaluatePredicateTree(node, record) {
+    if (node.nodeType === "condition") {
+        const condition = optimizeSingleCondition(node.condition);
+        return applyCondition(record, condition);
+    }
+
+    const results = node.children.map(child => evaluatePredicateTree(child, record));
+    return node.operator === "And"
+        ? results.every(r => r)
+        : results.some(r => r);
+}
+
+function optimizeSingleCondition(condition) {
+    let optimized = { ...condition };
+
+    if (!condition.caseSensitive && typeof condition.value === "string") {
+        optimized.value = condition.value.toLowerCase();
+    }
+
+    optimized.comparisonFunction = getComparisonFunction(condition.operation);
+    return optimized;
+}
+
 
 /**
  * Directly retrieves records that match the conditions without metadata processing.

@@ -19,19 +19,12 @@ export function rebuildCursorConditionsToPredicateTree(flattened) {
         }))
     };
 
-    // Step 2: Extract grouped conditions dynamically
-    let branches = orRoot.children.map(andNode => andNode.children);
-    const intentGroups = extractDynamicIntentGroups(branches);
+    // Step 2: Simplify redundant ANDs if possible
+    const simplified = fixpointSimplify(orRoot);
 
-    // Step 3: Rebuild AND of ORs (with sub-ANDs if needed)
-    const top = {
-        nodeType: "logical",
-        operator: "And",
-        children: intentGroups
-    };
-
-    return fixpointSimplify(top);
+    return simplified;
 }
+
 
 function extractDynamicIntentGroups(branches) {
     const conditionMap = new Map();
