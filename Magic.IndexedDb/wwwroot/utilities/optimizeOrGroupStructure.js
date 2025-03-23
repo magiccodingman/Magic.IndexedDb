@@ -5,8 +5,6 @@ import { debugLog } from "./utilityHelpers.js";
  * Fully rebuilt OR group optimizer for truth-preserving reduction.
  */
 export function optimizeOrGroupStructure(nestedOrFilter) {
-    console.log('non optimized');
-    console.log(nestedOrFilter);
 
     // Support both { orGroups: [...] } and raw OR group arrays [ ... ]
     const orGroupArray = Array.isArray(nestedOrFilter?.orGroups)
@@ -48,7 +46,6 @@ export function optimizeOrGroupStructure(nestedOrFilter) {
     const optimizedGroups = groupMaps.map(m => ({
         andGroups: [{ conditions: mapToConditionsArray(m) }]
     }));
-    console.log(optimizedGroups);
     return optimizedGroups;
 }
 
