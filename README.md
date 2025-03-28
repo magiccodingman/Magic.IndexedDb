@@ -1,7 +1,7 @@
 # True LINQ to IndexedDB - Magic IndexedDb
-This project is currently under a massive refactor that has successfully built the first true LINQ to IndexedDB translation layer. Currently the released version is `v1.0.12` which is the last update to the version 1.0 era. Documentation is now being updated to reflect the very soon release of version 2.0 but until then, if you see this message. Then version 1.0 is still the supported release but [click here to go to the legacy documentation for `v1.0.12`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Version-1.0-Legacy.md).
+This project is currently under a massive refactor that has successfully built the first true LINQ to IndexedDB translation layer. The large refactor is labeled under `v2.0`, but the last stable update was `v1.0.12`. You can find documentation on the v1.0 era [click here to go to the legacy documentation for `v1.0.12`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Version-1.0-Legacy.md).
 
-Note the migration system is under construction. When this is finished, all version 1.0 documentation will cease to exist anywhere but in the legacy documentation area. Version 1.0 will become completely unsupported. 
+Note the migration system is under construction. Stability of the query engine and implementation of the migration system is when v2.0 will be considered fully complete.
 
 # **Introduction to LINQ to IndexedDB – The Revolution Begins**
 
@@ -66,7 +66,7 @@ Additionally this library has self validation which guides you the best it can t
 However, just as **LINQ to SQL is not identical to in-memory LINQ**, **LINQ to IndexedDB also has nuances**. It’s important to understand how your queries are translated and where indexes vs. cursors will be used. Understanding how LINQ to IndexedDB works is important to building optimized queries. Just like in LINQ to SQL where you can build queries accidentally that are not performant, the same idea stands true here!
 
 It's important that you read the LINQ to IndexedDB documentation to truly understand what's going on so you can use IndexedDB like a pro:
-## [Click Here to Get Started - Magic IndexedDB Documentation](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Index.md)
+## [Click Here to Get Started - Magic IndexedDB Documentation](https://sayou.biz/Magic-IndexedDB-Index)
 
 ## Blazor
 And for us Blazor users. Not only is this powerful, but we obviously get something truly amazing! Built in true yield based AsAsyncEnumerator operations, built in streamed responses for uncapped message limits, and so much more!
