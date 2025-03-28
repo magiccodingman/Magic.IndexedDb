@@ -4,41 +4,8 @@ The following documentation is for `v1.0.12` and is legacy documentation. The ut
 
 This open source library provides an IndexedDb wrapper for C# and Blazor WebAssembly applications. It simplifies working with IndexedDb and makes it similar to using LINQ to SQL.
 
-**Nuget Package Link**: https://www.nuget.org/packages/Magic.IndexedDb
-
-## Future Planned Features
-
-#### TO DO:
-- [ ] C#/Blazor side controlled database migrations.
-- [ ] Deferred execution of table joins. I want c# join abilities to properly join tables together. This will likely be an emulated strategy in C# due to IndexDB being a non relational database without true capabilities to achieve this.
-- [ ] Reset Primary Key starting Id
-- [ ] Compound Key Indexing
-- [ ] `Select(x => x.Name)` based query statements. Utilizing Cursors to emulate effecient LINQ based Select statements to grab only desired columns.
-
-#### Completed:
-- [X] Allow Any and/or All Linq statements inside the WHERE query
-- [X] Handling of Nested OR conditions in where query
-- [X] API like response protocal from JS. This will allow better debugging and make it easier to expand the code. I left the original weak reference system build by nwestfall, but I will be removing that code for a system I believe is easier to tame and more appropriate for the project goals.
-- [X] **Completely custom serializer implmented. This isn't just system reflections, this is as fast as you get.**
-- [X] **Long Term** - NET 8 provides AOT features that I think could be extremely abusive in a good way for this project. I believe with future NET 8 possibilites and AOT, I can move IndexedDB into being a multi thread monster and various other performance improvements. Obviously I'd make this optional. But I believe there's some very interesting possibilities I'd like to experiment with in the future.
-
-## Table of Contents
-
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Setting up the project](#setting-up-the-project)
-  - [Creating a class with Magic attributes](#creating-a-class-with-magic-attributes)
-  - [Using the DbManager](#using-the-dbmanager)
-- [Attributes](#attributes)
-- [Where Method MagicQuery syntax](#Where-Method-MagicQuery-syntax)
-- [Standard Operations](#standard-operations)
-- [String Comparison Functions](#string-comparison-functions)
-  - [Contains](#contains)
-  - [StartsWith](#startswith)
-  - [Equals](#equals)
-- [Case Insensitive String Comparison](#case-insensitive-string-comparison)
-- [Examples](#examples)
-- [Acknowledgements](#acknowledgements)
+[**Nuget Package Link `v1.0.12`**](https://www.nuget.org/packages/Magic.IndexedDb/1.0.12)
+- This is the last stable update/patch to v1.0 and no further updates will be provided for v1.
 
 ## Installation
 
