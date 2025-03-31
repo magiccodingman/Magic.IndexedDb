@@ -1,5 +1,7 @@
 # True LINQ to IndexedDB - Magic IndexedDb
-This project is currently under a massive refactor that has successfully built the first true LINQ to IndexedDB translation layer. The large refactor is labeled under `v2.0`, but the last stable update was `v1.0.12`. You can find documentation on the v1.0 era [click here to go to the legacy documentation for `v1.0.12`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Version-1.0-Legacy.md).
+For those who have not yet upgraded to the new `v2.0.0` the old legacy documentation is archived here:
+
+[click here to go to the legacy documentation for `v1.0.12`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Version-1.0-Legacy.md).
 
 Note the migration system is under construction. Stability of the query engine and implementation of the migration system is when v2.0 will be considered fully complete.
 
