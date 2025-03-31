@@ -232,13 +232,13 @@ namespace Magic.IndexedDb.Helpers
             schema.PrimaryKeyAuto = compoundKey.AutoIncrement; // AutoIncrement only applies to single primary keys
 
             // Extract Unique Indexes
-            schema.UniqueIndexes = type.GetProperties()
+            schema.UniqueIndexes = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
                 .Where(prop => PropertyMappingCache.GetPropertyEntry(prop, type).UniqueIndex)
                 .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
                 .ToList();
 
             // ✅ Extract Standard Indexes
-            schema.Indexes = type.GetProperties()
+            schema.Indexes = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
                 .Where(prop => PropertyMappingCache.GetPropertyEntry(prop, type).Indexed)
                 .Select(prop => PropertyMappingCache.GetJsPropertyName(prop, type))
                 .ToList();

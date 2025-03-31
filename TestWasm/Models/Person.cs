@@ -68,6 +68,9 @@ namespace TestWasm.Models
         public string DoNotMapTest { get; set; }
 
         [MagicNotMapped]
+        public static string DoNotMapTest2 { get; set; }
+
+        [MagicNotMapped]
         public string SecretDecrypted { get; set; }
 
         private bool testPrivate { get; set; } = false;
