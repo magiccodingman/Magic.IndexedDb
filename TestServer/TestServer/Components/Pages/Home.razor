@@ -6,6 +6,7 @@
 @using TestWasm.Models
 @using TestWasm.Repository
 @using System.Linq;
+@rendermode InteractiveServer
 
 @inject IMagicIndexedDb _MagicDb
 
@@ -110,10 +111,10 @@
 <br />
 <h3>Complex query capabilities!</h3>
 <pre>
-    <code>
-        <span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
-        <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
-        <span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
+<code>
+<span style="color: #2A56C6;">await</span> manager.<span style="color: #2A56C6;">Where</span><span style="color: #A31515;">&lt;Person&gt;</span>(x =&gt; x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"c"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
+<span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"l"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>)
+<span style="color: #2A56C6;">||</span> x.Name.<span style="color: #2A56C6;">StartsWith</span>(<span style="color: #A31515;">"j"</span>, <span style="color: #2A56C6;">StringComparison</span>.<span style="color: #2A56C6;">OrdinalIgnoreCase</span>) <span style="color: #2A56C6;">&amp;&amp;</span> x._Age <span style="color: #2A56C6;">&gt;</span> <span style="color: #2A56C6;">35</span>
         ).<span style="color: #2A56C6;">OrderBy</span>(x =&gt; x._Id).<span style="color: #2A56C6;">Skip</span>(<span style="color: #2A56C6;">1</span>).<span style="color: #2A56C6;">ToListAsync</span>();
     </code>
 </pre>
