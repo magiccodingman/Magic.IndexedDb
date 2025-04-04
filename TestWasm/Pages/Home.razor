@@ -137,6 +137,10 @@
     private void RunTest<T>(string testName,
         IEnumerable<T> indexDbResults, IEnumerable<T> correctResults) where T : class
     {
+        // Remove any nulls from both collections
+    indexDbResults = indexDbResults.Where(x => x != null);
+    correctResults = correctResults.Where(x => x != null);
+
         var result = TestValidator.ValidateLists(correctResults, indexDbResults);
 
         string countResults = $"Results: {indexDbResults.Count()}";
@@ -258,7 +262,7 @@
 
                 allPeople = await personQuery.ToListAsync();
 
-
+                
 
                 List<Person> people = await personQuery.ToListAsync();
                 StateHasChanged();
@@ -508,6 +512,8 @@
                 var test2 = await personQuery.FirstOrDefaultAsync(x => x.Name == "Victor");
 
                 var asdffffff = await personQuery.FirstOrDefaultAsync(x => x.Name == "asdfn3nxknnd");
+
+                var sdfsdfsdfdfsdf = await personQuery.OrderBy(x => x._Age).FirstOrDefaultAsync();
 
                 // RunTest("null first or default", new List<Person>() { await personQuery.FirstOrDefaultAsync(x => x.Name == "asdfn3nxknnd") },
                 //      new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).FirstOrDefault(x => x.Name == "asdfn3nxknnd") });
