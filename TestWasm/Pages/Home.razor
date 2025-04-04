@@ -138,8 +138,8 @@
         IEnumerable<T> indexDbResults, IEnumerable<T> correctResults) where T : class
     {
         // Remove any nulls from both collections
-    indexDbResults = indexDbResults.Where(x => x != null);
-    correctResults = correctResults.Where(x => x != null);
+        indexDbResults = indexDbResults.Where(x => x != null);
+        correctResults = correctResults.Where(x => x != null);
 
         var result = TestValidator.ValidateLists(correctResults, indexDbResults);
 
@@ -262,9 +262,6 @@
 
                 allPeople = await personQuery.ToListAsync();
 
-                
-
-                List<Person> people = await personQuery.ToListAsync();
                 StateHasChanged();
 
                 //await manager.ClearTableAsync<Person>();
