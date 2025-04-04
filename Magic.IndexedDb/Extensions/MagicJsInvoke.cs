@@ -142,7 +142,9 @@ namespace Magic.IndexedDb.Extensions
         }
 
         private async IAsyncEnumerable<T?> MagicYieldJsAsync<T>(
-    string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
+            string modulePath, string functionName, 
+            [EnumeratorCancellation] CancellationToken token, 
+            params ITypedArgument[] args)
         {
             var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
 
