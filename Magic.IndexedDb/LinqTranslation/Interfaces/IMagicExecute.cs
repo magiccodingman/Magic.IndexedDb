@@ -18,7 +18,7 @@ namespace Magic.IndexedDb.LinqTranslation.Interfaces
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default);
+        IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// The order you apply does get applied correctly in the query, 

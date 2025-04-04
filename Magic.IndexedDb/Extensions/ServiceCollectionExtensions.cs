@@ -41,7 +41,7 @@ namespace Magic.IndexedDb
             long jsMessageSizeBytes, bool isDebug)
         {
             services.AddScoped<IMagicIndexedDb>(sp =>
-        new MagicDbFactory(sp, sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes));
+                new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes));
 
             if (isDebug)
             {

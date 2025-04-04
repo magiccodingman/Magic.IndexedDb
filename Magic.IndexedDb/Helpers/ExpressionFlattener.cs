@@ -200,11 +200,11 @@ namespace Magic.IndexedDb.Helpers
         {
             public static readonly LogicalExpressionComparer Instance = new();
 
-            public bool Equals(Expression x, Expression y) => Compare(x, y) == 0;
+            public bool Equals(Expression? x, Expression? y) => Compare(x, y) is 0;
 
             public int GetHashCode(Expression obj) => obj.ToString().GetHashCode();
 
-            public int Compare(Expression x, Expression y)
+            public int Compare(Expression? x, Expression? y)
             {
                 if (ReferenceEquals(x, y)) return 0;
                 if (x is null) return -1;

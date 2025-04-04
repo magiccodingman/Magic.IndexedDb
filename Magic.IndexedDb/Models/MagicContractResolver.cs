@@ -159,9 +159,9 @@ namespace Magic.IndexedDb.Models
                         object? value = ReadPropertyValue(ref reader, mpe, options);
                         propertyValues[csharpPropertyName] = value;
                     }
-                    catch (Exception ex)
+                    catch
                     {
-
+                        // do nothing
                     }
                 }
                 else
@@ -324,9 +324,9 @@ namespace Magic.IndexedDb.Models
         /// <summary>
         /// 🔥 Serializes lists (IEnumerable)
         /// </summary>
-        private bool SerializeIEnumerable(Utf8JsonWriter writer, object value, JsonSerializerOptions options)
+        private bool SerializeIEnumerable(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
         {
-            if (value == null)
+            if (value is null)
             {
                 writer.WriteNullValue();
                 return true;
