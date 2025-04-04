@@ -158,9 +158,6 @@
     {
         if (firstRender)
         {
-            try
-            {
-
                 // Targets the default database automatically if called without any parameters.
                 IMagicQuery<Person> personQuery = await _MagicDb.Query<Person>();
                 await personQuery.ClearTable();
@@ -758,11 +755,6 @@
 
 
                 StateHasChanged();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-            }
         }
     }
 }
