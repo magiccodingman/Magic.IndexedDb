@@ -1,4 +1,4 @@
-"use strict";
+ï»¿"use strict";
 
 /// <reference types="./dexie/dexie.d.ts" />
 import Dexie from "./dexie/dexie.js";
@@ -201,7 +201,7 @@ export async function deleteDb(dbName) {
             }
         } catch (openErr) {
             console.warn(`deleteDb: Couldn't open DB '${dbName}' before deletion. Proceeding anyway.`, openErr);
-            // Still proceed — might be locked or unopened in current context
+            // Still proceed ï¿½ might be locked or unopened in current context
         }
 
         await Dexie.delete(dbName);
@@ -456,7 +456,7 @@ export async function bulkDelete(dbName, storeName, items) {
  */
 export async function deleteItem(item) {
     const table = await getTable(item.dbName, item.storeName);
-    const key = await formatKey(item.dbName, item.storeName, item);
+    const key = await formatKey(item.dbName, item.storeName, item.record);
     await table.delete(key);
 }
 
