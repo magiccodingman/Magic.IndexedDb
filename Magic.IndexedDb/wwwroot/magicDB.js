@@ -433,6 +433,19 @@ export async function bulkUpdateItem(items) {
     }
 }
 
+async function getKeyArrayForDelete(dbName, storeName, keyData) {
+    const keyInfo = await getPrimaryKey(dbName, storeName);
+
+    if (!keyInfo.isCompound) {
+        return keyData.find(k => k.JsName === keyInfo.keys[0])?.Value;
+    }
+
+    return keyInfo.keys.map(pk => {
+        const part = keyData.find(k => k.JsName === pk);
+        if (!part) throw new Error(`Missing key part: ${pk}`);
+        return part.Value;
+    });
+}
 
 /**
  * Deletes multiple items, supporting single and compound keys.
@@ -440,15 +453,20 @@ export async function bulkUpdateItem(items) {
 export async function bulkDelete(dbName, storeName, items) {
     const table = await getTable(dbName, storeName);
     try {
-        const formattedKeys = await Promise.all(items.map(async item => await formatKey(dbName, storeName, item)));
+        const formattedKeys = await Promise.all(
+            items.map(item => getKeyArrayForDelete(dbName, storeName, item))
+        );
 
+        console.log('Keys to delete:', formattedKeys);
         await table.bulkDelete(formattedKeys);
         return items.length;
     } catch (e) {
-        console.error(e);
+        console.error('bulkDelete error:', e);
         throw new Error('Some items could not be deleted');
     }
 }
+
+
 
 
 /**
