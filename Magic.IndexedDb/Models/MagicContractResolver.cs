@@ -16,8 +16,11 @@ namespace Magic.IndexedDb.Models
     {
         public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
+            // ✅ Return default(T) if null is encountered
             if (reader.TokenType == JsonTokenType.Null)
-                return default; // ✅ Return default(T) if null is encountered
+            {
+                return default;
+            }
 
             // ✅ Handle primitive types before assuming it's complex
             if (PropertyMappingCache.IsSimpleType(typeToConvert))
@@ -52,6 +55,12 @@ namespace Magic.IndexedDb.Models
             if (reader.TokenType == JsonTokenType.StartObject)
             {
                 return (T?)ReadComplexObject(ref reader, typeToConvert, options);
+            }
+
+            // ✅ Return default(T) if EndArray is encountered
+            if (reader.TokenType == JsonTokenType.EndArray)
+            {
+                return default;
             }
 
             throw new JsonException($"Unexpected JSON token: {reader.TokenType} when deserializing {typeToConvert.Name}.");
