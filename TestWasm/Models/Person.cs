@@ -73,6 +73,9 @@ namespace TestWasm.Models
         [MagicNotMapped]
         public string SecretDecrypted { get; set; }
 
+
+        public object Payload { get; set; } = new { Property = "test" };
+
         private bool testPrivate { get; set; } = false;
 
         public bool GetTest()
