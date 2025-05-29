@@ -174,6 +174,10 @@ namespace Magic.IndexedDb.Helpers
             if (Nullable.GetUnderlyingType(type) is Type underlyingType)
                 type = underlyingType;
 
+            // Anonymous = complex
+            if (IsAnonymousType(type))
+                return true;
+
             // Unwrap System.Text.Json.Nodes.JsonValueCustomized<T> (avoiding .FullName for perf)
             if (type.IsGenericType)
             {
@@ -206,6 +210,16 @@ namespace Magic.IndexedDb.Helpers
 
             return result;
         }
+
+        private static bool IsAnonymousType(Type type)
+        {
+            return Attribute.IsDefined(type, typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute))
+                && type.IsGenericType
+                && type.Name.Contains("AnonymousType")
+                && (type.Name.StartsWith("<>") || type.Name.StartsWith("VB$"))
+                && type.Namespace == null;
+        }
+
 
 
 

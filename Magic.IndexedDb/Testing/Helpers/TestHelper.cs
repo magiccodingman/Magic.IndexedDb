@@ -119,11 +119,28 @@ namespace Magic.IndexedDb.Testing.Helpers
                     continue;
                 }
 
+                Type propType = property.PropertyType;
+
+                // 🔥 Special case: if it's object or anonymous, compare via JSON string
+                if (propType == typeof(object) || IsAnonymousType(expectedValue.GetType()) || IsAnonymousType(actualValue.GetType()))
+                {
+                    var expectedJson = JsonSerializer.Serialize(expectedValue);
+                    var actualJson = JsonSerializer.Serialize(actualValue);
+
+                    if (expectedJson != actualJson)
+                    {
+                        differences.Add($"   - ❌ {path}.{property.Name}: Expected JSON **[{expectedJson}]**, but got **[{actualJson}]**.");
+                    }
+
+                    continue;
+                }
+
+                // 💡 Deep compare if complex
                 if (!expectedValue.Equals(actualValue))
                 {
-                    if (PropertyMappingCache.IsComplexType(property.PropertyType))
+                    if (PropertyMappingCache.IsComplexType(propType))
                     {
-                        var nestedProperties = property.PropertyType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                        var nestedProperties = propType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                             .Where(prop => !Attribute.IsDefined(prop, typeof(MagicNotMappedAttribute)))
                             .ToArray();
 
@@ -138,6 +155,14 @@ namespace Magic.IndexedDb.Testing.Helpers
             }
 
             return differences;
+        }
+        private static bool IsAnonymousType(Type type)
+        {
+            return Attribute.IsDefined(type, typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute))
+                && type.IsGenericType
+                && type.Name.Contains("AnonymousType")
+                && (type.Name.StartsWith("<>") || type.Name.StartsWith("VB$"))
+                && type.Namespace == null;
         }
     }
 }
