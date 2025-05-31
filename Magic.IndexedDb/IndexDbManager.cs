@@ -25,15 +25,17 @@ namespace Magic.IndexedDb
     internal class IndexedDbManager
     {
         private readonly IJSObjectReference _jsModule;  // Shared JS module
+        private readonly long _jsMessageSizeBytes;
 
         /// <summary>
         /// Ctor
         /// </summary>
         /// <param name="dbStore"></param>
         /// <param name="jsRuntime"></param>
-        internal IndexedDbManager(IJSObjectReference jsModule)
+        internal IndexedDbManager(IJSObjectReference jsModule, long jsMessageSizeBytes)
         {
             _jsModule = jsModule; // Use shared JS module reference
+            _jsMessageSizeBytes = jsMessageSizeBytes;
         }
 
         //public string DbName => _dbStore.Name;
@@ -49,7 +51,7 @@ namespace Magic.IndexedDb
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
+            return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
                 IndexedDbFunctions.DELETE_DB, dbName);
         }
 
@@ -59,7 +61,7 @@ namespace Magic.IndexedDb
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath,
+            return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.CLOSE_DB, dbName);
         }
 
@@ -69,7 +71,7 @@ namespace Magic.IndexedDb
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath,
+            return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.OPEN_DB, dbName);
         }
 
@@ -79,7 +81,7 @@ namespace Magic.IndexedDb
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return new MagicJsInvoke(_jsModule).CallInvokeDefaultJsAsync<bool>(Cache.MagicDbJsImportPath,
+            return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeDefaultJsAsync<bool>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.DOES_DB_EXIST, dbName);
         }
 
@@ -89,7 +91,7 @@ namespace Magic.IndexedDb
             {
                 throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
             }
-            return new MagicJsInvoke(_jsModule).CallInvokeDefaultJsAsync<bool>(Cache.MagicDbJsImportPath,
+            return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeDefaultJsAsync<bool>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.IS_DB_CLosed, dbName);
         }
 
@@ -103,7 +105,7 @@ namespace Magic.IndexedDb
                 StoreName = schemaName,
                 Record = record
             };
-            return await new MagicJsInvoke(_jsModule).CallJsAsync<TKey>(Cache.MagicDbJsImportPath, 
+            return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<TKey>(Cache.MagicDbJsImportPath, 
                 IndexedDbFunctions.ADD_ITEM, cancellationToken, new TypedArgument<StoreRecord<T?>>(RecordToSend))
                 ?? throw new Exception($"An Error occurred trying to add your record of type: {typeof(T).Name}");
         }
@@ -122,7 +124,7 @@ namespace Magic.IndexedDb
         {
             // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
-            return new MagicJsInvoke(_jsModule).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
+            return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
                 new ITypedArgument[] { new TypedArgument<string>(dbName),
                     new TypedArgument<string>(storeName),
                     new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
@@ -146,13 +148,13 @@ namespace Magic.IndexedDb
                 Record = item
             };
 
-            return await new MagicJsInvoke(_jsModule).CallJsAsync<int>(Cache.MagicDbJsImportPath,
+            return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.UPDATE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
         internal async Task<int> CountEntireTableAsync<T>(string schemaName, string dbName)
         {
-            return await new MagicJsInvoke(_jsModule).CallInvokeDefaultJsAsync<int>(Cache.MagicDbJsImportPath,
+            return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeDefaultJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.COUNT_TABLE,
                 dbName, schemaName
                 );
@@ -179,7 +181,7 @@ namespace Magic.IndexedDb
                 };
             });
 
-            return await new MagicJsInvoke(_jsModule).CallJsAsync<int>(Cache.MagicDbJsImportPath,
+            return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.BULKADD_UPDATE, cancellationToken, new TypedArgument<IEnumerable<UpdateRecord<T>>>(recordsToUpdate));
         }
 
@@ -218,7 +220,7 @@ namespace Magic.IndexedDb
                 new TypedArgument<bool>(query?.ForceCursorMode??false),
             };
 
-            return await new MagicJsInvoke(_jsModule).CallJsAsync<IEnumerable<T>>
+            return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<IEnumerable<T>>
                 (Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_ASYNC, cancellationToken,
                 args);
         }
@@ -249,7 +251,7 @@ namespace Magic.IndexedDb
     };
 
             // Yield results **as they arrive** from JS
-            await foreach (var item in new MagicJsInvoke(_jsModule).CallYieldJsAsync<T>(Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_YIELD, cancellationToken, args))
+            await foreach (var item in new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallYieldJsAsync<T>(Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_YIELD, cancellationToken, args))
             {
                 yield return item; // Stream each item immediately
             }
@@ -269,7 +271,7 @@ namespace Magic.IndexedDb
                 Record = item
             };
 
-            await new MagicJsInvoke(_jsModule).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
+            await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.DELETE_ITEM, cancellationToken, new TypedArgument<UpdateRecord<T?>>(record));
         }
 
         internal async Task<int> DeleteRangeAsync<T>(
@@ -290,7 +292,7 @@ namespace Magic.IndexedDb
                 new TypedArgument<string>(schemaName),
                 new TypedArgument<IEnumerable<object>?>(keys) };
 
-            return await new MagicJsInvoke(_jsModule).CallJsAsync<int>(Cache.MagicDbJsImportPath,
+            return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<int>(Cache.MagicDbJsImportPath,
                 IndexedDbFunctions.BULK_DELETE, cancellationToken,
                 args);
         }
@@ -304,7 +306,7 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         internal Task ClearTableAsync(string storeName, string dbName)
         {
-            return new MagicJsInvoke(_jsModule).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
+            return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
                 IndexedDbFunctions.CLEAR_TABLE, dbName, storeName);
         }
 
