@@ -1,0 +1,156 @@
+﻿@page "/CarTests"
+@using Magic.IndexedDb
+@using Magic.IndexedDb.Testing.Helpers
+@using System.Text.Json
+@using Magic.IndexedDb.Testing.Models
+@using TestWasm.Models
+@using TestWasm.Repository
+@using System.Linq;
+@rendermode InteractiveServer
+
+@inject IMagicIndexedDb _MagicDb
+
+@{
+    string storageQuotaText;
+    string storageUsageText;
+    if (storageQuota >= 1024)
+    {
+        storageQuota = storageQuota / 1024.0;
+        // Round the value to two decimal places
+        storageQuota = Math.Round(storageQuota, 2);
+        // Display the value in GB
+        storageQuotaText = $"{storageQuota} GB";
+    }
+    else
+    {
+        // Display the value in MB
+        storageQuotaText = $"{Math.Round(storageQuota, 2)} MB";
+    }
+
+    if (storageUsage >= 1024)
+    {
+        storageUsage = storageUsage / 1024.0;
+        // Round the value to two decimal places
+        storageUsage = Math.Round(storageUsage, 2);
+        // Display the value in GB
+        storageUsageText = $"{storageUsage} GB";
+    }
+    else
+    {
+        // Display the value in MB
+        storageUsageText = $"{Math.Round(storageUsage, 2)} MB";
+    }
+
+    // Display the storage size on the front-end
+    <p>Storage Used: @storageUsageText</p>
+    <p>Storage Quota: @storageQuotaText</p>
+
+}
+
+<PageTitle>Example</PageTitle>
+
+<h3>Unit Tests</h3>
+@foreach (var (testName, response, countResults) in TestResults)
+{
+    <div>
+        @if (response.Success)
+        {
+            <strong>✅ @testName</strong> @($" - {countResults}")
+        }
+        else
+        {
+            <strong>❌ @testName</strong> @($"- {countResults}")
+
+            @if (!string.IsNullOrWhiteSpace(response.Message))
+            {
+                var messages = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var message in messages)
+                {
+                    <div style="margin-left: 20px;">🔍 @message</div>
+                }
+            }
+        }
+    </div>
+}
+
+<br />
+<br />
+
+<h3>People In IndexedDb!</h3>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (Car car in allCars.OrderBy(x => x.Created))
+        {
+            <tr>
+                <td>@car.Created</td>
+                <td>@car.Brand</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    public List<(string, TestResponse, string)> TestResults = new();
+
+    private static readonly Random _random = new Random();
+
+    public static int GetRandomYear()
+    {
+        return _random.Next(1980, 2024); // Upper bound is exclusive
+    }
+
+    public static DateTime GetDateWithSameMonthDay(int year)
+    {
+        DateTime today = DateTime.Today;
+        return new DateTime(year, today.Month, today.Day);
+    }
+
+    private void RunTest<T>(string testName,
+        IEnumerable<T> indexDbResults, IEnumerable<T> correctResults) where T : class
+    {
+        var result = TestValidator.ValidateLists(correctResults, indexDbResults);
+
+        string countResults = $"Results: {indexDbResults.Count()}";
+        if (result.Success == false)
+        {
+            countResults = $"IndexDB Results: {indexDbResults.Count()} / Correct Results: {correctResults.Count()}";
+        }
+        TestResults.Add((testName, result, countResults));
+        StateHasChanged();
+    }
+
+    private List<Car> allCars { get; set; } = new List<Car>();
+    private double storageQuota { get; set; }
+    private double storageUsage { get; set; }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+                // Targets the default database automatically if called without any parameters.
+                IMagicQuery<Car> carQuery = await _MagicDb.Query<Car>();
+                await carQuery.ClearTable();
+
+                List<Car> cars = [];
+                cars.Add(new Car{ Brand = "Audi"});
+                cars.Add(new Car{ Brand = "Toyota"});
+                cars.Add(new Car{ Brand = "Ferrari"});
+                
+                await carQuery.AddRangeAsync(cars);
+
+                allCars = await carQuery.ToListAsync();
+                
+                RunTest("Order date (index) with skip 1",
+                    await carQuery.OrderBy(car => car.Created).Skip(1).ToListAsync(),
+                    allCars.OrderBy(car => car.Created).ToList());
+                
+                StateHasChanged();
+        }
+    }
+}
