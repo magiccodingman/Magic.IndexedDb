@@ -17,8 +17,12 @@ namespace Magic.IndexedDb.Factories
         // null value indicates that the factory is disposed
         Lazy<Task<IJSObjectReference>>? _jsModule;
         Lazy<Task<IndexedDbManager>> _magicJsManager;
+        private readonly long _jsMessageSizeBytes;
+        public long JsMessageSizeBytes => _jsMessageSizeBytes;
+
         public MagicDbFactory(IJSRuntime jSRuntime, long jsMessageSizeBytes)
         {
+            _jsMessageSizeBytes = jsMessageSizeBytes;
             this._jsModule = new(() => jSRuntime.InvokeAsync<IJSObjectReference>(
                 "import",
                 "./_content/Magic.IndexedDb/magicDbMethods.js").AsTask(),
@@ -30,7 +34,7 @@ namespace Magic.IndexedDb.Factories
 
                 var dbSchemas = SchemaHelper.GetAllSchemas();
                 // Create & Open the database (formerly in IndexedDbManager)
-                var manager = new IndexedDbManager(jsModule);
+                var manager = new IndexedDbManager(jsModule, _jsMessageSizeBytes);
 
                 var dbSets = SchemaHelper.GetAllIndexedDbSets();
 
@@ -38,7 +42,7 @@ namespace Magic.IndexedDb.Factories
                 {
                     foreach (var dbSet in dbSets)
                     {
-                        await new MagicJsInvoke(jsModule).CallJsAsync(Cache.MagicDbJsImportPath,
+                        await new MagicJsInvoke(jsModule, _jsMessageSizeBytes).CallJsAsync(Cache.MagicDbJsImportPath,
                             IndexedDbFunctions.CREATE_LEGACY, default,
                             new TypedArgument<DbStore>(new DbStore()
                             {
@@ -103,7 +107,7 @@ namespace Magic.IndexedDb.Factories
             ObjectDisposedException.ThrowIf(this._jsModule is null, this);
 
             var jsModule = await this._jsModule.Value;
-            var magicUtility = new MagicUtilities(jsModule);
+            var magicUtility = new MagicUtilities(jsModule, _jsMessageSizeBytes);
             return await magicUtility.GetStorageEstimateAsync();
         }
         [Obsolete("Not fully implemented yet until full migration protocol finished.")]

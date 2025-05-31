@@ -16,10 +16,12 @@ namespace Magic.IndexedDb.Extensions
     internal class MagicJsInvoke
     {
         private readonly IJSObjectReference _jsModule;
+        private readonly long _jsMessageSizeBytes;
 
-        public MagicJsInvoke(IJSObjectReference jsModule)
+        public MagicJsInvoke(IJSObjectReference jsModule, long jsMessageSizeBytes)
         {
             _jsModule = jsModule;
+            _jsMessageSizeBytes = jsMessageSizeBytes;
         }
 
         internal async Task CallJsAsync(string modulePath, string functionName,
@@ -131,7 +133,7 @@ namespace Magic.IndexedDb.Extensions
 
             // Send to JS
             var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler", 
-                streamRef, instanceId, DotNetObjectReference.Create(this), Cache.JsMessageSizeBytes);
+                streamRef, instanceId, DotNetObjectReference.Create(this), _jsMessageSizeBytes);
 
             // 🚀 Convert the stream reference back to JSON in C#
             await using var responseStream = await responseStreamRef.OpenReadStreamAsync(long.MaxValue, token);
