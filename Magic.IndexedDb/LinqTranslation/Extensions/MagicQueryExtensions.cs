@@ -13,6 +13,7 @@ using System.Text.Json.Nodes;
 using System.Collections;
 using Magic.IndexedDb.Models.UniversalOperations;
 using Magic.IndexedDb.LinqTranslation.Models;
+using Magic.IndexedDb.Extensions;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
@@ -84,12 +85,7 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
         public IMagicQueryPaginationTake<T> Take(int amount)
         {
-            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
-            StoredMagicQuery smq = new StoredMagicQuery();
-            smq.additionFunction = MagicQueryFunctions.Take;
-            smq.intValue = amount;
-            _MagicQuery.StoredMagicQueries.Add(smq);
-            return new MagicQueryExtensions<T>(_MagicQuery);
+            return new MagicQueryExtensions<T>(SharedQueryExtensions.Take(this.MagicQuery, amount));
         }
 
         public async Task<T?> FirstOrDefaultAsync()
@@ -129,85 +125,32 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
         public IMagicQueryFinal<T> TakeLast(int amount)
         {
-            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
-            StoredMagicQuery smq = new StoredMagicQuery();
-            smq.additionFunction = MagicQueryFunctions.Take_Last;
-            smq.intValue = amount;
-            _MagicQuery.StoredMagicQueries.Add(smq);
-            return new MagicQueryExtensions<T>(_MagicQuery);
+            return new MagicQueryExtensions<T>(
+                SharedQueryExtensions.TakeLast(this.MagicQuery, amount)
+            );
         }
 
         public IMagicQueryFinal<T> Skip(int amount)
         {
-            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
-            StoredMagicQuery smq = new StoredMagicQuery();
-            smq.additionFunction = MagicQueryFunctions.Skip;
-            smq.intValue = amount;
-            _MagicQuery.StoredMagicQueries.Add(smq);
-            return new MagicQueryExtensions<T>(_MagicQuery);
+            return new MagicQueryExtensions<T>(
+                SharedQueryExtensions.Skip(this.MagicQuery, amount)
+            );
         }
 
         // Not currently available in Dexie version 1,2, or 3
         public IMagicQueryOrderableTable<T> OrderBy(Expression<Func<T, object>> predicate)
         {
-            var memberExpression = GetMemberExpressionFromLambda(predicate);
-            var propertyInfo = memberExpression.Member as PropertyInfo;
-
-            if (propertyInfo == null)
-            {
-                throw new ArgumentException("The expression must represent a single property access.");
-            }
-            MagicPropertyEntry mpe = PropertyMappingCache.GetPropertyEntry<T>(propertyInfo);
-
-
-            if (!mpe.PrimaryKey && !mpe.Indexed && !mpe.UniqueIndex)
-            {
-                //throw new ArgumentException("The selected property must have either MagicIndexAttribute, MagicUniqueIndexAttribute, or MagicPrimaryKeyAttribute.");
-            }
-
-            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
-            StoredMagicQuery smq = new StoredMagicQuery();
-            smq.additionFunction = MagicQueryFunctions.Order_By;
-            smq.property = mpe.JsPropertyName;
-            _MagicQuery.StoredMagicQueries.Add(smq);
-            return new MagicQueryExtensions<T>(_MagicQuery);
+            return new MagicQueryExtensions<T>(
+                SharedQueryExtensions.OrderBy(this.MagicQuery, predicate)
+            );
         }
 
         // Not currently available in Dexie version 1,2, or 3
         public IMagicQueryOrderableTable<T> OrderByDescending(Expression<Func<T, object>> predicate)
         {
-            var memberExpression = GetMemberExpressionFromLambda(predicate);
-            var propertyInfo = memberExpression.Member as PropertyInfo;
-
-            if (propertyInfo == null)
-            {
-                throw new ArgumentException("The expression must represent a single property access.");
-            }
-
-            var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
-            StoredMagicQuery smq = new StoredMagicQuery();
-            smq.additionFunction = MagicQueryFunctions.Order_By_Descending;
-
-            // this process could be much more performant
-            smq.property = PropertyMappingCache.GetJsPropertyName<T>(propertyInfo);
-            _MagicQuery.StoredMagicQueries.Add(smq);
-            return new MagicQueryExtensions<T>(_MagicQuery);
-        }
-
-        private MemberExpression GetMemberExpressionFromLambda(Expression<Func<T, object>> expression)
-        {
-            if (expression.Body is MemberExpression)
-            {
-                return (MemberExpression)expression.Body;
-            }
-            else if (expression.Body is UnaryExpression && ((UnaryExpression)expression.Body).Operand is MemberExpression)
-            {
-                return (MemberExpression)((UnaryExpression)expression.Body).Operand;
-            }
-            else
-            {
-                throw new ArgumentException("The expression must represent a single property access.");
-            }
+            return new MagicQueryExtensions<T>(
+                SharedQueryExtensions.OrderByDescending(this.MagicQuery, predicate)
+            );
         }
 
         private FilterNode GetCollectedBinaryJsonExpressions()

@@ -29,5 +29,8 @@ namespace Magic.IndexedDb
         /// <param name="predicate"></param>
         /// <returns></returns>
         IMagicCursorStage<T> OrderByDescending(Expression<Func<T, object>> predicate);
+
+        Task<T?> FirstOrDefaultAsync();
+        Task<T?> LastOrDefaultAsync();
     }
 }

@@ -101,11 +101,11 @@ namespace Magic.IndexedDb
         public IMagicQueryOrderableTable<T> OrderByDescending(Expression<Func<T, object>> predicate)
             => new MagicQueryExtensions<T>(this).OrderByDescending(predicate);
 
-        IMagicQueryOrderable<T> IMagicQueryStaging<T>.OrderBy(Expression<Func<T, object>> predicate)
+        /*IMagicQueryOrderable<T> IMagicQueryStaging<T>.OrderBy(Expression<Func<T, object>> predicate)
             => OrderBy(predicate); 
 
         IMagicQueryOrderable<T> IMagicQueryStaging<T>.OrderByDescending(Expression<Func<T, object>> predicate)
-            => OrderByDescending(predicate);
+            => OrderByDescending(predicate);*/
 
         public IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate)
             => new MagicCursor<T>(this).Cursor(predicate);

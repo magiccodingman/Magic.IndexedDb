@@ -476,11 +476,11 @@
                 RunTest("Take Test", await personQuery.OrderBy(x => x._Age).Take(2).ToListAsync(),
                     allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).Take(2));
 
-                RunTest("Take & With Index Test", await personQuery.Where(x => x.Name.StartsWith("J"))
+            RunTest("Take & With Index Test", await personQuery.Cursor(x => x.Name.StartsWith("J"))
                 .OrderBy(x => x.Name).Take(2).ToListAsync(),
                           allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2));
 
-                RunTest("TakeLast & With Index Test", await personQuery.Where(x => x.Name.StartsWith("J"))
+            RunTest("TakeLast & With Index Test", await personQuery.Cursor(x => x.Name.StartsWith("J"))
                 .OrderBy(x => x.Name).TakeLast(2).ToListAsync(),
                           allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2));
 
@@ -519,7 +519,7 @@
                 RunTest("Cursor Last Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Age).LastOrDefaultAsync() },
                 new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).LastOrDefault() });
 
-                RunTest("Cursor Last Or Default Where Test", new List<Person>() { await personQuery.Where(x => x.Name == "Victor").OrderBy(x => x._Age).LastOrDefaultAsync() },
+            RunTest("Cursor Last Or Default Where Test", new List<Person>() { await personQuery.Cursor(x => x.Name == "Victor").OrderBy(x => x._Age).LastOrDefaultAsync() },
                      new List<Person>() { allPeople.Where(x => x.Name == "Victor").OrderBy(x => x._Age).ThenBy(x => x._Id).LastOrDefault() });
 
 
@@ -532,7 +532,7 @@
                 RunTest("Index Last Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Id).LastOrDefaultAsync() },
                 new List<Person>() { allPeople.OrderBy(x => x._Id).ThenBy(x => x._Id).LastOrDefault() });
 
-                RunTest("Index Last Or Default Where Test", new List<Person>() { await personQuery.Where(x => x.Name == "Victor").OrderBy(x => x._Id).LastOrDefaultAsync() },
+            RunTest("Index Last Or Default Where Test", new List<Person>() { await personQuery.Cursor(x => x.Name == "Victor").OrderBy(x => x._Id).LastOrDefaultAsync() },
                      new List<Person>() { allPeople.Where(x => x.Name == "Victor").OrderBy(x => x._Id).LastOrDefault() });
 
 
@@ -555,7 +555,7 @@
 
                 // 🔄 Mixing Where, OrderBy, Skip, and Take
                 RunTest("Cursor Where + OrderBy + Skip + Take",
-                    await personQuery.Where(x => x._Age > 30)
+                await personQuery.Cursor(x => x._Age > 30)
                                      .OrderBy(x => x._Age)
                                      .Take(3)
                                      .Skip(2)
@@ -563,7 +563,7 @@
                     allPeople.Where(x => x._Age > 30).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(2).Take(3));
 
                 RunTest("Index Where + OrderBy + Skip + Take",
-                await personQuery.Where(x => x.Name.StartsWith("J"))
+            await personQuery.Cursor(x => x.Name.StartsWith("J"))
                                  .OrderBy(x => x._Id)
                                  .Take(3)
                                  .Skip(2)
@@ -571,7 +571,7 @@
                 allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(2).Take(3));
 
                 RunTest("Index Where + OrderBy Desc + Skip + Take",
-                await personQuery.Where(x => x.Name.StartsWith("J"))
+            await personQuery.Cursor(x => x.Name.StartsWith("J"))
                                  .OrderByDescending(x => x._Id)
                                  .Take(3)
                                  .Skip(2)
@@ -579,7 +579,7 @@
                 allPeople.Where(x => x.Name.StartsWith("J")).OrderByDescending(x => x._Id).ThenByDescending(x => x._Id).Skip(2).Take(3));
 
                 RunTest("Where + OrderByDescending + TakeLast",
-                    await personQuery.Where(x => x._Age < 60)
+                await personQuery.Cursor(x => x._Age < 60)
                                      .OrderByDescending(x => x._Age)
                                      .TakeLast(2)
                                      .ToListAsync(),
@@ -718,14 +718,14 @@
 
 
                 RunTest("Where + OrderBy + Skip + TakeLast",
-                    await personQuery.Where(x => x.TestInt > 2)
+                await personQuery.Cursor(x => x.TestInt > 2)
                                      .OrderBy(x => x._Id)
                                      .TakeLast(2)
                                      .ToListAsync(),
                     allPeople.Where(x => x.TestInt > 2).OrderBy(x => x._Id).ThenBy(x => x._Id).TakeLast(2));
 
                 RunTest("Paginated Index Query with AND Condition",
-                await personQuery.Where(x => x.TestInt > 2 && x.TestInt == 9)
+            await personQuery.Cursor(x => x.TestInt > 2 && x.TestInt == 9)
                                  .OrderBy(x => x._Id)
                                  .Take(3)
                                  .Skip(1)
@@ -735,7 +735,7 @@
 
                 // 🔄 Complex Pagination with Condition
                 RunTest("Paginated Cursor Query with AND Condition",
-                    await personQuery.Where(x => x._Age > 30 && x.TestInt == 9)
+                await personQuery.Cursor(x => x._Age > 30 && x.TestInt == 9)
                                      .OrderBy(x => x._Age)
                                      .Take(3)
                                      .Skip(1)

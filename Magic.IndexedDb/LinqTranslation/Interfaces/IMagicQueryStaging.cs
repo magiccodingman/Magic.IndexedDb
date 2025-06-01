@@ -27,20 +27,6 @@ namespace Magic.IndexedDb
         IMagicQueryFinal<T> TakeLast(int amount);
         IMagicQueryFinal<T> Skip(int amount);
 
-        /// <summary>
-        /// This always orders first by the primary key, then by whatever is appended afterwards
-        /// </summary>
-        /// <param name="predicate"></param>
-        /// <returns></returns>
-        IMagicQueryOrderable<T> OrderBy(Expression<Func<T, object>> predicate);
-
-        /// <summary>
-        /// This always orders by descending by the primary key first, then by whatever is appended afterwards
-        /// </summary>
-        /// <param name="predicate"></param>
-        /// <returns></returns>
-        IMagicQueryOrderable<T> OrderByDescending(Expression<Func<T, object>> predicate);
-
         Task<T?> FirstOrDefaultAsync();
         Task<T?> LastOrDefaultAsync();
     }

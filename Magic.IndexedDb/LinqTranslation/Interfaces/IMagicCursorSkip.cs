@@ -11,7 +11,7 @@ namespace Magic.IndexedDb
 {
     public interface IMagicCursorSkip<T> : IMagicExecute<T> where T : class
     {
-        IMagicCursorStage<T> Skip(int amount);
+        IMagicCursorSkip<T> Skip(int amount);
 
         /// <summary>
         /// This always orders first by the primary key, then by whatever is appended afterwards
@@ -26,5 +26,8 @@ namespace Magic.IndexedDb
         /// <param name="predicate"></param>
         /// <returns></returns>
         IMagicCursorStage<T> OrderByDescending(Expression<Func<T, object>> predicate);
+
+        Task<T?> FirstOrDefaultAsync();
+        Task<T?> LastOrDefaultAsync();
     }
 }

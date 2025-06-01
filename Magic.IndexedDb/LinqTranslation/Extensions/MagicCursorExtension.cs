@@ -12,10 +12,11 @@ using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Collections;
 using Magic.IndexedDb.Models.UniversalOperations;
+using Magic.IndexedDb.Extensions;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
-    internal class MagicCursorExtension<T> : IMagicCursorStage<T> where T : class
+    internal class MagicCursorExtension<T> : IMagicCursorStage<T>, IMagicCursorSkip<T> where T : class
     {
         public MagicQuery<T> MagicQuery { get; set; }
         public MagicCursorExtension(MagicQuery<T> _magicQuery)
@@ -25,19 +26,38 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
         }
 
         public IMagicCursorStage<T> Take(int amount)
-           => new MagicCursorExtension<T>(MagicQuery).Take(amount);
+        {
+            return new MagicCursorExtension<T>(SharedQueryExtensions.Take(this.MagicQuery, amount));
+        }
 
         public IMagicCursorStage<T> TakeLast(int amount)
-            => new MagicCursorExtension<T>(MagicQuery).TakeLast(amount);
-
+        {
+            return new MagicCursorExtension<T>(
+                SharedQueryExtensions.TakeLast(this.MagicQuery, amount)
+            );
+        }
+        /*public IMagicCursorSkip<T> Skip(int amount)
+            => new MagicCursorExtension<T>(MagicQuery).Skip(amount);*/
         public IMagicCursorSkip<T> Skip(int amount)
-            => new MagicCursorExtension<T>(MagicQuery).Skip(amount);
+        {
+            return new MagicCursorExtension<T>(
+                SharedQueryExtensions.Skip(this.MagicQuery, amount)
+            );
+        }
 
         public IMagicCursorStage<T> OrderBy(Expression<Func<T, object>> predicate)
-            => new MagicCursorExtension<T>(MagicQuery).OrderBy(predicate);
+        {
+            return new MagicCursorExtension<T>(
+                SharedQueryExtensions.OrderBy(this.MagicQuery, predicate)
+            );
+        }
 
         public IMagicCursorStage<T> OrderByDescending(Expression<Func<T, object>> predicate)
-            => new MagicCursorExtension<T>(MagicQuery).OrderByDescending(predicate);
+        {
+            return new MagicCursorExtension<T>(
+                SharedQueryExtensions.OrderByDescending(this.MagicQuery, predicate)
+            );
+        }
 
         public async IAsyncEnumerable<T> AsAsyncEnumerable(
     [EnumeratorCancellation] CancellationToken cancellationToken = default)
