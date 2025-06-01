@@ -12,8 +12,9 @@ export function validateQueryAdditions(queryAdditions, indexCache) {
     const schema = indexCache;
     const primaryKeys = schema ? Array.from(schema.compoundKeys) : [];
 
-    for (const addition of queryAdditions) {
-        let validCombos = QUERY_ADDITION_RULES[addition.additionFunction];
+    for (let i = 0; i < queryAdditions.length; i++) {
+        const addition = queryAdditions[i];
+        const validCombos = QUERY_ADDITION_RULES[addition.additionFunction];
 
         if (!validCombos) {
             console.error(`Unsupported query addition: ${addition.additionFunction}`);
@@ -26,20 +27,19 @@ export function validateQueryAdditions(queryAdditions, indexCache) {
             const isIndexed = schema?.indexes.has(addition.property) || primaryKeys.includes(addition.property);
             if (!isIndexed) {
                 debugLog(`Query requires cursor: ORDER_BY on non-indexed property ${addition.property}`);
-                requiresCursor = true; // Forces cursor usage
+                requiresCursor = true;
             }
         }
 
-        // **If TAKE_LAST is used after ORDER_BY, allow it (when indexed)**
         if (addition.additionFunction === QUERY_ADDITIONS.TAKE_LAST) {
-            let prevAddition = queryAdditions[queryAdditions.indexOf(addition) - 1];
+            const prevAddition = queryAdditions[i - 1];
             if (!prevAddition || (prevAddition.additionFunction !== QUERY_ADDITIONS.ORDER_BY && prevAddition.additionFunction !== QUERY_ADDITIONS.ORDER_BY_DESCENDING)) {
                 debugLog(`TAKE_LAST requires ORDER_BY but was not found before it.`);
-                requiresCursor = true; // Force cursor if there's no ORDER_BY before it.
+                requiresCursor = true;
             }
         }
 
-        // Check if the addition conflicts with previous additions
+        // Check for conflicts with previously seen additions
         for (const seen of seenAdditions) {
             if (!validCombos.includes(seen)) {
                 requiresCursor = true;
@@ -54,6 +54,7 @@ export function validateQueryAdditions(queryAdditions, indexCache) {
 }
 
 export function validateQueryCombinations(nestedOrFilter) {
+
     debugLog("Validating Query Combinations", { nestedOrFilter });
 
     if (!nestedOrFilter || !Array.isArray(nestedOrFilter.orGroups)) {

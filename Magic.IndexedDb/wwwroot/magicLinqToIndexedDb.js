@@ -265,13 +265,12 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
             switch (addition.additionFunction) {
                 case QUERY_ADDITIONS.ORDER_BY:
                     if (addition.property) {
-                        orderByProperty = addition.property;
+                        query = query.orderBy(addition.property);
                     }
                     break;
                 case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
                     if (addition.property) {
-                        orderByProperty = addition.property;
-                        needsReverse = true;
+                        query = query.orderBy(addition.property).reverse();
                     }
                     break;
                 case QUERY_ADDITIONS.SKIP:
