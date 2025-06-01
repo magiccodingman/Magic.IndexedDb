@@ -138,9 +138,9 @@
                 await carQuery.ClearTable();
 
                 List<Car> cars = [];
-                cars.Add(new Car{ Brand = "Audi"});
-                cars.Add(new Car{ Brand = "Toyota"});
-                cars.Add(new Car{ Brand = "Ferrari"});
+            cars.Add(new Car { Brand = "Audi", Created = DateTime.UtcNow.AddDays(1) });
+            cars.Add(new Car { Brand = "Toyota", Created = DateTime.UtcNow.AddDays(2) });
+            cars.Add(new Car { Brand = "Ferrari", Created = DateTime.UtcNow.AddDays(3) });
                 
                 await carQuery.AddRangeAsync(cars);
 
@@ -148,7 +148,7 @@
                 
                 RunTest("Order date (index) with skip 1",
                     await carQuery.OrderBy(car => car.Created).Skip(1).ToListAsync(),
-                    allCars.OrderBy(car => car.Created).ToList());
+                allCars.OrderBy(car => car.Created).Skip(1).ToList());
                 
                 StateHasChanged();
         }

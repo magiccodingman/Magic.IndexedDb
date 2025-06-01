@@ -179,35 +179,47 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
     debugLog("Executing runIndexedQuery", { indexedConditions, queryAdditions });
 
     let query;
-    let firstCondition = indexedConditions[0];
+    const firstCondition = indexedConditions[0];
 
-    // **Handle Compound Index Query**
-    if (Array.isArray(firstCondition.properties)) {
+    const isUniversalFilter = (
+        firstCondition &&
+        firstCondition.operation === QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL &&
+        (firstCondition.value === -Infinity || firstCondition.value === Number.NEGATIVE_INFINITY)
+    );
+
+    const orderAddition = queryAdditions.find(q =>
+        q.additionFunction === QUERY_ADDITIONS.ORDER_BY ||
+        q.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING
+    );
+
+    // === Handle Universal Filter Shortcut (full table scan with orderBy) ===
+    if (isUniversalFilter && orderAddition?.property) {
+        debugLog("Detected universal filter with orderBy!", { orderBy: orderAddition.property });
+
+        query = table.orderBy(orderAddition.property);
+        if (orderAddition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
+            query = query.reverse();
+        }
+    }
+
+    // === Handle Compound Index Query ===
+    else if (Array.isArray(firstCondition.properties)) {
         debugLog("Detected Compound Index Query!", { properties: firstCondition.properties });
 
-        // **Extract values in the correct order**
-        const valuesInCorrectOrder = firstCondition.properties.map((_, index) => firstCondition.value[index]);
-
-        debugLog("Compound Index Query - Ordered Properties & Values", {
-            properties: firstCondition.properties,
-            values: valuesInCorrectOrder
-        });
+        const valuesInCorrectOrder = firstCondition.properties.map((_, i) => firstCondition.value[i]);
 
         query = table.where(firstCondition.properties);
 
         if (firstCondition.operation === QUERY_OPERATIONS.EQUAL) {
             query = query.equals(valuesInCorrectOrder);
-        }
-        else if (firstCondition.operation === QUERY_OPERATIONS.IN) {
+        } else if (firstCondition.operation === QUERY_OPERATIONS.IN) {
             query = query.anyOf(firstCondition.value);
-        }
-        else {
+        } else {
             throw new Error(`Unsupported operation for compound indexes: ${firstCondition.operation}`);
         }
     }
 
-
-    // **Handle Single Indexed Query**
+    // === Handle Single Indexed Query ===
     else if (firstCondition.property) {
         debugLog("Detected Single-Index Query!", { property: firstCondition.property });
 
@@ -233,45 +245,30 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
             case QUERY_OPERATIONS.STARTS_WITH:
                 query = table.where(firstCondition.property).startsWith(firstCondition.value);
                 break;
-
             case "between":
                 if (Array.isArray(firstCondition.value) && firstCondition.value.length === 2) {
                     const [lower, upper] = firstCondition.value;
-                    const includeLower = firstCondition.includeLower !== false; // default to true
-                    const includeUpper = firstCondition.includeUpper !== false; // default to true
-
+                    const includeLower = firstCondition.includeLower !== false;
+                    const includeUpper = firstCondition.includeUpper !== false;
                     query = table.where(firstCondition.property).between(lower, upper, includeLower, includeUpper);
                 } else {
                     throw new Error("Invalid 'between' value format. Expected [min, max]");
                 }
                 break;
-
-
             default:
                 throw new Error(`Unsupported indexed query operation: ${firstCondition.operation}`);
         }
-    }
-    else {
+    } else {
         throw new Error("Invalid indexed condition—missing `properties` or `property`.");
     }
 
-    /*
-     LINQ to IndexedDB sacrifices ordering of the return for performance. 
-     Therefore skip entirely even appending an order if that's all that's on there. 
-     As that means the order doesn't have anything to do with the end desired results.
-    */
+    // === Apply Query Additions (take, skip, first, etc.) ===
     if (requiresQueryAdditions(queryAdditions)) {
         for (const addition of queryAdditions) {
             switch (addition.additionFunction) {
                 case QUERY_ADDITIONS.ORDER_BY:
-                    if (addition.property) {
-                        query = query.orderBy(addition.property);
-                    }
-                    break;
                 case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
-                    if (addition.property) {
-                        query = query.orderBy(addition.property).reverse();
-                    }
+                    // Already handled above (only valid without .where())
                     break;
                 case QUERY_ADDITIONS.SKIP:
                     query = query.offset(addition.intValue);
@@ -294,6 +291,7 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
 
     return query;
 }
+
 
 function requiresQueryAdditions(queryAdditions = []) {
     if (!queryAdditions || queryAdditions.length === 0) {
