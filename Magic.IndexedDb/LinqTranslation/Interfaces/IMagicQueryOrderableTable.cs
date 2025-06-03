@@ -5,7 +5,7 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb.LinqTranslation.Interfaces
+namespace Magic.IndexedDb
 {
     /// <summary>
     /// Direct ordering applied to a table without where statements.

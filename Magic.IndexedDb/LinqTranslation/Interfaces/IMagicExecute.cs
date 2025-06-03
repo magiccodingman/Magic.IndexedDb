@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb.LinqTranslation.Interfaces
+namespace Magic.IndexedDb
 {
     public interface IMagicExecute<T> where T : class
     {
