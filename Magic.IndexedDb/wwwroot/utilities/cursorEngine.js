@@ -27,8 +27,10 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
         // **Metadata Path: Extract primary keys and sorting properties**
         let primaryKeyList = await runMetaDataCursorQuery(db, table, structuredPredicateTree, queryAdditions, yieldedPrimaryKeys, compoundKeys);
 
+        const indexOrderProps = detectIndexOrderProperties(structuredPredicateTree, table);
+
         // **Apply sorting, take, and skip operations**
-        let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys);
+        let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, true, indexOrderProps);
 
         // **Fetch only the required records from IndexedDB**
         let finalRecords = await fetchRecordsByPrimaryKeys(db, table, finalPrimaryKeys, compoundKeys);
@@ -40,6 +42,55 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
         return await runDirectCursorQuery(db, table, structuredPredicateTree, yieldedPrimaryKeys, compoundKeys);
     }
 }
+
+function detectIndexOrderProperties(predicateTree, table) {
+    const indexedProps = new Set();
+
+    // Step 1: Get actual indexed fields from Dexie table schema
+    const dexieIndexKeys = Object.keys(table.schema.idxByName || {});
+
+    // This gives you:
+    // - For single indexes: ["Email", "Age"]
+    // - For compound indexes: ["[FirstName+LastName]", "[LastName+Age]"], etc.
+
+    // Step 2: Expand compound indexes
+    const normalizedIndexProps = new Set();
+
+    for (const idx of dexieIndexKeys) {
+        if (idx.startsWith('[')) {
+            const parts = idx.replace(/[\[\]]/g, "").split("+").map(x => x.trim());
+            for (const p of parts) normalizedIndexProps.add(p);
+        } else {
+            normalizedIndexProps.add(idx);
+        }
+    }
+
+    // Step 3: Walk the predicate tree
+    walkPredicateTree(predicateTree, node => {
+        if (node.nodeType === "condition") {
+            const prop = node.condition?.property;
+            if (normalizedIndexProps.has(prop)) {
+                indexedProps.add(prop);
+            }
+        }
+    });
+
+    return [...indexedProps];
+}
+
+function walkPredicateTree(node, visitFn) {
+    if (!node)
+        return;
+
+    if (node.nodeType === "condition") {
+        visitFn(node); // Visit condition nodes directly
+    } else if (node.nodeType === "logical" && Array.isArray(node.children)) {
+        for (const child of node.children) {
+            walkPredicateTree(child, visitFn);
+        }
+    }
+}
+
 
 let lastCursorWarningTime = null;
 
@@ -679,32 +730,43 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
 }
 
 
-function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, flipSkipTakeOrder = true) {
+function applyCursorQueryAdditions(
+    primaryKeyList,
+    queryAdditions,
+    compoundKeys,
+    flipSkipTakeOrder = true,
+    detectedIndexOrderProperties = []
+) {
     if (!queryAdditions || queryAdditions.length === 0) {
         return primaryKeyList.map(item =>
             compoundKeys.map(key => item.sortingProperties[key])
         );
     }
+    // waca
+    debugLog("Applying cursor query additions in strict given order", {
+        queryAdditions,
+        detectedIndexOrderProperties
+    });
 
-    debugLog("Applying cursor query additions in strict given order", { queryAdditions });
-
-    let additions = [...queryAdditions]; // Copy to avoid modifying original
+    let additions = [...queryAdditions]; // Avoid modifying original
     let needsReverse = false;
 
-    // **Avoid unnecessary sort if `_MagicOrderId` is already ordered**
-    let isAlreadyOrdered = additions.every(a =>
-        a.additionFunction !== QUERY_ADDITIONS.ORDER_BY &&
-        a.additionFunction !== QUERY_ADDITIONS.ORDER_BY_DESCENDING
-    );
-
-    if (!isAlreadyOrdered) {
-        primaryKeyList.sort((a, b) => a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"]);
+    // Step 0: Always apply detectedIndexOrderProperties first
+    if (detectedIndexOrderProperties?.length > 0) {
+        primaryKeyList.sort((a, b) => {
+            for (let prop of detectedIndexOrderProperties) {
+                const aVal = a.sortingProperties[prop];
+                const bVal = b.sortingProperties[prop];
+                if (aVal !== bVal) return aVal > bVal ? 1 : -1;
+            }
+            // Always fallback to internal row ordering
+            return a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"];
+        });
     }
 
-    // **Optimized order-flipping logic**
+    // Flip TAKE + SKIP if needed (for consistent cursor behavior)
     if (flipSkipTakeOrder) {
         let takeIndex = -1, skipIndex = -1;
-
         for (let i = 0; i < additions.length; i++) {
             if (additions[i].additionFunction === QUERY_ADDITIONS.TAKE) takeIndex = i;
             if (additions[i].additionFunction === QUERY_ADDITIONS.SKIP) skipIndex = i;
@@ -716,7 +778,7 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
         }
     }
 
-    // **Step 2: Apply Query Additions in Exact Order**
+    // Step 1: Apply all query additions in declared order
     for (const addition of additions) {
         switch (addition.additionFunction) {
             case QUERY_ADDITIONS.ORDER_BY:
@@ -731,6 +793,8 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
                             ? (valueB > valueA ? 1 : -1)
                             : (valueA > valueB ? 1 : -1);
                     }
+
+                    // Fallback to row order
                     return a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"];
                 });
                 break;
@@ -740,7 +804,7 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
                 break;
 
             case QUERY_ADDITIONS.TAKE:
-                primaryKeyList.length = Math.min(primaryKeyList.length, addition.intValue); // **Avoid new array allocation**
+                primaryKeyList.length = Math.min(primaryKeyList.length, addition.intValue);
                 break;
 
             case QUERY_ADDITIONS.TAKE_LAST:
@@ -749,7 +813,7 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
                 break;
 
             case QUERY_ADDITIONS.FIRST:
-                primaryKeyList.length = primaryKeyList.length > 0 ? 1 : 0; // **No new array allocation**
+                primaryKeyList.length = primaryKeyList.length > 0 ? 1 : 0;
                 break;
 
             case QUERY_ADDITIONS.LAST:
@@ -761,14 +825,12 @@ function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys,
         }
     }
 
-    // **Step 3: Reverse if TAKE_LAST was used**
     if (needsReverse) {
         primaryKeyList.reverse();
     }
 
     debugLog("Final Ordered Primary Key List", primaryKeyList);
 
-    // **Final Map: Extract only needed keys in the correct order**
     return primaryKeyList.map(item =>
         compoundKeys.map(key => item.sortingProperties[key])
     );

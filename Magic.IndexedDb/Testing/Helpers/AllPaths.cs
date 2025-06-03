@@ -9,6 +9,7 @@ namespace Magic.IndexedDb.Testing.Helpers
 {
     public class QueryTestBlueprint<T>
     {
+        public List<Func<T, object>>? IndexOrderingProperties { get; set; }
         public List<Expression<Func<T, bool>>> WherePredicates { get; set; } = new();
         public List<Expression<Func<T, object>>> OrderBys { get; set; } = new();
         public List<Expression<Func<T, object>>> OrderByDescendings { get; set; } = new();

@@ -109,6 +109,9 @@
     [Parameter, EditorRequired]
     public QueryTestBlueprint<TItem> BluePrint { get; set; }
 
+    [Parameter]
+    public int? OverrideMaxRepeats { get; set; }
+
     public List<(string, TestResponse, string)> TestResults = new();
 
     private string TitleIcon = Icons.Material.Filled.HelpOutline;
@@ -124,7 +127,7 @@
                 TitleIconClass = "text-info mud-rotate-360";
                 StateHasChanged();
 
-                var tests = MagicQueryPathWalker.GenerateAllPaths(MagicQuery, InMemoryList, BluePrint);
+                var tests = MagicQueryPathWalker.GenerateAllPaths(MagicQuery, InMemoryList, BluePrint, 6, null, null, OverrideMaxRepeats);
 
                 foreach (var test in tests)
                 {

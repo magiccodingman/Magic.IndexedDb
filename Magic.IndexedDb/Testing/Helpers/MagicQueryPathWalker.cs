@@ -58,21 +58,35 @@ namespace Magic.IndexedDb.Testing.Helpers
             // STEP 4: If no explicit order, apply default ordering if Take/Skip is used
             if (!hasExplicitOrder && (trail.Contains("Take") || trail.Contains("Skip") || trail.Contains("TakeLast")))
             {
+                IOrderedEnumerable<T>? stableOrdered = null;
+
+                // Step 1: Apply IndexOrderingProperties first (e.g., from .Index("TestInt"))
+                if (bp.IndexOrderingProperties?.Count > 0)
+                {
+                    foreach (var selector in bp.IndexOrderingProperties)
+                    {
+                        stableOrdered = stableOrdered == null
+                            ? result.OrderBy(selector)
+                            : stableOrdered.ThenBy(selector);
+                    }
+                }
+
+                // Step 2: ALWAYS apply compound key fallback to break ties
                 var compoundKey = new T().GetKeys();
                 if (compoundKey?.PropertyInfos?.Length > 0)
                 {
-                    IOrderedEnumerable<T>? stableOrdered = null;
                     foreach (var prop in compoundKey.PropertyInfos)
                     {
                         stableOrdered = stableOrdered == null
                             ? result.OrderBy(x => prop.GetValue(x) ?? "")
                             : stableOrdered.ThenBy(x => prop.GetValue(x) ?? "");
                     }
-
-                    if (stableOrdered != null)
-                        result = stableOrdered;
                 }
+
+                if (stableOrdered != null)
+                    result = stableOrdered;
             }
+
 
             // STEP 5: Detect if Skip should come before Take
             bool hasTake = trail.Contains("Take");
@@ -113,19 +127,20 @@ namespace Magic.IndexedDb.Testing.Helpers
             QueryTestBlueprint<T> blueprint,
             int maxDepth = 6,
             Dictionary<string, int>? repetitionOverrides = null,
-            Func<QueryTestBlueprint<T>, IMagicCursor<T>>? cursorProvider = null
+            Func<QueryTestBlueprint<T>, IMagicCursor<T>>? cursorProvider = null,
+            int? overrideMaxRepetitions = null
         ) where T : class, IMagicTableBase, new()
         {
             var map = AllPaths.BuildTransitionMap<T>(repetitionOverrides);
             var results = new List<ExecutionPath<T>>();
             var seenPaths = new HashSet<string>();
 
-            Explore(map, baseQuery, typeof(IMagicQuery<T>), allPeople, blueprint, results, seenPaths, maxDepth);
+            Explore(map, baseQuery, typeof(IMagicQuery<T>), allPeople, blueprint, results, seenPaths, maxDepth, null, null, null, 0, overrideMaxRepetitions);
 
             if (cursorProvider != null)
             {
                 var cursorQuery = cursorProvider(blueprint);
-                Explore(map, cursorQuery, typeof(IMagicCursor<T>), allPeople, blueprint, results, seenPaths, maxDepth);
+                Explore(map, cursorQuery, typeof(IMagicCursor<T>), allPeople, blueprint, results, seenPaths, maxDepth, null, null, null, 0, overrideMaxRepetitions);
             }
 
             return results;
@@ -143,7 +158,8 @@ namespace Magic.IndexedDb.Testing.Helpers
     List<string>? trail = null,
     Func<IQueryable<T>, IQueryable<T>>? linq = null,
     Dictionary<string, int>? used = null,
-    int depth = 0
+    int depth = 0,
+     int? overrideMaxRepetitions = null
 ) where T : class, IMagicTableBase, new()
         {
             if (depth > maxDepth || !map.TryGetValue(currentType, out var transitions))
@@ -155,10 +171,14 @@ namespace Magic.IndexedDb.Testing.Helpers
 
             foreach (var transition in transitions)
             {
+                int reps = transition.MaxRepetitions;
+                if (overrideMaxRepetitions != null)
+                    reps = overrideMaxRepetitions ?? transition.MaxRepetitions;
+
                 var nextUsed = new Dictionary<string, int>(used);
                 if (!nextUsed.TryGetValue(transition.Name, out var count))
                     count = 0;
-                if (count >= transition.MaxRepetitions) continue;
+                if (count >= reps) continue;
                 nextUsed[transition.Name] = count + 1;
 
                 List<string> newTrail = trail.Append(transition.Name).ToList();
@@ -180,12 +200,29 @@ namespace Magic.IndexedDb.Testing.Helpers
 
                     if (nextQuery is IMagicExecute<T>)
                     {
+                        // Create a blueprint clone with filtered IndexOrderingProperties
+                        var localBlueprint = new QueryTestBlueprint<T>
+                        {
+                            WherePredicates = blueprint.WherePredicates,
+                            OrderBys = blueprint.OrderBys,
+                            OrderByDescendings = blueprint.OrderByDescendings,
+                            SkipValues = blueprint.SkipValues,
+                            TakeValues = blueprint.TakeValues,
+                            TakeLastValues = blueprint.TakeLastValues,
+
+                            // Only apply index ordering if a relevant Where is in the trail
+                            IndexOrderingProperties = newTrail.Contains("Where") || newTrail.Contains("Cursor")
+                                ? blueprint.IndexOrderingProperties
+                                : null
+                        };
+
                         results.Add(new ExecutionPath<T>
                         {
                             Name = pathKey,
                             ExecuteDb = async () => await ((IMagicExecute<T>)nextQuery).ToListAsync(),
-                            ExecuteInMemory = () => MagicInMemoryExecutor.Execute(allPeople, newTrail, blueprint)
+                            ExecuteInMemory = () => MagicInMemoryExecutor.Execute(allPeople, newTrail, localBlueprint)
                         });
+
                     }
 
                     Explore(
@@ -200,7 +237,8 @@ namespace Magic.IndexedDb.Testing.Helpers
                         newTrail,
                         newLinq,
                         nextUsed,
-                        depth + 1
+                        depth + 1,
+                        overrideMaxRepetitions
                     );
                 }
                 catch
