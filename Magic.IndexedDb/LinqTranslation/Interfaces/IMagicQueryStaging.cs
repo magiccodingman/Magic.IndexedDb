@@ -20,9 +20,6 @@ namespace Magic.IndexedDb
         /// <param name="predicate"></param>
         /// <returns></returns>
         IMagicQueryStaging<T> Where(Expression<Func<T, bool>> predicate);
-
-        IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate);
-
         IMagicQueryPaginationTake<T> Take(int amount);
         IMagicQueryFinal<T> TakeLast(int amount);
         IMagicQueryFinal<T> Skip(int amount);
