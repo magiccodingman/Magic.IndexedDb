@@ -9,26 +9,22 @@ using System.Threading.Tasks;
 
 namespace Magic.IndexedDb
 {
+    public interface IMagicCursorFinal<T> : IMagicExecute<T> where T : class
+    {
+        Task<T?> FirstOrDefaultAsync();
+        Task<T?> LastOrDefaultAsync();
+    }
+    public interface IMagicCursorPaginationTake<T> : IMagicExecute<T> where T : class
+    {
+        IMagicCursorSkip<T> Skip(int amount);
+
+    }
     public interface IMagicCursorStage<T> : IMagicExecute<T> where T : class
     {
 
-        IMagicCursorStage<T> Take(int amount);
-        IMagicCursorStage<T> TakeLast(int amount);
+        IMagicCursorPaginationTake<T> Take(int amount);
+        IMagicCursorPaginationTake<T> TakeLast(int amount);
         IMagicCursorSkip<T> Skip(int amount);
-
-        /// <summary>
-        /// This always orders first by the primary key, then by whatever is appended afterwards
-        /// </summary>
-        /// <param name="predicate"></param>
-        /// <returns></returns>
-        IMagicCursorStage<T> OrderBy(Expression<Func<T, object>> predicate);
-
-        /// <summary>
-        /// This always orders by descending by the primary key first, then by whatever is appended afterwards
-        /// </summary>
-        /// <param name="predicate"></param>
-        /// <returns></returns>
-        IMagicCursorStage<T> OrderByDescending(Expression<Func<T, object>> predicate);
 
         Task<T?> FirstOrDefaultAsync();
         Task<T?> LastOrDefaultAsync();

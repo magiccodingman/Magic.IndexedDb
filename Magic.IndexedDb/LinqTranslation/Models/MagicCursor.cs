@@ -27,10 +27,10 @@ namespace Magic.IndexedDb.LinqTranslation.Models
             return new MagicCursor<T>(_MagicQuery); // Enable method chaining
         }
 
-        public IMagicCursorStage<T> Take(int amount)
+        public IMagicCursorPaginationTake<T> Take(int amount)
            => new MagicCursorExtension<T>(MagicQuery).Take(amount);
 
-        public IMagicCursorStage<T> TakeLast(int amount)
+        public IMagicCursorPaginationTake<T> TakeLast(int amount)
             => new MagicCursorExtension<T>(MagicQuery).TakeLast(amount);
 
         public IMagicCursorSkip<T> Skip(int amount)

@@ -16,7 +16,7 @@ using Magic.IndexedDb.Extensions;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions
 {
-    internal class MagicCursorExtension<T> : IMagicCursorStage<T>, IMagicCursorSkip<T> where T : class
+    internal class MagicCursorExtension<T> : IMagicCursorStage<T>, IMagicCursorSkip<T>, IMagicCursorPaginationTake<T>, IMagicCursorFinal<T> where T : class
     {
         public MagicQuery<T> MagicQuery { get; set; }
         public MagicCursorExtension(MagicQuery<T> _magicQuery)
@@ -25,12 +25,12 @@ namespace Magic.IndexedDb.LinqTranslation.Extensions
 
         }
 
-        public IMagicCursorStage<T> Take(int amount)
+        public IMagicCursorPaginationTake<T> Take(int amount)
         {
             return new MagicCursorExtension<T>(SharedQueryExtensions.Take(this.MagicQuery, amount));
         }
 
-        public IMagicCursorStage<T> TakeLast(int amount)
+        public IMagicCursorPaginationTake<T> TakeLast(int amount)
         {
             return new MagicCursorExtension<T>(
                 SharedQueryExtensions.TakeLast(this.MagicQuery, amount)

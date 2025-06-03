@@ -18,8 +18,8 @@ namespace Magic.IndexedDb
         /// <returns></returns>
         IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate);
 
-        IMagicCursorStage<T> Take(int amount);
-        IMagicCursorStage<T> TakeLast(int amount);
+        IMagicCursorPaginationTake<T> Take(int amount);
+        IMagicCursorPaginationTake<T> TakeLast(int amount);
         IMagicCursorSkip<T> Skip(int amount);
 
         Task<T?> FirstOrDefaultAsync();

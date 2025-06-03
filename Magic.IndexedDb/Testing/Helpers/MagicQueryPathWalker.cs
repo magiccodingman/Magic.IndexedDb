@@ -10,27 +10,78 @@ namespace Magic.IndexedDb.Testing.Helpers
     internal static class MagicInMemoryExecutor
     {
         public static List<T> Execute<T>(
-        IEnumerable<T> allItems,
-        List<string> trail,
-        QueryTestBlueprint<T> bp
+            IEnumerable<T> allItems,
+            List<string> trail,
+            QueryTestBlueprint<T> bp
         ) where T : class, IMagicTableBase, new()
         {
             IEnumerable<T> result = allItems;
 
-            // Where/Cursor
+            // STEP 1: Apply Where/Cursor filters
             foreach (var step in trail)
             {
                 if (step == "Where" || step == "Cursor")
                     result = result.Where(bp.WherePredicates[0].Compile());
             }
 
-            // Take/Skip IndexedDB reversal
-            var hasTake = trail.Contains("Take");
-            var hasSkip = trail.Contains("Skip");
-            var skipFirst = hasTake && hasSkip && trail.IndexOf("Take") < trail.IndexOf("Skip");
+            // STEP 2: Apply explicit OrderBy / OrderByDescending
+            IOrderedEnumerable<T>? ordered = null;
+            bool hasExplicitOrder = false;
 
-            if (hasTake && hasSkip && skipFirst)
+            foreach (var step in trail)
             {
+                if (step == "OrderBy")
+                {
+                    ordered = result.OrderBy(bp.OrderBys[0].Compile());
+                    hasExplicitOrder = true;
+                }
+                else if (step == "OrderByDescending")
+                {
+                    ordered = result.OrderByDescending(bp.OrderByDescendings[0].Compile());
+                    hasExplicitOrder = true;
+                }
+            }
+
+            // STEP 3: If ordered, add compound key tiebreakers for determinism
+            if (ordered != null)
+            {
+                var compoundKey = new T().GetKeys();
+                if (compoundKey?.PropertyInfos?.Length > 0)
+                {
+                    foreach (var prop in compoundKey.PropertyInfos)
+                        ordered = ordered.ThenBy(x => prop.GetValue(x) ?? "");
+                }
+
+                result = ordered;
+            }
+
+            // STEP 4: If no explicit order, apply default ordering if Take/Skip is used
+            if (!hasExplicitOrder && (trail.Contains("Take") || trail.Contains("Skip") || trail.Contains("TakeLast")))
+            {
+                var compoundKey = new T().GetKeys();
+                if (compoundKey?.PropertyInfos?.Length > 0)
+                {
+                    IOrderedEnumerable<T>? stableOrdered = null;
+                    foreach (var prop in compoundKey.PropertyInfos)
+                    {
+                        stableOrdered = stableOrdered == null
+                            ? result.OrderBy(x => prop.GetValue(x) ?? "")
+                            : stableOrdered.ThenBy(x => prop.GetValue(x) ?? "");
+                    }
+
+                    if (stableOrdered != null)
+                        result = stableOrdered;
+                }
+            }
+
+            // STEP 5: Detect if Skip should come before Take
+            bool hasTake = trail.Contains("Take");
+            bool hasSkip = trail.Contains("Skip");
+            bool flipSkipAndTake = hasTake && hasSkip && trail.IndexOf("Take") < trail.IndexOf("Skip");
+
+            if (flipSkipAndTake)
+            {
+                // IndexedDB-style → flip to match SQL semantics
                 result = result.Skip(bp.SkipValues[0]);
                 result = result.Take(bp.TakeValues[0]);
             }
@@ -38,36 +89,21 @@ namespace Magic.IndexedDb.Testing.Helpers
             {
                 foreach (var step in trail)
                 {
-                    if (step == "Take") result = result.Take(bp.TakeValues[0]);
-                    else if (step == "Skip") result = result.Skip(bp.SkipValues[0]);
-                    else if (step == "TakeLast") result = result.Reverse().Take(bp.TakeLastValues[0]).Reverse();
+                    if (step == "Skip")
+                        result = result.Skip(bp.SkipValues[0]);
+                    else if (step == "Take")
+                        result = result.Take(bp.TakeValues[0]);
+                    else if (step == "TakeLast")
+                        result = result.Reverse().Take(bp.TakeLastValues[0]).Reverse();
                 }
             }
 
-            // OrderBy / OrderByDescending
-            IOrderedEnumerable<T>? ordered = null;
-            foreach (var step in trail)
-            {
-                if (step == "OrderBy")
-                    ordered = result.OrderBy(bp.OrderBys[0].Compile());
-                else if (step == "OrderByDescending")
-                    ordered = result.OrderByDescending(bp.OrderByDescendings[0].Compile());
-            }
-
-            if (ordered != null)
-            {
-                // Apply compound key .ThenBy to match database ordering
-                IMagicCompoundKey? compoundKey = new T().GetKeys();
-
-                foreach (var prop in compoundKey.PropertyInfos)
-                    ordered = ordered.ThenBy(x => prop.GetValue(x));
-
-                result = ordered;
-            }
 
             return result.ToList();
         }
     }
+
+
 
     public static class MagicQueryPathWalker
     {
@@ -96,19 +132,19 @@ namespace Magic.IndexedDb.Testing.Helpers
         }
 
         private static void Explore<T>(
-            Dictionary<Type, List<AllPaths.Transition<T>>> map,
-            object queryObj,
-            Type currentType,
-            List<T> allPeople,
-            QueryTestBlueprint<T> blueprint,
-            List<ExecutionPath<T>> results,
-            HashSet<string> seenPaths,
-            int maxDepth,
-            List<string>? trail = null,
-            Func<IQueryable<T>, IQueryable<T>>? linq = null,
-            Dictionary<string, int>? used = null,
-            int depth = 0
-        ) where T : class, IMagicTableBase, new()
+    Dictionary<Type, List<AllPaths.Transition<T>>> map,
+    object queryObj,
+    Type currentType,
+    List<T> allPeople,
+    QueryTestBlueprint<T> blueprint,
+    List<ExecutionPath<T>> results,
+    HashSet<string> seenPaths,
+    int maxDepth,
+    List<string>? trail = null,
+    Func<IQueryable<T>, IQueryable<T>>? linq = null,
+    Dictionary<string, int>? used = null,
+    int depth = 0
+) where T : class, IMagicTableBase, new()
         {
             if (depth > maxDepth || !map.TryGetValue(currentType, out var transitions))
                 return;
@@ -125,14 +161,18 @@ namespace Magic.IndexedDb.Testing.Helpers
                 if (count >= transition.MaxRepetitions) continue;
                 nextUsed[transition.Name] = count + 1;
 
+                List<string> newTrail = trail.Append(transition.Name).ToList();
+
                 try
                 {
                     object nextQuery = transition.Execute(queryObj, blueprint);
-                    var nextInterface = nextQuery.GetType().GetInterfaces().FirstOrDefault(i => i.Name.StartsWith("IMagic"));
-                    if (nextInterface == null) continue;
 
-                    var newTrail = trail.Append(transition.Name).ToList();
-                    var pathKey = string.Join("→", newTrail);
+                    // Only follow the explicitly declared Returns interface
+                    Type? nextInterface = transition.Returns;
+                    if (nextInterface == null || !map.ContainsKey(nextInterface))
+                        continue;
+
+                    string pathKey = $"{string.Join("→", newTrail)}||{nextInterface.Name}";
                     if (!seenPaths.Add(pathKey)) continue;
 
                     Func<IQueryable<T>, IQueryable<T>> newLinq = q =>
@@ -163,9 +203,15 @@ namespace Magic.IndexedDb.Testing.Helpers
                         depth + 1
                     );
                 }
-                catch { }
+                catch
+                {
+                    // Swallow invalid transitions
+                }
+
             }
         }
+
+
 
         private static IQueryable<T> ApplyLinqTrail<T>(IQueryable<T> query, List<string> trail, QueryTestBlueprint<T> bp) where T : class
         {

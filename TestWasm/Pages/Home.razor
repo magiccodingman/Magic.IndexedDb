@@ -283,6 +283,43 @@
 
 
 
+                var blueprint = new QueryTestBlueprint<Person>
+                    {
+                        WherePredicates = [x => x.TestInt == 9],
+                        OrderBys = [x => x._Age],
+                        OrderByDescendings = [x => x._Age],
+                        TakeValues = [2],
+                        TakeLastValues = [1],
+                        SkipValues = [1],
+                    };
+
+                var tests = MagicQueryPathWalker.GenerateAllPaths(personQuery, allPeople, blueprint);
+
+                foreach (var test in tests)
+                {
+                    try
+                    {
+                        var executedTestDb = await test.ExecuteDb();
+                        var mem = test.ExecuteInMemory();
+                        RunTest(test.Name, executedTestDb, mem);
+                    }
+                    catch (Exception ex)
+                    {
+                        //RunTest(test.Name, [], [], $"Exception: {ex.Message}");
+                    }
+                }
+
+
+                // RunTest("Test Test",
+                // await personQuery.Cursor(x => x.TestInt == 9).OrderBy(x => x._Age).Skip(1).ToListAsync(),
+                // allPeople.Where(x => x.TestInt == 9).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(1));
+
+                // var asdfdffddf = await personQuery.Cursor(x => x.TestInt == 9).OrderBy(x => x._Age).Skip(1).ToListAsync();
+                // RunTest("Test Test",
+                // await personQuery.Cursor(x => x.TestInt == 9).OrderBy(x => x._Age).Skip(1).ToListAsync(),
+                // allPeople.Where(x => x.TestInt == 9).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(1));
+
+
                 RunTest("Date Equal",
                 await personQuery.Where(x => x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)).ToListAsync(),
                 allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)));

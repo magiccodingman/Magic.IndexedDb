@@ -19,11 +19,11 @@ namespace TestWasm.Models
             CreateCompoundIndex(x => x.TestIntStable2, x => x.Name)
             };
 
-        public IMagicCompoundKey GetKeys() =>
-            CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);
-
         //public IMagicCompoundKey GetKeys() =>
-        //    CreatePrimaryKey(x => x._Id, true);
+        //    CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);
+
+        public IMagicCompoundKey GetKeys() =>
+            CreatePrimaryKey(x => x._Id, true);
 
         public string GetTableName() => "Person";
         public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;
