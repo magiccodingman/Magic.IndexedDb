@@ -94,7 +94,12 @@ namespace Magic.IndexedDb.Testing.Helpers
             new() { Name = "Skip", Execute = (q, bp) => ((IMagicCursorStage<T>)q).Skip(bp.SkipValues[0]), MaxRepetitions = GetMax("Skip", RepeatMax), Returns = typeof(IMagicCursorSkip<T>) }
         },
 
-                [typeof(IMagicCursorSkip<T>)] = new List<Transition<T>>() /* terminal */
+                [typeof(IMagicCursorSkip<T>)] = new List<Transition<T>>(), /* terminal */
+                [typeof(IMagicCursorFinal<T>)] = new List<Transition<T>>(), /* terminal */
+                [typeof(IMagicCursorPaginationTake<T>)] = new List<Transition<T>>()
+                {
+            new() { Name = "Skip", Execute = (q, bp) => ((IMagicCursorStage<T>)q).Skip(bp.SkipValues[0]), MaxRepetitions = GetMax("Skip", RepeatMax), Returns = typeof(IMagicCursorSkip<T>) }
+                }
             };
         }
 
