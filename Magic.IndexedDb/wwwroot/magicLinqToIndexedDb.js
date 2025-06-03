@@ -99,8 +99,6 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         }
     }
 
-
-
     if (Array.isArray(cursorConditions) && cursorConditions.length > 0) {
         let cursorResults = await runCursorQuery(db, table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys);
         debugLog("Cursor Query Results Count", { count: cursorResults.length });

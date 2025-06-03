@@ -261,14 +261,14 @@
                 List<Person> people = await personQuery.ToListAsync();
                 StateHasChanged();
 
-                //await manager.ClearTableAsync<Person>();
-                var db = await _MagicDb.Database(IndexDbContext.Client);
-                //await db.DeleteAsync();
-                await db.CloseAsync();
-                bool doesExist = await db.DoesExistAsync();
-                bool isOpen = await db.IsOpenAsync();
-                await db.OpenAsync();
-                bool isOpenNow = await db.IsOpenAsync();
+                // //await manager.ClearTableAsync<Person>();
+                // var db = await _MagicDb.Database(IndexDbContext.Client);
+                // //await db.DeleteAsync();
+                // await db.CloseAsync();
+                // bool doesExist = await db.DoesExistAsync();
+                // bool isOpen = await db.IsOpenAsync();
+                // await db.OpenAsync();
+                // bool isOpenNow = await db.IsOpenAsync();
 
                 var d = new DateTime();
                 var asdf = d.DayOfWeek;
@@ -280,316 +280,336 @@
 
 
 
-                RunTest("Date Equal",
-                await personQuery.Where(x => x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)).ToListAsync(),
-                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)));
+            RunTest("Date Equal",
+           await personQuery.Where(x => x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)).ToListAsync(),
+           allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)));
 
-                RunTest("Date Not Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Date != new DateTime(2020, 2, 10)).ToListAsync(),
-                    allPeople.Where(x => !x.DateOfBirth.HasValue || x.DateOfBirth.Value.Date != new DateTime(2020, 2, 10)));
+            RunTest("Date Not Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Date != new DateTime(2020, 2, 10)).ToListAsync(),
+                allPeople.Where(x => !x.DateOfBirth.HasValue || x.DateOfBirth.Value.Date != new DateTime(2020, 2, 10)));
 
-                RunTest("Date Greater Than",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Date > new DateTime(2020, 2, 9)).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date > new DateTime(2020, 2, 9)));
+            RunTest("Date Greater Than",
+                await personQuery.Where(x => x.DateOfBirth.Value.Date > new DateTime(2020, 2, 9)).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date > new DateTime(2020, 2, 9)));
 
-                RunTest("Date Greater Than Or Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Date >= new DateTime(2020, 2, 10)).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date >= new DateTime(2020, 2, 10)));
+            RunTest("Date Greater Than Or Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Date >= new DateTime(2020, 2, 10)).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date >= new DateTime(2020, 2, 10)));
 
-                RunTest("Date Less Than",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Date < new DateTime(2020, 2, 11)).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date < new DateTime(2020, 2, 11)));
+            RunTest("Date Less Than",
+                await personQuery.Where(x => x.DateOfBirth.Value.Date < new DateTime(2020, 2, 11)).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date < new DateTime(2020, 2, 11)));
 
-                RunTest("Date Less Than Or Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Date <= new DateTime(2020, 2, 10)).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date <= new DateTime(2020, 2, 10)));
+            RunTest("Date Less Than Or Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Date <= new DateTime(2020, 2, 10)).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date <= new DateTime(2020, 2, 10)));
 
-                RunTest("Date Year Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Year == 2020).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year == 2020));
+            RunTest("Date Year Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Year == 2020).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year == 2020));
 
-                RunTest("Date Year Not Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Year != 2021).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year != 2021));
+            RunTest("Date Year Not Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Year != 2021).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year != 2021));
 
-                RunTest("Date Year Greater Than",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Year > 2019).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year > 2019));
+            RunTest("Date Year Greater Than",
+                await personQuery.Where(x => x.DateOfBirth.Value.Year > 2019).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year > 2019));
 
-                RunTest("Date Year Greater Than Or Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Year >= 2020).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year >= 2020));
+            RunTest("Date Year Greater Than Or Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Year >= 2020).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year >= 2020));
 
-                RunTest("Date Year Less Than",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Year < 2021).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year < 2021));
+            RunTest("Date Year Less Than",
+                await personQuery.Where(x => x.DateOfBirth.Value.Year < 2021).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year < 2021));
 
-                RunTest("Date Year Less Than Or Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Year <= 2020).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year <= 2020));
+            RunTest("Date Year Less Than Or Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Year <= 2020).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Year <= 2020));
 
-                RunTest("Date Month Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Month == 2).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Month == 2));
+            RunTest("Date Month Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Month == 2).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Month == 2));
 
-                RunTest("Date Day Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.Day == 10).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Day == 10));
+            RunTest("Date Day Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.Day == 10).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Day == 10));
 
-                RunTest("Date Day Of Year Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear == 41).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear == 41));
+            RunTest("Date Day Of Year Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear == 41).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear == 41));
 
-                RunTest("Date Day Of Year Not Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear != 41).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear != 41));
+            RunTest("Date Day Of Year Not Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear != 41).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear != 41));
 
-                RunTest("Date Day Of Year Greater Than",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear > 40).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear > 40));
+            RunTest("Date Day Of Year Greater Than",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear > 40).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear > 40));
 
-                RunTest("Date Day Of Year Greater Than Or Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear >= 41).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear >= 41));
+            RunTest("Date Day Of Year Greater Than Or Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear >= 41).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear >= 41));
 
-                RunTest("Date Day Of Year Less Than",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear < 42).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear < 42));
+            RunTest("Date Day Of Year Less Than",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear < 42).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear < 42));
 
-                RunTest("Date Day Of Year Less Than Or Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear <= 41).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear <= 41));
-
-
-                RunTest("Date Day Of Week Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek == DayOfWeek.Monday).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek == DayOfWeek.Monday));
-
-                RunTest("Date Day Of Week Greater Than",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek > DayOfWeek.Sunday).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek > DayOfWeek.Sunday));
-
-                RunTest("Date Day Of Week Greater Than Or Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek >= DayOfWeek.Sunday).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek >= DayOfWeek.Sunday));
-
-                RunTest("Date Day Of Week Less Than",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek < DayOfWeek.Tuesday).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek < DayOfWeek.Tuesday));
-
-                RunTest("Date Day Of Week Less Than Or Equal",
-                    await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek <= DayOfWeek.Monday).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek <= DayOfWeek.Monday));
+            RunTest("Date Day Of Year Less Than Or Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear <= 41).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear <= 41));
 
 
+            RunTest("Date Day Of Week Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek == DayOfWeek.Monday).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek == DayOfWeek.Monday));
 
-                RunTest("String Length Test", await personQuery.Where(x => x.Name.Length > 4).ToListAsync(),
-                 allPeople.Where(x => x.Name.Length > 4));
+            RunTest("Date Day Of Week Greater Than",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek > DayOfWeek.Sunday).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek > DayOfWeek.Sunday));
 
+            RunTest("Date Day Of Week Greater Than Or Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek >= DayOfWeek.Sunday).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek >= DayOfWeek.Sunday));
 
-                RunTest("Nullable Date Time Test", await personQuery.Where(x => x.DateOfBirth == new DateTime(2020, 2, 10)).ToListAsync(),
-                allPeople.Where(x => x.Name == "Zane"));
+            RunTest("Date Day Of Week Less Than",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek < DayOfWeek.Tuesday).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek < DayOfWeek.Tuesday));
 
-                RunTest("Not Null Test", await personQuery.Where(x => x.DateOfBirth != null).ToListAsync(),
-                allPeople.Where(x => x.DateOfBirth != null));
-
-                RunTest("Is Null Test", await personQuery.Where(x => x.DateOfBirth == null).ToListAsync(),
-                allPeople.Where(x => x.DateOfBirth == null));
-
-                RunTest("One Char contains", await personQuery.Where(x => x.TestInt >= 1 && x.TestInt < 10).ToListAsync(),
-                 allPeople.Where(x => x.TestInt >= 1 && x.TestInt < 10));
-
-
-                RunTest("One Char contains", await personQuery.Where(x => x.Name.Contains("J")).ToListAsync(),
-             allPeople.Where(x => x.Name.Contains("J")));
-
-                RunTest("Ends With Test", await personQuery.Where(x => x.Name.EndsWith("ack")).ToListAsync(),
-                allPeople.Where(x => x.Name.EndsWith("ack")));
-
-                RunTest("Ends With Negative Test", await personQuery.Where(x => !x.Name.EndsWith("ack")).ToListAsync(),
-                allPeople.Where(x => !x.Name.EndsWith("ack")));
-
-                int[] myArray = { 38, 39 };
-
-                RunTest("Contains Test", await personQuery.Where(x => myArray.Contains(x._Age)).ToListAsync(),
-                allPeople.Where(x => myArray.Contains(x._Age)));
-
-                RunTest("Combined Query Test", await personQuery.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10).ToListAsync(),
-           allPeople.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10));
-
-                RunTest("Get All Test", await personQuery.ToListAsync(),
-           allPeople);
-
-                RunTest("Force Cursor Equal Test", await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
-           allPeople.Where(x => x.Name == "Zack"));
-
-                RunTest("Not Equals Test", await personQuery.Where(x => x.Name != "Zack").ToListAsync(),
-                allPeople.Where(x => x.Name != "Zack"));
-
-                RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-                allPeople.Where(x => x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)));
+            RunTest("Date Day Of Week Less Than Or Equal",
+                await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek <= DayOfWeek.Monday).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek <= DayOfWeek.Monday));
 
 
-                RunTest("Not Contains Test", await personQuery.Where(x => !x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-                allPeople.Where(x => !x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)));
+
+            RunTest("String Length Test", await personQuery.Where(x => x.Name.Length > 4).ToListAsync(),
+             allPeople.Where(x => x.Name.Length > 4));
 
 
-                RunTest("Basic Index Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
-                allPeople.Where(x => x.Name == "Zack"));
+            RunTest("Nullable Date Time Test", await personQuery.Where(x => x.DateOfBirth == new DateTime(2020, 2, 10)).ToListAsync(),
+            allPeople.Where(x => x.Name == "Zane"));
 
-                RunTest("Basic Cursor Equal Test", await personQuery.Where(x => x._Age == 35).ToListAsync(),
-                allPeople.Where(x => x._Age == 35));
+            RunTest("Not Null Test", await personQuery.Where(x => x.DateOfBirth != null).ToListAsync(),
+            allPeople.Where(x => x.DateOfBirth != null));
 
-                RunTest("Greater Than Age Test", await personQuery.Where(x => x._Age > 40).ToListAsync(),
-                    allPeople.Where(x => x._Age > 40));
+            RunTest("Is Null Test", await personQuery.Where(x => x.DateOfBirth == null).ToListAsync(),
+            allPeople.Where(x => x.DateOfBirth == null));
 
-                RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).ToListAsync(),
-                    allPeople.Where(x => x._Age <= 35));
+            RunTest("One Char contains", await personQuery.Where(x => x.TestInt >= 1 && x.TestInt < 10).ToListAsync(),
+             allPeople.Where(x => x.TestInt >= 1 && x.TestInt < 10));
 
-                RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-                    allPeople.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
 
-                RunTest("StartsWith Test", await personQuery.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-                    allPeople.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
+            RunTest("One Char contains", await personQuery.Where(x => x.Name.Contains("J")).ToListAsync(),
+         allPeople.Where(x => x.Name.Contains("J")));
 
-                RunTest("Multiple Conditions AND", await personQuery.Where(x => x._Age > 30 && x.TestInt == 9).ToListAsync(),
-                    allPeople.Where(x => x._Age > 30 && x.TestInt == 9));
+            RunTest("Ends With Test", await personQuery.Where(x => x.Name.EndsWith("ack")).ToListAsync(),
+            allPeople.Where(x => x.Name.EndsWith("ack")));
 
-                RunTest("Multiple Index Conditions OR", await personQuery.Where(x => x.Name == "Isla" || x.Name == "Zack").ToListAsync(),
-                    allPeople.Where(x => x.Name == "Zack" || x.Name == "Isla"));
+            RunTest("Ends With Negative Test", await personQuery.Where(x => !x.Name.EndsWith("ack")).ToListAsync(),
+            allPeople.Where(x => !x.Name.EndsWith("ack")));
 
-                RunTest("Multiple Cursor Conditions OR", await personQuery.Where(x => x._Age > 50 || x.TestInt == 3).ToListAsync(),
-                    allPeople.Where(x => x._Age > 50 || x.TestInt == 3));
+            int[] myArray = { 38, 39 };
 
-                RunTest("Nested AND/OR", await personQuery.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-                    allPeople.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+            RunTest("Contains Test", await personQuery.Where(x => myArray.Contains(x._Age)).ToListAsync(),
+            allPeople.Where(x => myArray.Contains(x._Age)));
 
-                RunTest("Ordering Test", await personQuery.OrderBy(x => x._Age).ToListAsync(),
-                    allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id));
+            RunTest("Combined Query Test", await personQuery.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10).ToListAsync(),
+       allPeople.Where(x => x.Name == "Zack" && x.TestIntStable2 == 10));
 
-                RunTest("Order Descending Test", await personQuery.OrderByDescending(x => x._Age).ToListAsync(),
-                    allPeople.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id));
+            RunTest("Get All Test", await personQuery.ToListAsync(),
+       allPeople);
 
-                RunTest("Skip Test", await personQuery.OrderBy(x => x._Age).Skip(3).ToListAsync(),
-                    allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3));
+            RunTest("Force Cursor Equal Test", await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
+       allPeople.Where(x => x.Name == "Zack"));
 
-                RunTest("Take Test", await personQuery.OrderBy(x => x._Age).Take(2).ToListAsync(),
-                    allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).Take(2));
+            RunTest("Not Equals Test", await personQuery.Where(x => x.Name != "Zack").ToListAsync(),
+            allPeople.Where(x => x.Name != "Zack"));
+
+            RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+            allPeople.Where(x => x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)));
+
+
+            RunTest("Not Contains Test", await personQuery.Where(x => !x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+            allPeople.Where(x => !x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)));
+
+
+            RunTest("Basic Index Equal Test", await personQuery.Where(x => x.Name == "Zack").ToListAsync(),
+            allPeople.Where(x => x.Name == "Zack"));
+
+            RunTest("Basic Cursor Equal Test", await personQuery.Cursor(x => x._Age == 35).ToListAsync(),
+            allPeople.Where(x => x._Age == 35));
+
+            RunTest("Greater Than Age Test", await personQuery.Where(x => x._Age > 40).ToListAsync(),
+                allPeople.Where(x => x._Age > 40));
+
+            RunTest("Less Than or Equal Test", await personQuery.Where(x => x._Age <= 35).ToListAsync(),
+                allPeople.Where(x => x._Age <= 35));
+
+            RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                allPeople.Where(x => x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+            RunTest("StartsWith Test", await personQuery.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                allPeople.Where(x => x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
+
+            RunTest("Multiple Conditions AND", await personQuery.Where(x => x._Age > 30 && x.TestInt == 9).ToListAsync(),
+                allPeople.Where(x => x._Age > 30 && x.TestInt == 9));
+
+            RunTest("Multiple Index Conditions OR", await personQuery.Where(x => x.Name == "Isla" || x.Name == "Zack").ToListAsync(),
+                allPeople.Where(x => x.Name == "Zack" || x.Name == "Isla"));
+
+            RunTest("Multiple Cursor Conditions OR", await personQuery.Cursor(x => x._Age > 50 || x.TestInt == 3).ToListAsync(),
+                allPeople.Where(x => x._Age > 50 || x.TestInt == 3));
+
+            RunTest("Nested AND/OR", await personQuery.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                allPeople.Where(x => (x._Age > 35 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+            RunTest("Ordering Test", await personQuery.OrderBy(x => x._Age).ToListAsync(),
+                allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id));
+
+            RunTest("Order Descending Test", await personQuery.OrderByDescending(x => x._Age).ToListAsync(),
+                allPeople.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id));
+
+            var asdfsdfdsfsdf = await personQuery.OrderBy(x => x._Age).Skip(3).ToListAsync();
+
+            RunTest("Skip Test", await personQuery.OrderBy(x => x._Age).Skip(3).ToListAsync(),
+                allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3));
+
+            RunTest("Take Test", await personQuery.OrderBy(x => x._Age).Take(2).ToListAsync(),
+                allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).Take(2));
 
             RunTest("Take & With Index Test", await personQuery.Cursor(x => x.Name.StartsWith("J"))
-                .OrderBy(x => x.Name).Take(2).ToListAsync(),
-                          allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2));
+            .OrderBy(x => x.Name).Take(2).ToListAsync(),
+                      allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2));
 
             RunTest("TakeLast & With Index Test", await personQuery.Cursor(x => x.Name.StartsWith("J"))
-                .OrderBy(x => x.Name).TakeLast(2).ToListAsync(),
-                          allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2));
+            .OrderBy(x => x.Name).TakeLast(2).ToListAsync(),
+                      allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2));
 
-                RunTest("Take Index Test", await personQuery.OrderBy(x => x.Name).Take(2).ToListAsync(),
+            RunTest("Take Index Test", await personQuery.OrderBy(x => x.Name).Take(2).ToListAsync(),
 
-                              /*
-                                   * Take last is special operation that changes order,
-                                   * but this altered version replicates the LINQ to SQL desired result
-                                   */
-                          allPeople.OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2));
+                          /*
+                               * Take last is special operation that changes order,
+                               * but this altered version replicates the LINQ to SQL desired result
+                               */
+                      allPeople.OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2));
 
-                RunTest("TakeLast Index Test", await personQuery.OrderBy(x => x.Name).TakeLast(2).ToListAsync(),
+            RunTest("TakeLast Index Test", await personQuery.OrderBy(x => x.Name).TakeLast(2).ToListAsync(),
 
-                              /*
-                                   * Take last is special operation that changes order,
-                                   * but this altered version replicates the LINQ to SQL desired result
-                                   */
-                          allPeople.OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2));
+                          /*
+                               * Take last is special operation that changes order,
+                               * but this altered version replicates the LINQ to SQL desired result
+                               */
+                      allPeople.OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2));
 
 
-                var totalPersons = await personQuery.CountAsync();
-                var test1 = await personQuery.FirstOrDefaultAsync();
-                var test2 = await personQuery.FirstOrDefaultAsync(x => x.Name == "Victor");
+            var totalPersons = await personQuery.CountAsync();
+            var test1 = await personQuery.FirstOrDefaultAsync();
+            var test2 = await personQuery.FirstOrDefaultAsync(x => x.Name == "Victor");
 
-                var asdffffff = await personQuery.FirstOrDefaultAsync(x => x.Name == "asdfn3nxknnd");
+            var asdffffff = await personQuery.FirstOrDefaultAsync(x => x.Name == "asdfn3nxknnd");
 
-                // RunTest("null first or default", new List<Person>() { await personQuery.FirstOrDefaultAsync(x => x.Name == "asdfn3nxknnd") },
-                //      new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).FirstOrDefault(x => x.Name == "asdfn3nxknnd") });
+            var sdfsdfsdfdfsdf = await personQuery.OrderBy(x => x._Age).FirstOrDefaultAsync();
 
-                RunTest("Cursor First Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Age).FirstOrDefaultAsync() },
-                     new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).FirstOrDefault() });
+            // RunTest("null first or default", new List<Person>() { await personQuery.FirstOrDefaultAsync(x => x.Name == "asdfn3nxknnd") },
+            //      new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).FirstOrDefault(x => x.Name == "asdfn3nxknnd") });
 
-                RunTest("Cursor First Or Default Where Test", new List<Person>() { await personQuery.OrderBy(x => x._Age).FirstOrDefaultAsync(x => x.Name == "Victor") },
-                     new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).FirstOrDefault(x => x.Name == "Victor") });
+            RunTest("Cursor First Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Age).FirstOrDefaultAsync() },
+                 new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).FirstOrDefault() });
 
-                RunTest("Cursor Last Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Age).LastOrDefaultAsync() },
-                new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).LastOrDefault() });
+            RunTest("Cursor First Or Default Where Test", new List<Person>() { await personQuery.OrderBy(x => x._Age).FirstOrDefaultAsync(x => x.Name == "Victor") },
+                 new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).FirstOrDefault(x => x.Name == "Victor") });
+
+            RunTest("Cursor Last Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Age).LastOrDefaultAsync() },
+            new List<Person>() { allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).LastOrDefault() });
 
             RunTest("Cursor Last Or Default Where Test", new List<Person>() { await personQuery.Cursor(x => x.Name == "Victor").OrderBy(x => x._Age).LastOrDefaultAsync() },
-                     new List<Person>() { allPeople.Where(x => x.Name == "Victor").OrderBy(x => x._Age).ThenBy(x => x._Id).LastOrDefault() });
+                 new List<Person>() { allPeople.Where(x => x.Name == "Victor").OrderBy(x => x._Age).ThenBy(x => x._Id).LastOrDefault() });
 
 
-                RunTest("Index First Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Id).FirstOrDefaultAsync() },
-                new List<Person>() { allPeople.OrderBy(x => x._Id).ThenBy(x => x._Id).FirstOrDefault() });
+            RunTest("Index First Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Id).FirstOrDefaultAsync() },
+            new List<Person>() { allPeople.OrderBy(x => x._Id).ThenBy(x => x._Id).FirstOrDefault() });
 
-                RunTest("Index First Or Default Where Test", new List<Person>() { await personQuery.OrderBy(x => x._Id).FirstOrDefaultAsync(x => x.Name == "Victor") },
-                     new List<Person>() { allPeople.OrderBy(x => x._Id).ThenBy(x => x._Id).FirstOrDefault(x => x.Name == "Victor") });
+            RunTest("Index First Or Default Where Test", new List<Person>() { await personQuery.OrderBy(x => x._Id).FirstOrDefaultAsync(x => x.Name == "Victor") },
+                 new List<Person>() { allPeople.OrderBy(x => x._Id).ThenBy(x => x._Id).FirstOrDefault(x => x.Name == "Victor") });
 
-                RunTest("Index Last Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Id).LastOrDefaultAsync() },
-                new List<Person>() { allPeople.OrderBy(x => x._Id).ThenBy(x => x._Id).LastOrDefault() });
+            RunTest("Index Last Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Id).LastOrDefaultAsync() },
+            new List<Person>() { allPeople.OrderBy(x => x._Id).ThenBy(x => x._Id).LastOrDefault() });
 
             RunTest("Index Last Or Default Where Test", new List<Person>() { await personQuery.Cursor(x => x.Name == "Victor").OrderBy(x => x._Id).LastOrDefaultAsync() },
-                     new List<Person>() { allPeople.Where(x => x.Name == "Victor").OrderBy(x => x._Id).LastOrDefault() });
+                 new List<Person>() { allPeople.Where(x => x.Name == "Victor").OrderBy(x => x._Id).LastOrDefault() });
 
 
 
-                RunTest("TakeLast Cursor Test", await personQuery.OrderBy(x => x._Age).TakeLast(2).ToListAsync(),
-                     allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).TakeLast(2));
+            RunTest("TakeLast Cursor Test", await personQuery.OrderBy(x => x._Age).TakeLast(2).ToListAsync(),
+                 allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).TakeLast(2));
 
-                // 🛠️ Chaining Multiple Where Statements
-                RunTest("Chained Where Conditions",
-                    await personQuery.Where(x => x._Age > 30)
-                                     .Where(x => x.TestInt == 9)
-                                     .ToListAsync(),
-                    allPeople.Where(x => x._Age > 30).Where(x => x.TestInt == 9));
+            // 🛠️ Chaining Multiple Where Statements
+            RunTest("Chained Where Conditions",
+                await personQuery.Where(x => x._Age > 30)
+                                 .Where(x => x.TestInt == 9)
+                                 .ToListAsync(),
+                allPeople.Where(x => x._Age > 30).Where(x => x.TestInt == 9));
 
-                RunTest("Chained Where with AND/OR",
-                    await personQuery.Where(x => x._Age > 30)
-                                     .Where(x => x.TestInt == 9 || x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase))
-                                     .ToListAsync(),
-                    allPeople.Where(x => x._Age > 30).Where(x => x.TestInt == 9 || x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
+            RunTest("Chained Where with AND/OR",
+                await personQuery.Where(x => x._Age > 30)
+                                 .Where(x => x.TestInt == 9 || x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase))
+                                 .ToListAsync(),
+                allPeople.Where(x => x._Age > 30).Where(x => x.TestInt == 9 || x.Name.StartsWith("C", StringComparison.OrdinalIgnoreCase)));
 
-                // 🔄 Mixing Where, OrderBy, Skip, and Take
-                RunTest("Cursor Where + OrderBy + Skip + Take",
+            // 🔄 Mixing Where, OrderBy, Skip, and Take
+            RunTest("Cursor Where + OrderBy + Skip + Take",
                 await personQuery.Cursor(x => x._Age > 30)
-                                     .OrderBy(x => x._Age)
-                                     .Take(3)
-                                     .Skip(2)
-                                     .ToListAsync(),
-                    allPeople.Where(x => x._Age > 30).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(2).Take(3));
-
-                RunTest("Index Where + OrderBy + Skip + Take",
-            await personQuery.Cursor(x => x.Name.StartsWith("J"))
-                                 .OrderBy(x => x._Id)
+                                 .OrderBy(x => x._Age)
                                  .Take(3)
                                  .Skip(2)
                                  .ToListAsync(),
-                allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(2).Take(3));
+                allPeople.Where(x => x._Age > 30).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(2).Take(3));
 
-                RunTest("Index Where + OrderBy Desc + Skip + Take",
-            await personQuery.Cursor(x => x.Name.StartsWith("J"))
-                                 .OrderByDescending(x => x._Id)
+            RunTest("Cursor Where + OrderBy + Skip + Take + first or default",
+            new List<Person>() { await personQuery.Cursor(x => x._Age > 30)
+                                 .OrderBy(x => x._Age)
                                  .Take(3)
                                  .Skip(2)
-                                 .ToListAsync(),
-                allPeople.Where(x => x.Name.StartsWith("J")).OrderByDescending(x => x._Id).ThenByDescending(x => x._Id).Skip(2).Take(3));
+                                 .FirstOrDefaultAsync() },
+            new List<Person>() { allPeople.Where(x => x._Age > 30).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(2).Take(3).FirstOrDefault() });
 
-                RunTest("Where + OrderByDescending + TakeLast",
+            RunTest("Cursor Where + OrderBy + Skip + Take + last or default",
+            new List<Person>() { await personQuery.Cursor(x => x._Age > 30)
+                                 .OrderBy(x => x._Age)
+                                 .Take(3)
+                                 .Skip(2)
+                                 .LastOrDefaultAsync() },
+            new List<Person>() { allPeople.Where(x => x._Age > 30).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(2).Take(3).LastOrDefault() });
+
+            RunTest("Index Where + OrderBy + Skip + Take",
+            await personQuery.Cursor(x => x.Name.StartsWith("J"))
+                             .OrderBy(x => x._Id)
+                             .Take(3)
+                             .Skip(2)
+                             .ToListAsync(),
+            allPeople.Where(x => x.Name.StartsWith("J")).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(2).Take(3));
+
+            RunTest("Index Where + OrderBy Desc + Skip + Take",
+            await personQuery.Cursor(x => x.Name.StartsWith("J"))
+                             .OrderByDescending(x => x._Id)
+                             .Take(3)
+                             .Skip(2)
+                             .ToListAsync(),
+            allPeople.Where(x => x.Name.StartsWith("J")).OrderByDescending(x => x._Id).ThenByDescending(x => x._Id).Skip(2).Take(3));
+
+            RunTest("Where + OrderByDescending + TakeLast",
                 await personQuery.Cursor(x => x._Age < 60)
-                                     .OrderByDescending(x => x._Age)
-                                     .TakeLast(2)
-                                     .ToListAsync(),
-                    allPeople.Where(x => x._Age < 60).OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(2));
+                                 .OrderByDescending(x => x._Age)
+                                 .TakeLast(2)
+                                 .ToListAsync(),
+                allPeople.Where(x => x._Age < 60).OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(2));
 
 
-                //await Task.Delay(10000);
-                // 🧩 Complex Nested Conditions
-                RunTest("Nested OR within AND",
-                    await personQuery.Where(// EXAMPLE of a deeply nested expression:
+            //await Task.Delay(10000);
+            // 🧩 Complex Nested Conditions
+            RunTest("Nested OR within AND",
+                await personQuery.Where(// EXAMPLE of a deeply nested expression:
     p =>
     (
     // Group 1: TestInt matches
@@ -599,22 +619,22 @@
 
     // Group 2: Specific names or age range
     (
-        (p.Name == "Luna" || p.Name == "Jerry" || p.Name == "Jamie")
-        || (p._Age >= 35 && p._Age <= 40)
-        || (p.Name == "Zane" && p._Age > 45)
+    (p.Name == "Luna" || p.Name == "Jerry" || p.Name == "Jamie")
+    || (p._Age >= 35 && p._Age <= 40)
+    || (p.Name == "Zane" && p._Age > 45)
     )
 
     &&
 
     // Group 3: Age-based logic only
     (
-        p._Age < 30 || p._Age > 50 || p._Age == 35
+    p._Age < 30 || p._Age > 50 || p._Age == 35
     )
     )
 
     )
-                                     .ToListAsync(),
-                    allPeople.Where(// EXAMPLE of a deeply nested expression:
+                                 .ToListAsync(),
+                allPeople.Where(// EXAMPLE of a deeply nested expression:
        p =>
     (
     // Group 1: TestInt matches
@@ -624,124 +644,123 @@
 
     // Group 2: Specific names or age range
     (
-        (p.Name == "Luna" || p.Name == "Jerry" || p.Name == "Jamie")
-        || (p._Age >= 35 && p._Age <= 40)
-        || (p.Name == "Zane" && p._Age > 45)
+    (p.Name == "Luna" || p.Name == "Jerry" || p.Name == "Jamie")
+    || (p._Age >= 35 && p._Age <= 40)
+    || (p.Name == "Zane" && p._Age > 45)
     )
 
     &&
 
     // Group 3: Age-based logic only
     (
-        p._Age < 30 || p._Age > 50 || p._Age == 35
+    p._Age < 30 || p._Age > 50 || p._Age == 35
     )
     )
 
     ));
 
-                RunTest("Nested AND within OR",
-                    await personQuery.Where(x => (x._Age > 40 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase))
-                                     .ToListAsync(),
-                    allPeople.Where(x => (x._Age > 40 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+            RunTest("Nested AND within OR",
+                await personQuery.Where(x => (x._Age > 40 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase))
+                                 .ToListAsync(),
+                allPeople.Where(x => (x._Age > 40 && x.TestInt == 9) || x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
 
-                // 🚀 Edge Cases
-                RunTest("No Matching Records",
-                    await personQuery.Where(x => x.Name == "NonExistentPerson").ToListAsync(),
-                    allPeople.Where(x => x.Name == "NonExistentPerson"));
+            // 🚀 Edge Cases
+            RunTest("No Matching Records",
+                await personQuery.Where(x => x.Name == "NonExistentPerson").ToListAsync(),
+                allPeople.Where(x => x.Name == "NonExistentPerson"));
 
-                RunTest("Null DateOfBirth Handling",
-                    await personQuery.Where(x => x.DateOfBirth == null).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth == null));
+            RunTest("Null DateOfBirth Handling",
+                await personQuery.Where(x => x.DateOfBirth == null).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth == null));
 
-                RunTest("Null Field with OR",
-                    await personQuery.Where(x => x.DateOfBirth == null || x._Age > 50).ToListAsync(),
-                    allPeople.Where(x => x.DateOfBirth == null || x._Age > 50));
+            RunTest("Null Field with OR",
+                await personQuery.Where(x => x.DateOfBirth == null || x._Age > 50).ToListAsync(),
+                allPeople.Where(x => x.DateOfBirth == null || x._Age > 50));
 
-                // 📊 Pagination Stress Test
-                RunTest("Skip and Take Across Boundaries",
-                    await personQuery.OrderBy(x => x._Age)
-                                     .Take(5)
-                                     .Skip(3)
-                                     .ToListAsync(),
-                    allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3).Take(5));
+            // 📊 Pagination Stress Test
+            RunTest("Skip and Take Across Boundaries",
+                await personQuery.OrderBy(x => x._Age)
+                                 .Take(5)
+                                 .Skip(3)
+                                 .ToListAsync(),
+                allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3).Take(5));
 
-                RunTest("Large Take Last Test",
-                    await personQuery.OrderByDescending(x => x._Age)
-                                     .TakeLast(5)
-                                     .ToListAsync(),
-                    allPeople.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(5));
-
-
-                // Return ToListAsync
-                RunTest("Return ToListAsync",
-                    await personQuery.ToListAsync(),
-                    allPeople.ToList());
-
-                // ✅ Universal Truth Test (Always Returns Everything)
-                RunTest("Universal Truth Where Condition",
-                    await personQuery.Where(x => true).ToListAsync(),
-                    allPeople.Where(x => true));
-
-                // ❌ Universal False Test (Always Returns Nothing)
-                RunTest("Universal False Where Condition",
-                    await personQuery.Where(x => false).ToListAsync(),
-                    allPeople.Where(x => false));
+            RunTest("Large Take Last Test",
+                await personQuery.OrderByDescending(x => x._Age)
+                                 .TakeLast(5)
+                                 .ToListAsync(),
+                allPeople.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(5));
 
 
+            // Return ToListAsync
+            RunTest("Return ToListAsync",
+                await personQuery.ToListAsync(),
+                allPeople.ToList());
 
-                RunTest("Cursor Test Equals",
-                    await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
-                    allPeople.Where(x => x.Name == "Zack"));
-                // 🤯 Negation Tests
-                RunTest("Negation Test (NOT EQUAL)",
-                    await personQuery.Where(x => x.Name != "Zack").ToListAsync(),
-                    allPeople.Where(x => x.Name != "Zack"));
+            // ✅ Universal Truth Test (Always Returns Everything)
+            RunTest("Universal Truth Where Condition",
+                await personQuery.Where(x => true).ToListAsync(),
+                allPeople.Where(x => true));
 
-                RunTest("Negation Test (NOT Contains)",
-                    await personQuery.Where(x => !x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
-                    allPeople.Where(x => !x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
-
-                RunTest("Negation Test (NOT Greater Than)",
-                    await personQuery.Where(x => !(x._Age > 40)).ToListAsync(),
-                    allPeople.Where(x => !(x._Age > 40)));
-
-                RunTest("Deeply Nested OR within AND",
-                    await personQuery.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null))
-                                     .ToListAsync(),
-                    allPeople.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null)));
-
-                // 📌 Edge Case: Querying on a Property That Doesn't Exist in Some Objects
-                // THis test worked but now I secured it via the wrapper to throw an error to prevent user error!
-                RunTest("Query on Optional Property (Some Missing Values)",
-                    await personQuery.Where(x => x.DoNotMapTest.Contains("diary")).ToListAsync(),
-                    allPeople.Where(x => x.DoNotMapTest != null && x.DoNotMapTest.Contains("diary")));
+            // ❌ Universal False Test (Always Returns Nothing)
+            RunTest("Universal False Where Condition",
+                await personQuery.Where(x => false).ToListAsync(),
+                allPeople.Where(x => false));
 
 
-                RunTest("Where + OrderBy + Skip + TakeLast",
+
+            RunTest("Cursor Test Equals",
+                await personQuery.Cursor(x => x.Name == "Zack").ToListAsync(),
+                allPeople.Where(x => x.Name == "Zack"));
+            // 🤯 Negation Tests
+            RunTest("Negation Test (NOT EQUAL)",
+                await personQuery.Where(x => x.Name != "Zack").ToListAsync(),
+                allPeople.Where(x => x.Name != "Zack"));
+
+            RunTest("Negation Test (NOT Contains)",
+                await personQuery.Where(x => !x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
+                allPeople.Where(x => !x.Name.Contains("bo", StringComparison.OrdinalIgnoreCase)));
+
+            RunTest("Negation Test (NOT Greater Than)",
+                await personQuery.Where(x => !(x._Age > 40)).ToListAsync(),
+                allPeople.Where(x => !(x._Age > 40)));
+
+            RunTest("Deeply Nested OR within AND",
+                await personQuery.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null))
+                                 .ToListAsync(),
+                allPeople.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null)));
+
+            // 📌 Edge Case: Querying on a Property That Doesn't Exist in Some Objects
+            // THis test worked but now I secured it via the wrapper to throw an error to prevent user error!
+            RunTest("Query on Optional Property (Some Missing Values)",
+                await personQuery.Where(x => x.DoNotMapTest.Contains("diary")).ToListAsync(),
+                allPeople.Where(x => x.DoNotMapTest != null && x.DoNotMapTest.Contains("diary")));
+
+
+            RunTest("Where + OrderBy + Skip + TakeLast",
                 await personQuery.Cursor(x => x.TestInt > 2)
-                                     .OrderBy(x => x._Id)
-                                     .TakeLast(2)
-                                     .ToListAsync(),
-                    allPeople.Where(x => x.TestInt > 2).OrderBy(x => x._Id).ThenBy(x => x._Id).TakeLast(2));
-
-                RunTest("Paginated Index Query with AND Condition",
-            await personQuery.Cursor(x => x.TestInt > 2 && x.TestInt == 9)
                                  .OrderBy(x => x._Id)
+                                 .TakeLast(2)
+                                 .ToListAsync(),
+                allPeople.Where(x => x.TestInt > 2).OrderBy(x => x._Id).ThenBy(x => x._Id).TakeLast(2));
+
+            RunTest("Paginated Index Query with AND Condition",
+            await personQuery.Cursor(x => x.TestInt > 2 && x.TestInt == 9)
+                             .OrderBy(x => x._Id)
+                             .Take(3)
+                             .Skip(1)
+                             .ToListAsync(),
+            allPeople.Where(x => x.TestInt > 2 && x.TestInt == 9).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(1).Take(3));
+
+
+            // 🔄 Complex Pagination with Condition
+            RunTest("Paginated Cursor Query with AND Condition",
+                await personQuery.Cursor(x => x._Age > 30 && x.TestInt == 9)
+                                 .OrderBy(x => x._Age)
                                  .Take(3)
                                  .Skip(1)
                                  .ToListAsync(),
-                allPeople.Where(x => x.TestInt > 2 && x.TestInt == 9).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(1).Take(3));
-
-
-                // 🔄 Complex Pagination with Condition
-                RunTest("Paginated Cursor Query with AND Condition",
-                await personQuery.Cursor(x => x._Age > 30 && x.TestInt == 9)
-                                     .OrderBy(x => x._Age)
-                                     .Take(3)
-                                     .Skip(1)
-                                     .ToListAsync(),
-                    allPeople.Where(x => x._Age > 30 && x.TestInt == 9).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(1).Take(3));
-
+                allPeople.Where(x => x._Age > 30 && x.TestInt == 9).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(1).Take(3));
 
 
 

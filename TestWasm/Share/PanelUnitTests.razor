@@ -1,0 +1,182 @@
+﻿@using Magic.IndexedDb
+@using Magic.IndexedDb.Interfaces
+@using Magic.IndexedDb.Testing.Helpers
+@using Magic.IndexedDb.Testing.Models
+@typeparam TItem where TItem : class, IMagicTableBase, new()
+@inject IMagicIndexedDb _MagicDb
+
+<MudExpansionPanel>
+    <TitleContent>
+        <div class="d-flex align-items-center">
+            <MudIcon Icon="@TitleIcon" Class="@TitleIconClass" Size="Size.Medium" Style="margin-right: 8px;" />
+            <MudText>
+                <strong>Query Test: @typeof(TItem).Name</strong>
+            </MudText>
+        </div>
+    </TitleContent>
+
+    <ChildContent>
+        <MudPaper Class="pa-4 mb-3" Elevation="1" Style="background-color: #f9f9f9;">
+            <MudText Typo="Typo.subtitle2">Blueprint Overview:</MudText>
+
+            @if (BluePrint.WherePredicates?.Count > 0)
+            {
+                <div>
+                    <strong>Where:</strong>
+                    <ul>
+                        @foreach (var p in BluePrint.WherePredicates)
+                        {
+                            <li>@p</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @if (BluePrint.OrderBys?.Count > 0)
+            {
+                <div>
+                    <strong>OrderBy:</strong>
+                    <ul>
+                        @foreach (var o in BluePrint.OrderBys)
+                        {
+                            <li>@o</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @if (BluePrint.OrderByDescendings?.Count > 0)
+            {
+                <div>
+                    <strong>OrderByDescending:</strong>
+                    <ul>
+                        @foreach (var o in BluePrint.OrderByDescendings)
+                        {
+                            <li>@o</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @if (BluePrint.TakeValues?.Count > 0)
+            {
+                <div><strong>Take:</strong> @string.Join(", ", BluePrint.TakeValues)</div>
+            }
+
+            @if (BluePrint.SkipValues?.Count > 0)
+            {
+                <div><strong>Skip:</strong> @string.Join(", ", BluePrint.SkipValues)</div>
+            }
+
+            @if (BluePrint.TakeLastValues?.Count > 0)
+            {
+                <div><strong>TakeLast:</strong> @string.Join(", ", BluePrint.TakeLastValues)</div>
+            }
+        </MudPaper>
+
+        @foreach (var (testName, response, countResults) in TestResults)
+        {
+            <div>
+                @if (response.Success)
+                {
+                    <strong>✅ @testName</strong> @($" - {countResults}")
+                }
+                else
+                {
+                    <strong>❌ @testName</strong> @($" - {countResults}")
+
+                    @if (!string.IsNullOrWhiteSpace(response.Message))
+                    {
+                        var messages = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var message in messages)
+                        {
+                            <div style="margin-left: 20px;">🔍 @message</div>
+                        }
+                    }
+                }
+            </div>
+        }
+    </ChildContent>
+</MudExpansionPanel>
+
+@code {
+    [Parameter, EditorRequired]
+    public List<TItem> InMemoryList { get; set; }
+
+    [Parameter, EditorRequired]
+    public IMagicQuery<TItem> MagicQuery { get; set; }
+
+    [Parameter, EditorRequired]
+    public QueryTestBlueprint<TItem> BluePrint { get; set; }
+
+    public List<(string, TestResponse, string)> TestResults = new();
+
+    private string TitleIcon = Icons.Material.Filled.HelpOutline;
+    private string TitleIconClass = "text-secondary";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                TitleIcon = Icons.Material.Filled.Autorenew;
+                TitleIconClass = "text-info mud-rotate-360";
+                StateHasChanged();
+
+                var tests = MagicQueryPathWalker.GenerateAllPaths(MagicQuery, InMemoryList, BluePrint);
+
+                foreach (var test in tests)
+                {
+                    try
+                    {
+                        var executedTestDb = await test.ExecuteDb();
+                        var mem = test.ExecuteInMemory();
+                        RunTest(test.Name, executedTestDb, mem);
+                    }
+                    catch (Exception ex)
+                    {
+                        TestResults.Add((test.Name, new TestResponse { Success = false, Message = $"Exception: {ex.Message}" }, "0 results"));
+                    }
+                }
+
+                UpdateIconBasedOnResults();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                TitleIcon = Icons.Material.Filled.Error;
+                TitleIconClass = "text-error";
+            }
+        }
+    }
+
+    private void RunTest<T>(string testName,
+        IEnumerable<T> indexDbResults, IEnumerable<T> correctResults) where T : class
+    {
+        indexDbResults = indexDbResults.Where(x => x != null);
+        correctResults = correctResults.Where(x => x != null);
+
+        var result = TestValidator.ValidateLists(correctResults, indexDbResults);
+        string countResults = result.Success
+            ? $"Results: {indexDbResults.Count()}"
+            : $"IndexDB Results: {indexDbResults.Count()} / Correct Results: {correctResults.Count()}";
+
+        TestResults.Add((testName, result, countResults));
+    }
+
+    private void UpdateIconBasedOnResults()
+    {
+        if (TestResults.All(r => r.Item2.Success))
+        {
+            TitleIcon = Icons.Material.Filled.CheckCircle;
+            TitleIconClass = "text-success";
+        }
+        else
+        {
+            TitleIcon = Icons.Material.Filled.Cancel;
+            TitleIconClass = "text-error";
+        }
+    }
+}

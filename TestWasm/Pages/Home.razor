@@ -6,6 +6,7 @@
 @using TestWasm.Models
 @using TestWasm.Repository
 @using System.Linq;
+@using TestWasm.Share;
 
 @inject IMagicIndexedDb _MagicDb
 
@@ -49,6 +50,27 @@
 <PageTitle>Example</PageTitle>
 
 <h3>Unit Tests</h3>
+
+@if(allPeople != null && allPeople.Any() && personQuery != null)
+{
+
+    <MudExpansionPanels MultiExpansion="true">
+        <PanelUnitTests InMemoryList="@allPeople" MagicQuery="@personQuery" BluePrint="@(new QueryTestBlueprint<Person>
+                    {
+                        WherePredicates = [x => x.TestInt > 2],
+                        OrderBys = [x => x._Age],
+                        OrderByDescendings = [x => x._Age],
+                        TakeValues = [2],
+                        TakeLastValues = [1],
+                        SkipValues = [1],
+                    })"></PanelUnitTests>
+    </MudExpansionPanels>
+
+}
+
+
+
+
 @foreach (var (testName, response, countResults) in TestResults)
 {
     <div>
@@ -157,15 +179,17 @@
     private IEnumerable<Person> WhereExample { get; set; } = Enumerable.Empty<Person>();
     private double storageQuota { get; set; }
     private double storageUsage { get; set; }
+    private IMagicQuery<Person>? personQuery { get; set; }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             try
             {
-
+                var db = await _MagicDb.Database(IndexDbContext.Client);
+                await db.DeleteAsync();
                 // Targets the default database automatically if called without any parameters.
-                IMagicQuery<Person> personQuery = await _MagicDb.Query<Person>();
+                personQuery = await _MagicDb.Query<Person>();
                 await personQuery.ClearTable();
 
                 // Choose an assigned database to Person with strictly typed enforced connected Db's.
@@ -231,7 +255,7 @@
 
      };
 
-
+                var guiys = new HashSet<Guid>();
                 var count = 0;
                 foreach (var p in persons)
                 {
@@ -239,9 +263,14 @@
                     p._Id = count;
                     p.TestIntStable = count;
                     p.TestIntStable2 = 10;
+                    if (p.GUIY == Guid.Empty)
+                        p.GUIY = Guid.NewGuid();
+
+                    if (!guiys.Add(p.GUIY))
+                    {
+                        Console.WriteLine($"Duplicate GUID found! {p.Name} - {p.GUIY}");
+                    }
                 }
-
-
 
                 //var storageInfo = await _MagicDb.GetStorageEstimateAsync();
                 //storageQuota = storageInfo.QuotaInMegabytes;
@@ -258,20 +287,25 @@
 
                 //IMagicQuery<Person> personQuery = manager.Query<Person>();
 
-                await personQuery.AddRangeAsync(persons);
+                //await personQuery.AddRangeAsync(persons);
+                foreach (var p in persons.OrderBy(x => x._Id))
+                {
+                    await personQuery.AddAsync(p);
+                }
+
 
                 allPeople = await personQuery.ToListAsync();
 
                 StateHasChanged();
 
-                //await manager.ClearTableAsync<Person>();
+                @* //await manager.ClearTableAsync<Person>();
                 var db = await _MagicDb.Database(IndexDbContext.Client);
                 //await db.DeleteAsync();
                 await db.CloseAsync();
                 bool doesExist = await db.DoesExistAsync();
                 bool isOpen = await db.IsOpenAsync();
                 await db.OpenAsync();
-                bool isOpenNow = await db.IsOpenAsync();
+                bool isOpenNow = await db.IsOpenAsync(); *@
 
                 var d = new DateTime();
                 var asdf = d.DayOfWeek;
@@ -283,31 +317,31 @@
 
 
 
-                var blueprint = new QueryTestBlueprint<Person>
-                    {
-                        WherePredicates = [x => x.TestInt == 9],
-                        OrderBys = [x => x._Age],
-                        OrderByDescendings = [x => x._Age],
-                        TakeValues = [2],
-                        TakeLastValues = [1],
-                        SkipValues = [1],
-                    };
+                // var blueprint = new QueryTestBlueprint<Person>
+                //     {
+                //         WherePredicates = [x => x.TestInt == 9],
+                //         OrderBys = [x => x._Age],
+                //         OrderByDescendings = [x => x._Age],
+                //         TakeValues = [2],
+                //         TakeLastValues = [1],
+                //         SkipValues = [1],
+                //     };
 
-                var tests = MagicQueryPathWalker.GenerateAllPaths(personQuery, allPeople, blueprint);
+                // var tests = MagicQueryPathWalker.GenerateAllPaths(personQuery, allPeople, blueprint);
 
-                foreach (var test in tests)
-                {
-                    try
-                    {
-                        var executedTestDb = await test.ExecuteDb();
-                        var mem = test.ExecuteInMemory();
-                        RunTest(test.Name, executedTestDb, mem);
-                    }
-                    catch (Exception ex)
-                    {
-                        //RunTest(test.Name, [], [], $"Exception: {ex.Message}");
-                    }
-                }
+                // foreach (var test in tests)
+                // {
+                //     try
+                //     {
+                //         var executedTestDb = await test.ExecuteDb();
+                //         var mem = test.ExecuteInMemory();
+                //         RunTest(test.Name, executedTestDb, mem);
+                //     }
+                //     catch (Exception ex)
+                //     {
+                //         //RunTest(test.Name, [], [], $"Exception: {ex.Message}");
+                //     }
+                // }
 
 
                 // RunTest("Test Test",
@@ -318,7 +352,7 @@
                 // RunTest("Test Test",
                 // await personQuery.Cursor(x => x.TestInt == 9).OrderBy(x => x._Age).Skip(1).ToListAsync(),
                 // allPeople.Where(x => x.TestInt == 9).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(1));
-
+                
 
                 RunTest("Date Equal",
                 await personQuery.Where(x => x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)).ToListAsync(),
@@ -509,6 +543,8 @@
 
                 RunTest("Order Descending Test", await personQuery.OrderByDescending(x => x._Age).ToListAsync(),
                     allPeople.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id));
+
+                var asdfsdfdsfsdf = await personQuery.OrderBy(x => x._Age).Skip(3).ToListAsync();
 
                 RunTest("Skip Test", await personQuery.OrderBy(x => x._Age).Skip(3).ToListAsync(),
                     allPeople.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3));
@@ -774,13 +810,20 @@
                     await personQuery.Where(x => x.DoNotMapTest.Contains("diary")).ToListAsync(),
                     allPeople.Where(x => x.DoNotMapTest != null && x.DoNotMapTest.Contains("diary")));
 
+                RunTest("Index Where + TakeLast",
+                    await personQuery.Where(x => x.TestInt > 2)
+                                     .TakeLast(2)
+                                     .ToListAsync(),
+                    allPeople.Where(x => x.TestInt > 2).OrderBy(x => x.TestInt)
+                    .ThenBy(x => x._Id).TakeLast(2));
+                // IndexedDB orders by the queried index plus the insert order
 
-                RunTest("Where + OrderBy + Skip + TakeLast",
+                RunTest("Cursor + OrderBy + TakeLast",
                     await personQuery.Cursor(x => x.TestInt > 2)
                                      .OrderBy(x => x._Id)
                                      .TakeLast(2)
                                      .ToListAsync(),
-                    allPeople.Where(x => x.TestInt > 2).OrderBy(x => x._Id).ThenBy(x => x._Id).TakeLast(2));
+                    allPeople.Where(x => x.TestInt > 2).OrderBy(x => x._Id).TakeLast(2));
 
                 RunTest("Paginated Index Query with AND Condition",
                 await personQuery.Cursor(x => x.TestInt > 2 && x.TestInt == 9)

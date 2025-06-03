@@ -575,17 +575,20 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
 
     let isCompoundKey = Array.isArray(compoundKeys) && compoundKeys.length > 1;
 
+    // Normalize single-key inputs to ensure flat values
+    const normalizeBatch = (batch) => {
+        return isCompoundKey
+            ? batch.map(pk => Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]))
+            : batch.map(pk => Array.isArray(pk) ? pk[0] : pk);
+    };
+
     // **Tier 1: Small datasets (< 1500)  Single Fetch**
     if (primaryKeys.length < 1500) {
         return await db.transaction('r', table, async () => {
-            if (isCompoundKey) {
-                let formattedBatch = primaryKeys.map(pk =>
-                    Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key])
-                );
-                return table.where(compoundKeys).anyOf(formattedBatch).toArray();
-            } else {
-                return table.where(compoundKeys[0]).anyOf(primaryKeys).toArray();
-            }
+            let formattedBatch = normalizeBatch(primaryKeys);
+            return table.where(isCompoundKey ? compoundKeys : compoundKeys[0])
+                .anyOf(formattedBatch)
+                .toArray();
         });
     }
 
@@ -595,21 +598,18 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
         await db.transaction('r', table, async () => {
             for (let i = 0; i < primaryKeys.length; i += batchSize) {
                 let batch = primaryKeys.slice(i, i + batchSize);
-                if (isCompoundKey) {
-                    let formattedBatch = batch.map(pk =>
-                        Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key])
-                    );
-                    batchPromises.push(table.where(compoundKeys).anyOf(formattedBatch).toArray());
-                } else {
-                    batchPromises.push(table.where(compoundKeys[0]).anyOf(batch).toArray());
-                }
+                let formattedBatch = normalizeBatch(batch);
+                batchPromises.push(
+                    table.where(isCompoundKey ? compoundKeys : compoundKeys[0])
+                        .anyOf(formattedBatch)
+                        .toArray()
+                );
             }
         });
         let batchResults = await Promise.all(batchPromises);
         return batchResults.flat();
     }
 
-    // **Tier 3: Massive Datasets  Controlled Concurrency, Shrinking `anyOf()` for faster lookups**
     // **Tier 3: Massive Datasets - Controlled Concurrency, Shrinking `anyOf()` for faster lookups**
     return await db.transaction('r', table, async () => {
         let remainingKeys = [...primaryKeys];
@@ -623,9 +623,7 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
             if (remainingKeys.length === 0) return;
 
             let batch = remainingKeys.splice(0, batchSize);
-            let formattedBatch = isCompoundKey
-                ? batch.map(pk => Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]))
-                : batch;
+            let formattedBatch = normalizeBatch(batch);
 
             // **Split the query if it's too large**
             if (formattedBatch.length > 1000) {
@@ -679,6 +677,7 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
         return results;
     });
 }
+
 
 function applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, flipSkipTakeOrder = true) {
     if (!queryAdditions || queryAdditions.length === 0) {

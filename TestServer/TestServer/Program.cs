@@ -1,4 +1,5 @@
 using Magic.IndexedDb;
+using MudBlazor.Services;
 using TestServer.Client.Pages;
 using TestServer.Components;
 
@@ -10,7 +11,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveWebAssemblyComponents();
 
 builder.Services.AddMagicBlazorDB(BlazorInteropMode.WASM, true);
-
+builder.Services.AddMudServices();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

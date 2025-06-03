@@ -32,9 +32,12 @@ export function validateQueryAdditions(queryAdditions, indexCache) {
         }
 
         if (addition.additionFunction === QUERY_ADDITIONS.TAKE_LAST) {
-            const prevAddition = queryAdditions[i - 1];
-            if (!prevAddition || (prevAddition.additionFunction !== QUERY_ADDITIONS.ORDER_BY && prevAddition.additionFunction !== QUERY_ADDITIONS.ORDER_BY_DESCENDING)) {
-                debugLog(`TAKE_LAST requires ORDER_BY but was not found before it.`);
+            const hasPriorOrder = queryAdditions
+                .slice(0, i)
+                .some(prev => prev.additionFunction === QUERY_ADDITIONS.ORDER_BY || prev.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING);
+
+            if (hasPriorOrder) {
+                debugLog(`TAKE_LAST requires ORDER_BY but no ORDER_BY or ORDER_BY_DESCENDING found before index ${i}`);
                 requiresCursor = true;
             }
         }
