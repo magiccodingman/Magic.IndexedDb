@@ -74,8 +74,6 @@ public static class MagicJsChunkProcessor
         return null;
     }
 
-
-
     public static void RemoveInstance(string instanceId)
     {
         _chunkedMessages.TryRemove(instanceId, out _);

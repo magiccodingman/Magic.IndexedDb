@@ -219,8 +219,6 @@ internal class MagicJsInvoke
         }
     }
 
-
-
     [JSInvokable("ProcessJsChunk")]
     public Task ProcessJsChunk(string instanceId, string chunkInstanceId, int yieldOrderIndex, string chunk, int chunkIndex, int totalChunks)
     {
@@ -233,10 +231,6 @@ internal class MagicJsInvoke
         MagicJsChunkProcessor.AddChunk(instanceId, chunkInstanceId, yieldOrderIndex, chunk, chunkIndex, totalChunks);
         return Task.CompletedTask;
     }
-
-
-
-
 
     private async Task MagicVoidStreamJsAsync(string modulePath, string functionName, CancellationToken token, params ITypedArgument[] args)
     {

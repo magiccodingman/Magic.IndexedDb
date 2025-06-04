@@ -20,7 +20,6 @@ public static class SchemaHelper
         });
     }
 
-
     public static bool ImplementsIMagicTable(Type type)
     {
         return type.GetInterfaces().Any(i => i.IsGenericType
@@ -177,7 +176,6 @@ public static class SchemaHelper
 
         return schemas;
     }
-
 
     /// <summary>
     /// Retrieves the store schema from a given type.

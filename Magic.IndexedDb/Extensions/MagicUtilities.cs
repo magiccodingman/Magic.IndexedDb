@@ -19,7 +19,6 @@ internal class MagicUtilities : IMagicUtilities
         _jsMessageSizeBytes = jsMessageSizeBytes;
     }
 
-
     /// <summary>
     /// Returns Mb
     /// </summary>

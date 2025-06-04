@@ -213,26 +213,6 @@ public static class PropertyMappingCache
                && type.Namespace == null;
     }
 
-
-
-
-
-
-    /*
-            public static bool IsSimpleType(Type type)
-            {
-                return type.IsPrimitive ||
-                       type.IsEnum ||
-                       type == typeof(string) ||
-                       type == typeof(decimal) ||
-                       type == typeof(DateTime) ||
-                       type == typeof(DateTimeOffset) ||
-                       type == typeof(Guid) ||
-                       type == typeof(Uri) ||
-                       type == typeof(TimeSpan);
-            }*/
-
-
     public static IEnumerable<Type> GetAllNestedComplexTypes(IEnumerable<PropertyInfo> properties)
     {
         HashSet<Type> complexTypes = new();
@@ -275,63 +255,6 @@ public static class PropertyMappingCache
                  || (type.IsGenericType && typeof(IEnumerable<>).IsAssignableFrom(type.GetGenericTypeDefinition())) // Generic IEnumerable<T>
                  || type.IsArray); // Arrays are collections too
     }
-
-    /*private static readonly ConcurrentDictionary<Type, bool> _complexTypeCache = new();
-
-    public static bool IsComplexType(Type type)
-    {
-        return _complexTypeCache.GetOrAdd(type, t =>
-        {
-            if (IsSimpleType(t) || t == typeof(string))
-                return false;
-
-            if (t.IsGenericType)
-            {
-                Type genericTypeDef = t.GetGenericTypeDefinition();
-                if (typeof(IEnumerable<>).IsAssignableFrom(genericTypeDef))
-                {
-                    return IsComplexType(t.GetGenericArguments()[0]);
-                }
-                return t.GetGenericArguments().Any(IsComplexType);
-            }
-
-            if (typeof(IEnumerable).IsAssignableFrom(t) || t.IsArray)
-                return false;
-
-            return true;
-        });
-    }*/
-
-
-    /*public static bool IsComplexType(Type type)
-    {
-        if (IsSimpleType(type) || type == typeof(string))
-            return false;
-
-        // Handle generic collections like List<T>, Dictionary<TKey, TValue>
-        if (type.IsGenericType)
-        {
-            Type genericTypeDef = type.GetGenericTypeDefinition();
-
-            // If it's a generic IEnumerable<T>, get the type argument and check if it's complex
-            if (typeof(IEnumerable<>).IsAssignableFrom(genericTypeDef))
-            {
-                Type itemType = type.GetGenericArguments()[0];
-                return IsComplexType(itemType);
-            }
-
-            // Otherwise, it might be a generic class like StoreRecord<T>
-            return type.GetGenericArguments().Any(IsComplexType);
-        }
-
-        // Handle non-generic collections like arrays
-        if (typeof(IEnumerable).IsAssignableFrom(type) || type.IsArray)
-            return false;
-
-        return true; // Consider anything else a complex object
-    }*/
-
-
 
     /// <summary>
     /// Gets the C# property name given a JavaScript property name.
@@ -490,7 +413,6 @@ public static class PropertyMappingCache
     {
         return GetPropertyEntry(property.Name, type);
     }
-
 
     /// <summary>
     /// Ensures that both schema and property caches are built for the given type.

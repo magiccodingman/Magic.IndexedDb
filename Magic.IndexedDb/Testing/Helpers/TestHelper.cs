@@ -76,7 +76,6 @@ public static class TestValidator
             }
         }
 
-
         return failureDetails.Any()
             ? new TestResponse { Success = false, Message = string.Join("\n\n", failureDetails) }
             : new TestResponse { Success = true };
@@ -91,9 +90,6 @@ public static class TestValidator
             .OrderBy(kv => kv.Property) // Ensure stable order for comparison
             .Select(kv => $"{kv.Property}={kv.Value?.ToString() ?? "NULL"}"));
     }
-
-
-
 
     private static List<string> CompareObjects(object expected, object actual, PropertyInfo[] properties, string path)
     {

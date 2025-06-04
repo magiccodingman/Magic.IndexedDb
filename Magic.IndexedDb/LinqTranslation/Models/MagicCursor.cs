@@ -11,12 +11,10 @@ internal class MagicCursor<T> : IMagicCursor<T> where T : class
     {
         _magicQuery.ForceCursorMode = true;
         MagicQuery = _magicQuery;
-
     }
 
     public IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate)
     {
-
         var _MagicQuery = new MagicQuery<T>(MagicQuery);
         _MagicQuery.Predicates.Add(predicate);
         return new MagicCursor<T>(_MagicQuery); // Enable method chaining

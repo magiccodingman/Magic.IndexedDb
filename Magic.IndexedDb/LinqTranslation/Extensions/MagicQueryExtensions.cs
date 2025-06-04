@@ -152,13 +152,10 @@ internal class MagicQueryExtensions<T> :
         return result;
     }
 
-
-
     private bool IsUniversalFalse(Expression<Func<T, bool>> predicate)
     {
         return predicate.Body is ConstantExpression constant && constant.Value is bool value && !value;
     }
-
 
     private Expression<Func<T, bool>> PreprocessPredicate()
     {

@@ -293,7 +293,6 @@ public class UniversalExpressionBuilder<T>
     {
         node = null!;
 
-
         if (TryRecognizeLengthProperty(bin, operation, out node))
             return true;
 
@@ -306,7 +305,6 @@ public class UniversalExpressionBuilder<T>
 
         return false;
     }
-
 
     private bool TryRecognizeLengthProperty(BinaryExpression bin, string operation, out FilterNode node)
     {
@@ -381,7 +379,6 @@ public class UniversalExpressionBuilder<T>
             ? path[^3]
             : path[^2];
     }
-
 
     private bool TryRecognizeDateProperty(BinaryExpression bin, string operation, out FilterNode node)
     {
@@ -472,14 +469,11 @@ public class UniversalExpressionBuilder<T>
         };
     }
 
-
-
     private static bool IsDateType(Type type)
     {
         var actual = Nullable.GetUnderlyingType(type) ?? type;
         return actual == typeof(DateTime) || actual == typeof(DateOnly);
     }
-
 
     private FilterNode BuildDateEqualityRange(string jsProp, object rawConst, string op)
     {
@@ -564,7 +558,6 @@ public class UniversalExpressionBuilder<T>
         return expr;
     }
 
-
     private List<string>? GetMemberAccessPath(Expression expr)
     {
         var path = new List<string>();
@@ -576,8 +569,6 @@ public class UniversalExpressionBuilder<T>
 
         return expr is ParameterExpression ? path : null;
     }
-
-
 
     // ------------------------------
     // "Contains" flattening logic:

@@ -135,10 +135,11 @@
                 IMagicQuery<Car> carQuery = await _MagicDb.Query<Car>();
                 await carQuery.ClearTable();
 
-                List<Car> cars = [];
-            cars.Add(new Car { Brand = "Audi", Created = DateTime.UtcNow.AddDays(1) });
-            cars.Add(new Car { Brand = "Toyota", Created = DateTime.UtcNow.AddDays(2) });
-            cars.Add(new Car { Brand = "Ferrari", Created = DateTime.UtcNow.AddDays(3) });
+                List<Car> cars = [
+                    new Car { Brand = "Audi", Created = DateTime.UtcNow.AddDays(1) },
+                    new Car { Brand = "Toyota", Created = DateTime.UtcNow.AddDays(2) },
+                    new Car { Brand = "Ferrari", Created = DateTime.UtcNow.AddDays(3) }
+                ];
                 
                 await carQuery.AddRangeAsync(cars);
 

@@ -183,9 +183,6 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         return _defaultValues.GetOrAdd(type, t => t.IsValueType ? Activator.CreateInstance(t) : null);
     }
 
-
-
-
     /// <summary>
     /// Reads and assigns a property value, detecting collections, simple types, and complex objects.
     /// </summary>
@@ -462,7 +459,6 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         }
     }
 
-
     private bool IsDefaultValue(object? value, MagicPropertyEntry mpe)
     {
         if (value == null)
@@ -470,5 +466,4 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
         return value.Equals(mpe.DefaultValue); // ✅ Use precomputed default value
     }
-
 }
