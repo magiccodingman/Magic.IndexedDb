@@ -1,14 +1,7 @@
 ﻿using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Interfaces;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Diagnostics.Metrics;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Models;
 

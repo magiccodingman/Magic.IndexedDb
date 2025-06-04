@@ -1,14 +1,5 @@
-﻿using E2eTest.Entities;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.Playwright;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Linq;
-using System.Text;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace E2eTest.Extensions;
 internal static class AssertExtensions

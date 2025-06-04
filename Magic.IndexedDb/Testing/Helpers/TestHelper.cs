@@ -2,14 +2,8 @@
 using Magic.IndexedDb.Models;
 using Magic.IndexedDb.SchemaAnnotations;
 using Magic.IndexedDb.Testing.Models;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.Testing.Helpers;
 

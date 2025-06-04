@@ -1,12 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Magic.IndexedDb.Interfaces;
-using Magic.IndexedDb.SchemaAnnotations;
-
-namespace Magic.IndexedDb;
+﻿namespace Magic.IndexedDb;
 
 /// <summary>
 /// sets as the primary key

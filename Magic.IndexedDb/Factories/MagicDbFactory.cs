@@ -1,14 +1,9 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using Magic.IndexedDb.Models;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Extensions;
-using System.Collections.Concurrent;
-using System.Reflection;
 using Magic.IndexedDb.LinqTranslation.Interfaces;
-using System.Diagnostics;
-using System.Threading;
 
 namespace Magic.IndexedDb.Factories;
 

@@ -1,9 +1,6 @@
 using Magic.IndexedDb;
 using Magic.IndexedDb.Helpers;
-using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components;
-using System.Runtime.CompilerServices;
-using System.Text.Json.Serialization;
 using Magic.IndexedDb.SchemaAnnotations;
 using System.Text.Json;
 

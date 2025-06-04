@@ -1,14 +1,8 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Concurrent;
-using System.Linq;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Magic.IndexedDb.Helpers;
-using Magic.IndexedDb.Interfaces;
-using Magic.IndexedDb.SchemaAnnotations;
-using Microsoft.Extensions.Options;
 
 namespace Magic.IndexedDb.Models;
 

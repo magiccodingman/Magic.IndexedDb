@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Magic.IndexedDb.Models.UniversalOperations;
+﻿namespace Magic.IndexedDb.Models.UniversalOperations;
 
 /// <summary>
 /// Represents a group of AND-filter groups that are connected using OR (||).

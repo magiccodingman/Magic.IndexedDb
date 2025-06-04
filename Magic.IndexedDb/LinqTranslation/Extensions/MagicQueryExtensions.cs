@@ -1,17 +1,6 @@
 ﻿using Magic.IndexedDb.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Magic.IndexedDb.LinqTranslation.Interfaces;
-using Magic.IndexedDb.Helpers;
 using System.Linq.Expressions;
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Text.Json.Nodes;
-using System.Collections;
-using Magic.IndexedDb.Models.UniversalOperations;
 using Magic.IndexedDb.LinqTranslation.Models;
 using Magic.IndexedDb.Extensions;
 

@@ -1,10 +1,4 @@
 ﻿using Magic.IndexedDb.Models.UniversalOperations;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
 namespace Magic.IndexedDb.LinqTranslation.Models;
 

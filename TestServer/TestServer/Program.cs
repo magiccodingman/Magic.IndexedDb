@@ -1,6 +1,5 @@
 using Magic.IndexedDb;
 using MudBlazor.Services;
-using TestServer.Client.Pages;
 using TestServer.Components;
 
 var builder = WebApplication.CreateBuilder(args);

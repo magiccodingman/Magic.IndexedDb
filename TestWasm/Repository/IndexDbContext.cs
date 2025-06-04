@@ -1,6 +1,5 @@
 ﻿using Magic.IndexedDb;
 using Magic.IndexedDb.Interfaces;
-using TestWasm.Models;
 
 namespace TestWasm.Repository;
 

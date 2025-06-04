@@ -1,7 +1,5 @@
 ﻿using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Models;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
 
 namespace Magic.IndexedDb.Helpers;

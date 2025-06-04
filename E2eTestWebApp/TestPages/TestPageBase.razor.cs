@@ -1,10 +1,3 @@
-using Magic.IndexedDb;
-using Magic.IndexedDb.Helpers;
-using Microsoft.AspNetCore.Components.Rendering;
-using Microsoft.AspNetCore.Components;
-using System.Diagnostics;
-using System.Text.Json;
-
 namespace E2eTestWebApp.TestPages;
 
 partial class TestPageBase

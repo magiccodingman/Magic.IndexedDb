@@ -2,14 +2,7 @@
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Models;
 using Microsoft.JSInterop;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Magic.IndexedDb.Extensions;
 

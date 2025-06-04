@@ -1,5 +1,4 @@
-﻿using E2eTest.Entities;
-using E2eTest.Extensions;
+﻿using E2eTest.Extensions;
 using E2eTestWebApp.TestPages;
 
 namespace E2eTest;

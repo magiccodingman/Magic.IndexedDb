@@ -1,19 +1,9 @@
-using System.Dynamic;
-using System.Linq.Expressions;
-using System.Reflection;
-using System.Text.Json;
-using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Models;
-using Magic.IndexedDb.SchemaAnnotations;
 using Microsoft.JSInterop;
-using System.Text.Json.Nodes;
 using Magic.IndexedDb.Interfaces;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using Microsoft.Extensions.Options;
 using Magic.IndexedDb.Extensions;
 using System.Runtime.CompilerServices;
-using Magic.IndexedDb.Models.UniversalOperations;
 using Magic.IndexedDb.LinqTranslation.Interfaces;
 using Magic.IndexedDb.LinqTranslation.Models;
 

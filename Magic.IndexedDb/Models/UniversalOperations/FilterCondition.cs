@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Magic.IndexedDb.Models.UniversalOperations;
+﻿namespace Magic.IndexedDb.Models.UniversalOperations;
 
 /// <summary>
 /// Represents a single filtering condition applied to a property.
