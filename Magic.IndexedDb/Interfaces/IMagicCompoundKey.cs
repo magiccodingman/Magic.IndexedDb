@@ -1,16 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Reflection;
 
-namespace Magic.IndexedDb
+namespace Magic.IndexedDb;
+
+public interface IMagicCompoundKey
 {
-    public interface IMagicCompoundKey
-    {
-        string[] ColumnNamesInCompoundKey { get; }
-        bool AutoIncrement { get; }
-        PropertyInfo[] PropertyInfos { get; }
-    }
+    string[] ColumnNamesInCompoundKey { get; }
+    bool AutoIncrement { get; }
+    PropertyInfo[] PropertyInfos { get; }
 }

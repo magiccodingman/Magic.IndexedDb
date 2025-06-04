@@ -1,12 +1,10 @@
 ﻿// works with TestPageBase in E2eTestWebApp
 
-using E2eTest.Entities;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Playwright;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text.Json;
+
 namespace E2eTest;
 
 

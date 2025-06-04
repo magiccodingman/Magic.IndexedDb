@@ -1,38 +1,29 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Magic.IndexedDb.Interfaces;
-using Magic.IndexedDb.SchemaAnnotations;
+﻿namespace Magic.IndexedDb;
 
-namespace Magic.IndexedDb
+/// <summary>
+/// sets as the primary key
+/// </summary>
+/*[AttributeUsage(AttributeTargets.Property)]
+public class MagicPrimaryKeyAttribute : Attribute, IColumnNamed
 {
-    /// <summary>
-    /// sets as the primary key
-    /// </summary>
-    /*[AttributeUsage(AttributeTargets.Property)]
-    public class MagicPrimaryKeyAttribute : Attribute, IColumnNamed
-    {
-        public string ColumnName { get; }
-        public bool AutoIncrement { get; }
+    public string ColumnName { get; }
+    public bool AutoIncrement { get; }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="autoIncrement">whether the primary key automatically increments when new rows are added.</param>
-        /// <param name="columnName"></param>
-        public MagicPrimaryKeyAttribute(bool autoIncrement, string columnName = null)
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="autoIncrement">whether the primary key automatically increments when new rows are added.</param>
+    /// <param name="columnName"></param>
+    public MagicPrimaryKeyAttribute(bool autoIncrement, string columnName = null)
+    {
+        AutoIncrement = autoIncrement;
+        if (!String.IsNullOrWhiteSpace(columnName))
         {
-            AutoIncrement = autoIncrement;
-            if (!String.IsNullOrWhiteSpace(columnName))
-            {
-                ColumnName = columnName;
-            }
-            else
-            {
-                ColumnName = null;
-            }
+            ColumnName = columnName;
         }
-    }*/
-}
+        else
+        {
+            ColumnName = null;
+        }
+    }
+}*/
