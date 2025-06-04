@@ -6,26 +6,25 @@ using System.Threading.Tasks;
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.SchemaAnnotations;
 
-namespace Magic.IndexedDb.SchemaAnnotations
-{
-    /// <summary>
-    /// Indexes this key
-    /// </summary>
-    [AttributeUsage(AttributeTargets.Property)]
-    public class MagicIndexAttribute : Attribute, IColumnNamed
-    {
-        public string ColumnName { get; }
+namespace Magic.IndexedDb.SchemaAnnotations;
 
-        public MagicIndexAttribute(string columnName = null)
+/// <summary>
+/// Indexes this key
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public class MagicIndexAttribute : Attribute, IColumnNamed
+{
+    public string ColumnName { get; }
+
+    public MagicIndexAttribute(string columnName = null)
+    {
+        if (!String.IsNullOrWhiteSpace(columnName))
         {
-            if (!String.IsNullOrWhiteSpace(columnName))
-            {
-                ColumnName = columnName;
-            }
-            else
-            {
-                ColumnName = null;
-            }
+            ColumnName = columnName;
+        }
+        else
+        {
+            ColumnName = null;
         }
     }
 }

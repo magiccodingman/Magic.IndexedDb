@@ -5,12 +5,11 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb
+namespace Magic.IndexedDb;
+
+public interface IMagicCompoundKey
 {
-    public interface IMagicCompoundKey
-    {
-        string[] ColumnNamesInCompoundKey { get; }
-        bool AutoIncrement { get; }
-        PropertyInfo[] PropertyInfos { get; }
-    }
+    string[] ColumnNamesInCompoundKey { get; }
+    bool AutoIncrement { get; }
+    PropertyInfo[] PropertyInfos { get; }
 }

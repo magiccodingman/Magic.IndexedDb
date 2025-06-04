@@ -4,11 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb.Interfaces
-{
-    public interface IColumnNamed
-    {
-        string ColumnName { get; }
-    }
+namespace Magic.IndexedDb.Interfaces;
 
+public interface IColumnNamed
+{
+    string ColumnName { get; }
 }

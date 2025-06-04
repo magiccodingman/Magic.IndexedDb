@@ -5,11 +5,10 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb
+namespace Magic.IndexedDb;
+
+public interface IMagicCompoundIndex
 {
-    public interface IMagicCompoundIndex
-    {
-        string[] ColumnNamesInCompoundIndex { get; }
-        PropertyInfo[] PropertyInfos { get; }
-    }
+    string[] ColumnNamesInCompoundIndex { get; }
+    PropertyInfo[] PropertyInfos { get; }
 }

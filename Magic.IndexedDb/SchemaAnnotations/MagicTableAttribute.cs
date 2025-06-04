@@ -5,22 +5,21 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb
+namespace Magic.IndexedDb;
+
+/*public class MagicTableAttribute : Attribute
 {
-    /*public class MagicTableAttribute : Attribute
+    public const string defaultNone = "DefaultedNone";
+    public string SchemaName { get; }
+    public string DatabaseName { get; }
+
+    public MagicTableAttribute(string schemaName, string databaseName = null)
     {
-        public const string defaultNone = "DefaultedNone";
-        public string SchemaName { get; }
-        public string DatabaseName { get; }
+        SchemaName = schemaName;
 
-        public MagicTableAttribute(string schemaName, string databaseName = null)
-        {
-            SchemaName = schemaName;
-
-            if (!String.IsNullOrWhiteSpace(databaseName))
-                DatabaseName = databaseName;
-            else
-                DatabaseName = defaultNone;
-        }
-    }*/
-}
+        if (!String.IsNullOrWhiteSpace(databaseName))
+            DatabaseName = databaseName;
+        else
+            DatabaseName = defaultNone;
+    }
+}*/

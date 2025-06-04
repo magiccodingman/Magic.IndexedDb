@@ -4,19 +4,18 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb.Models
+namespace Magic.IndexedDb.Models;
+
+public struct MagicTableEntry
 {
-    public struct MagicTableEntry
+
+    /// <summary>
+    /// Property with the, "MagicTableAttribute" attribute appended
+    /// </summary>
+    public bool IsIndexDbTable { get; }
+
+    public MagicTableEntry(bool isIndexDbTable)
     {
-
-        /// <summary>
-        /// Property with the, "MagicTableAttribute" attribute appended
-        /// </summary>
-        public bool IsIndexDbTable { get; }
-
-        public MagicTableEntry(bool isIndexDbTable)
-        {
-            IsIndexDbTable = isIndexDbTable;
-        }
+        IsIndexDbTable = isIndexDbTable;
     }
 }

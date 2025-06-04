@@ -5,9 +5,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb.LinqTranslation.Models
-{
-    //internal class MagicDatabaseGlobal : IMagicDatabaseGlobal
-    //{
-    //}
-}
+namespace Magic.IndexedDb.LinqTranslation.Models;
+
+//internal class MagicDatabaseGlobal : IMagicDatabaseGlobal
+//{
+//}

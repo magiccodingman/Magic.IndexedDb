@@ -1,7 +1,6 @@
-﻿namespace TestWasm.Models
+﻿namespace TestWasm.Models;
+
+public static class DbNames
 {
-    public static class DbNames
-    {
-        public const string Client = "client";
-    }
+    public const string Client = "client";
 }

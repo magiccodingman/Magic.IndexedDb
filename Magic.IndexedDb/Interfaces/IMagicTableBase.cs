@@ -4,19 +4,18 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb.Interfaces
+namespace Magic.IndexedDb.Interfaces;
+
+public interface IMagicTableBase
 {
-    public interface IMagicTableBase
-    {
-        string GetTableName();
+    string GetTableName();
 
-        List<IMagicCompoundIndex>? GetCompoundIndexes();
+    List<IMagicCompoundIndex>? GetCompoundIndexes();
 
-        IMagicCompoundKey GetKeys();
+    IMagicCompoundKey GetKeys();
 
-        // <summary>
-        /// Set the default database most commonly utilized for this table.
-        /// </summary>
-        IndexedDbSet GetDefaultDatabase();
-    }
+    // <summary>
+    /// Set the default database most commonly utilized for this table.
+    /// </summary>
+    IndexedDbSet GetDefaultDatabase();
 }

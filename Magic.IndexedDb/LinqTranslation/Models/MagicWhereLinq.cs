@@ -4,10 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Magic.IndexedDb
-{
-    internal class MagicWhereLinq
-    {
+namespace Magic.IndexedDb;
 
-    }
+internal class MagicWhereLinq
+{
+
 }
