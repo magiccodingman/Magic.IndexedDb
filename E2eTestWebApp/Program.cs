@@ -1,5 +1,4 @@
 using Magic.IndexedDb;
-using Magic.IndexedDb.Extensions;
 using System.Diagnostics;
 
 namespace E2eTestWebApp;

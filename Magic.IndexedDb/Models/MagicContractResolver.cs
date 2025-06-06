@@ -1,481 +1,469 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Concurrent;
-using System.Linq;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Magic.IndexedDb.Helpers;
-using Magic.IndexedDb.Interfaces;
-using Magic.IndexedDb.SchemaAnnotations;
-using Microsoft.Extensions.Options;
 
-namespace Magic.IndexedDb.Models
+namespace Magic.IndexedDb.Models;
+
+internal class MagicContractResolver<T> : JsonConverter<T>
 {
-    internal class MagicContractResolver<T> : JsonConverter<T>
+    public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        // ✅ Return default(T) if null is encountered
+        if (reader.TokenType == JsonTokenType.Null)
         {
-            // ✅ Return default(T) if null is encountered
-            if (reader.TokenType == JsonTokenType.Null)
-            {
+            return default;
+        }
+
+        // ✅ Handle primitive types before assuming it's complex
+        if (PropertyMappingCache.IsSimpleType(typeToConvert))
+        {
+            return (T?)ReadSimpleType(ref reader, typeToConvert);
+        }
+
+        // ✅ Explicitly check if the type is `JsonElement`
+        if (typeToConvert == typeof(JsonElement))
+        {
+            JsonElement element = JsonSerializer.Deserialize<JsonElement>(ref reader); // Extract JsonElement
+
+            // ✅ Re-run null check for JsonElement
+            if (IsSimpleJsonNull(element))
                 return default;
-            }
 
-            // ✅ Handle primitive types before assuming it's complex
-            if (PropertyMappingCache.IsSimpleType(typeToConvert))
-            {
-                return (T?)ReadSimpleType(ref reader, typeToConvert);
-            }
-
-            // ✅ Explicitly check if the type is `JsonElement`
-            if (typeToConvert == typeof(JsonElement))
-            {
-                JsonElement element = JsonSerializer.Deserialize<JsonElement>(ref reader); // Extract JsonElement
-
-                // ✅ Re-run null check for JsonElement
-                if (IsSimpleJsonNull(element))
-                    return default;
-
-                // ✅ Re-run primitive check for JsonElement
-                if (IsSimpleJsonElement(element))
-                    return (T?)(object)element; // 🚀 Directly cast JsonElement to T
-            }
-
-            // ✅ Handle root-level arrays correctly
-            if (reader.TokenType == JsonTokenType.StartArray)
-            {
-                if (!typeof(IEnumerable).IsAssignableFrom(typeToConvert))
-                    throw new JsonException($"Expected an object but got an array for type {typeToConvert.Name}.");
-
-                return (T?)ReadIEnumerable(ref reader, typeToConvert, options);
-            }
-
-            // ✅ If it's neither a primitive nor an array, assume it's a complex object
-            if (reader.TokenType == JsonTokenType.StartObject)
-            {
-                return (T?)ReadComplexObject(ref reader, typeToConvert, options);
-            }
-
-            // ✅ Return default(T) if EndArray is encountered
-            if (reader.TokenType == JsonTokenType.EndArray)
-            {
-                return default;
-            }
-
-            throw new JsonException($"Unexpected JSON token: {reader.TokenType} when deserializing {typeToConvert.Name}.");
+            // ✅ Re-run primitive check for JsonElement
+            if (IsSimpleJsonElement(element))
+                return (T?)(object)element; // 🚀 Directly cast JsonElement to T
         }
 
-        private object CreateObjectFromDictionary(Type type, Dictionary<string, object?> propertyValues, SearchPropEntry search)
+        // ✅ Handle root-level arrays correctly
+        if (reader.TokenType == JsonTokenType.StartArray)
         {
-            // 🚀 If there's a constructor with parameters, use it
-            if (search.ConstructorParameterMappings.Count > 0)
-            {
-                var constructorArgs = new object?[search.ConstructorParameterMappings.Count];
+            if (!typeof(IEnumerable).IsAssignableFrom(typeToConvert))
+                throw new JsonException($"Expected an object but got an array for type {typeToConvert.Name}.");
 
-                foreach (var (paramName, index) in search.ConstructorParameterMappings)
-                {
-                    if (propertyValues.TryGetValue(paramName, out var value))
-                        constructorArgs[index] = value;
-                    else
-                        constructorArgs[index] = GetDefaultValue(type.GetProperty(paramName)?.PropertyType ?? typeof(object));
-                }
-
-                return search.InstanceCreator(constructorArgs) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
-            }
-
-            // 🚀 Use parameterless constructor
-            var obj = search.InstanceCreator(Array.Empty<object?>()) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
-
-            // 🚀 Assign property values
-            foreach (var (propName, value) in propertyValues)
-            {
-                if (search.propertyEntries.TryGetValue(propName, out var propEntry))
-                {
-                    propEntry.Setter(obj, value);
-                }
-            }
-
-            return obj;
+            return (T?)ReadIEnumerable(ref reader, typeToConvert, options);
         }
 
-        private bool IsSimpleJsonElement(JsonElement element)
+        // ✅ If it's neither a primitive nor an array, assume it's a complex object
+        if (reader.TokenType == JsonTokenType.StartObject)
         {
-            return element.ValueKind == JsonValueKind.String ||
-                   element.ValueKind == JsonValueKind.Number ||
-                   element.ValueKind == JsonValueKind.True ||
-                   element.ValueKind == JsonValueKind.False;
-        }
-        private bool IsSimpleJsonNull(JsonElement element)
-        {
-            return element.ValueKind == JsonValueKind.Null;
+            return (T?)ReadComplexObject(ref reader, typeToConvert, options);
         }
 
-        /// <summary>
-        /// Recursively reads a complex object while correctly mapping JSON properties to C# properties.
-        /// </summary>
-        private object? ReadComplexObject(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+        // ✅ Return default(T) if EndArray is encountered
+        if (reader.TokenType == JsonTokenType.EndArray)
         {
-            if (reader.TokenType == JsonTokenType.Null)
-                return null;
+            return default;
+        }
 
-            if (reader.TokenType != JsonTokenType.StartObject)
-                throw new JsonException($"Expected StartObject token for type {type.Name}.");
+        throw new JsonException($"Unexpected JSON token: {reader.TokenType} when deserializing {typeToConvert.Name}.");
+    }
 
-            // 🔥 Step 1: Create a dictionary to store extracted values
-            var propertyValues = new Dictionary<string, object?>();
+    private object CreateObjectFromDictionary(Type type, Dictionary<string, object?> propertyValues, SearchPropEntry search)
+    {
+        // 🚀 If there's a constructor with parameters, use it
+        if (search.ConstructorParameterMappings.Count > 0)
+        {
+            var constructorArgs = new object?[search.ConstructorParameterMappings.Count];
 
-            var properties = PropertyMappingCache.GetTypeOfTProperties(type);
-            while (reader.Read())
+            foreach (var (paramName, index) in search.ConstructorParameterMappings)
             {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                {
-                    // 🔥 Step 3: Convert the dictionary into the final object
-                    var result = CreateObjectFromDictionary(type, propertyValues, properties);
-                    return result;
-                }
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    throw new JsonException("Expected PropertyName token.");
-
-                string jsonPropertyName = reader.GetString()!;
-                if (!reader.Read())
-                    throw new JsonException("Unexpected end of JSON.");
-
-
-                string csharpPropertyName = properties.GetCsharpPropertyName(jsonPropertyName);
-
-                //string csharpPropertyName = PropertyMappingCache.GetCsharpPropertyName(jsonPropertyName, type);
-
-                if (properties.propertyEntries.TryGetValue(csharpPropertyName, out var mpe))
-                {
-                    if (mpe.NotMapped)
-                    {
-                        reader.Skip();
-                        continue;
-                    }
-
-                    // Skip interface-based properties that should never be assigned
-                    if (mpe.Property.DeclaringType?.IsInterface == true || !mpe.Property.CanWrite)
-                    {
-                        reader.Skip();
-                        continue;
-                    }
-
-                    try
-                    {
-                        // Extract values and store them in the dictionary
-                        object? value = ReadPropertyValue(ref reader, mpe, options);
-                        propertyValues[csharpPropertyName] = value;
-                    }
-                    catch
-                    {
-                        // do nothing
-                    }
-                }
+                if (propertyValues.TryGetValue(paramName, out var value))
+                    constructorArgs[index] = value;
                 else
-                {
-                    reader.Skip();
-                }
+                    constructorArgs[index] = GetDefaultValue(type.GetProperty(paramName)?.PropertyType ?? typeof(object));
             }
 
-            throw new JsonException("Unexpected end of JSON while reading an object.");
+            return search.InstanceCreator(constructorArgs) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
         }
 
-        private static readonly ConcurrentDictionary<Type, object?> _defaultValues = new();
+        // 🚀 Use parameterless constructor
+        var obj = search.InstanceCreator(Array.Empty<object?>()) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
 
-        public static object? GetDefaultValue(Type type)
+        // 🚀 Assign property values
+        foreach (var (propName, value) in propertyValues)
         {
-            return _defaultValues.GetOrAdd(type, t => t.IsValueType ? Activator.CreateInstance(t) : null);
-        }
-
-
-
-
-        /// <summary>
-        /// Reads and assigns a property value, detecting collections, simple types, and complex objects.
-        /// </summary>
-        private object? ReadPropertyValue(ref Utf8JsonReader reader, MagicPropertyEntry mpe, JsonSerializerOptions options)
-        {
-            if (reader.TokenType == JsonTokenType.Null)
-                return null;
-
-            Type propertyType = mpe.Property.PropertyType;
-
-            if (typeof(IEnumerable).IsAssignableFrom(propertyType) && propertyType != typeof(string))
+            if (search.propertyEntries.TryGetValue(propName, out var propEntry))
             {
-                return ReadIEnumerable(ref reader, propertyType, options);
-            }
-
-            if (mpe.IsComplexType)
-            {
-                return ReadComplexObject(ref reader, propertyType, options);
-            }
-
-            return ReadSimpleType(ref reader, propertyType);
-        }
-
-        /// <summary>
-        /// Reads primitive and simple types efficiently.
-        /// </summary>
-        private object? ReadSimpleType(ref Utf8JsonReader reader, Type type)
-        {
-            if (reader.TokenType == JsonTokenType.Null)
-                return null;
-
-            return JsonSerializer.Deserialize(ref reader, type);
-        }
-
-        /// <summary>
-        /// Reads a collection (List, Array, HashSet, etc.), keeping its structure intact.
-        /// </summary>
-        private object? ReadIEnumerable(ref Utf8JsonReader reader, Type collectionType, JsonSerializerOptions options)
-        {
-            if (reader.TokenType == JsonTokenType.Null)
-                return null;
-
-            if (reader.TokenType != JsonTokenType.StartArray)
-                throw new JsonException($"Expected StartArray token but got {reader.TokenType}.");
-
-            // Determine the item type of the collection
-            Type itemType = collectionType.IsArray
-                ? collectionType.GetElementType()!
-                : collectionType.GenericTypeArguments.FirstOrDefault() ?? typeof(object);
-
-            var listType = typeof(List<>).MakeGenericType(itemType);
-            var list = (IList)Activator.CreateInstance(listType)!;
-
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndArray)
-                    break;
-
-                object? item;
-
-                // 🔥 If it's a complex type, we need to deserialize it recursively
-                if (PropertyMappingCache.IsComplexType(itemType))
-                {
-                    item = ReadComplexObject(ref reader, itemType, options);
-                }
-                else
-                {
-                    item = ReadSimpleType(ref reader, itemType);
-                }
-
-                list.Add(item);
-            }
-
-            // Convert to array if original type was an array
-            if (collectionType.IsArray)
-            {
-                var array = Array.CreateInstance(itemType, list.Count);
-                list.CopyTo(array, 0);
-                return array;
-            }
-
-            return list;
-        }
-
-        public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
-        {
-            if (value == null)
-            {
-                writer.WriteNullValue();
-                return;
-            }
-
-            var type = typeof(T);
-
-            // Handle collections
-            if (SerializeIEnumerable(writer, value, options))
-            {
-                return;
-            }
-
-            if (SerializeSimple(writer, value))
-            {
-                return;
-            }
-
-
-            var properties = PropertyMappingCache.GetTypeOfTProperties(type);
-
-            // 🔥 Handle complex objects recursively
-            writer.WriteStartObject();
-            SerializeComplexProperties(writer, value, properties.propertyEntries, options);
-            writer.WriteEndObject();
-        }
-
-
-        /// <summary>
-        /// 🔥 Serializes primitive & simple types
-        /// </summary>
-        private bool SerializeSimple(Utf8JsonWriter writer, object value)
-        {
-            if (value == null)
-            {
-                writer.WriteNullValue();
-                return true;
-            }
-
-            var type = value.GetType();
-
-            // Handle simple or primitive types directly
-            if (type == typeof(string) || PropertyMappingCache.IsSimpleType(type))
-            {
-                WriteSimpleType(writer, value);
-                return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// 🔥 Serializes lists (IEnumerable)
-        /// </summary>
-        private bool SerializeIEnumerable(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
-        {
-            if (value is null)
-            {
-                writer.WriteNullValue();
-                return true;
-            }
-
-            var type = value.GetType();
-
-            if (value is IEnumerable enumerable && type != typeof(string))
-            {
-                writer.WriteStartArray();
-                foreach (var item in enumerable)
-                {
-                    if (SerializeSimple(writer, item))
-                    {
-                        continue;
-                    }
-
-                    if (item != null)
-                    {
-                        Type itemType = item.GetType();
-                        if (PropertyMappingCache.IsComplexType(itemType))
-                        {
-                            var nestedProperties = PropertyMappingCache.GetTypeOfTProperties(itemType);
-                            writer.WriteStartObject();
-                            SerializeComplexProperties(writer, item, nestedProperties.propertyEntries, options);
-                            writer.WriteEndObject();
-                        }
-                        else
-                        {
-                            WriteSimpleType(writer, item);
-                        }
-                    }
-                    else
-                    {
-                        writer.WriteNullValue();
-                    }
-                }
-                writer.WriteEndArray();
-                return true;
-            }
-
-            return false;
-        }
-
-        private void WriteSimpleType(Utf8JsonWriter writer, object value)
-        {
-            switch (value)
-            {
-                case string str:
-                    writer.WriteStringValue(str);
-                    break;
-                case bool b:
-                    writer.WriteBooleanValue(b);
-                    break;
-                case int i:
-                    writer.WriteNumberValue(i);
-                    break;
-                case long l:
-                    writer.WriteNumberValue(l);
-                    break;
-                case double d:
-                    writer.WriteNumberValue(d);
-                    break;
-                case decimal dec:
-                    writer.WriteNumberValue(dec);
-                    break;
-                case DateTime dt:
-                    writer.WriteStringValue(dt.ToString("o")); // ISO format
-                    break;
-                case Guid guid:
-                    writer.WriteStringValue(guid.ToString());
-                    break;
-                default:
-                    JsonSerializer.Serialize(writer, value);
-                    break;
+                propEntry.Setter(obj, value);
             }
         }
 
-        /// <summary>
-        /// 🔥 Serializes complex objects recursively
-        /// </summary>
-        private void SerializeComplexProperties(Utf8JsonWriter writer, object value, Dictionary<string, MagicPropertyEntry> properties, JsonSerializerOptions options)
-        {
-            var type = value.GetType();
-            var cache = PropertyMappingCache.GetTypeOfTProperties(type);
+        return obj;
+    }
 
-            foreach (var (propertyName, mpe) in properties)
+    private bool IsSimpleJsonElement(JsonElement element)
+    {
+        return element.ValueKind == JsonValueKind.String ||
+               element.ValueKind == JsonValueKind.Number ||
+               element.ValueKind == JsonValueKind.True ||
+               element.ValueKind == JsonValueKind.False;
+    }
+    private bool IsSimpleJsonNull(JsonElement element)
+    {
+        return element.ValueKind == JsonValueKind.Null;
+    }
+
+    /// <summary>
+    /// Recursively reads a complex object while correctly mapping JSON properties to C# properties.
+    /// </summary>
+    private object? ReadComplexObject(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+            return null;
+
+        if (reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException($"Expected StartObject token for type {type.Name}.");
+
+        // 🔥 Step 1: Create a dictionary to store extracted values
+        var propertyValues = new Dictionary<string, object?>();
+
+        var properties = PropertyMappingCache.GetTypeOfTProperties(type);
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+            {
+                // 🔥 Step 3: Convert the dictionary into the final object
+                var result = CreateObjectFromDictionary(type, propertyValues, properties);
+                return result;
+            }
+
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                throw new JsonException("Expected PropertyName token.");
+
+            string jsonPropertyName = reader.GetString()!;
+            if (!reader.Read())
+                throw new JsonException("Unexpected end of JSON.");
+
+
+            string csharpPropertyName = properties.GetCsharpPropertyName(jsonPropertyName);
+
+            //string csharpPropertyName = PropertyMappingCache.GetCsharpPropertyName(jsonPropertyName, type);
+
+            if (properties.propertyEntries.TryGetValue(csharpPropertyName, out var mpe))
             {
                 if (mpe.NotMapped)
+                {
+                    reader.Skip();
                     continue;
+                }
 
-                // 💡 Handle constructor-only properties by using reflection
-                object? propValue = null;
+                // Skip interface-based properties that should never be assigned
+                if (mpe.Property.DeclaringType?.IsInterface == true || !mpe.Property.CanWrite)
+                {
+                    reader.Skip();
+                    continue;
+                }
 
                 try
                 {
-                    propValue = mpe.Getter(value);
+                    // Extract values and store them in the dictionary
+                    object? value = ReadPropertyValue(ref reader, mpe, options);
+                    propertyValues[csharpPropertyName] = value;
                 }
                 catch
                 {
-                    // If it's a constructor-only param with no backing field or getter, ignore
-                    continue;
+                    // do nothing
                 }
-
-                // Skip default primary key if needed
-                if (mpe.PrimaryKey && IsDefaultValue(propValue, mpe))
-                    continue;
-
-                // Figure out the actual output property name
-                string finalPropertyName = mpe.NeverCamelCase
-                    ? mpe.JsPropertyName
-                    : (options.PropertyNamingPolicy == JsonNamingPolicy.CamelCase
-                        ? char.ToLowerInvariant(mpe.JsPropertyName[0]) + mpe.JsPropertyName.Substring(1)
-                        : mpe.JsPropertyName);
-
-                writer.WritePropertyName(finalPropertyName);
-
-                // Handle primitives/collections
-                if (SerializeIEnumerable(writer, propValue, options) || SerializeSimple(writer, propValue))
-                    continue;
-
-                // Handle complex types
-                if (propValue != null && mpe.IsComplexType)
-                {
-                    var nestedProps = PropertyMappingCache.GetTypeOfTProperties(propValue.GetType());
-                    writer.WriteStartObject();
-                    SerializeComplexProperties(writer, propValue, nestedProps.propertyEntries, options);
-                    writer.WriteEndObject();
-                }
+            }
+            else
+            {
+                reader.Skip();
             }
         }
 
+        throw new JsonException("Unexpected end of JSON while reading an object.");
+    }
 
-        private bool IsDefaultValue(object? value, MagicPropertyEntry mpe)
+    private static readonly ConcurrentDictionary<Type, object?> _defaultValues = new();
+
+    public static object? GetDefaultValue(Type type)
+    {
+        return _defaultValues.GetOrAdd(type, t => t.IsValueType ? Activator.CreateInstance(t) : null);
+    }
+
+    /// <summary>
+    /// Reads and assigns a property value, detecting collections, simple types, and complex objects.
+    /// </summary>
+    private object? ReadPropertyValue(ref Utf8JsonReader reader, MagicPropertyEntry mpe, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+            return null;
+
+        Type propertyType = mpe.Property.PropertyType;
+
+        if (typeof(IEnumerable).IsAssignableFrom(propertyType) && propertyType != typeof(string))
         {
-            if (value == null)
-                return true;
-
-            return value.Equals(mpe.DefaultValue); // ✅ Use precomputed default value
+            return ReadIEnumerable(ref reader, propertyType, options);
         }
 
+        if (mpe.IsComplexType)
+        {
+            return ReadComplexObject(ref reader, propertyType, options);
+        }
+
+        return ReadSimpleType(ref reader, propertyType);
+    }
+
+    /// <summary>
+    /// Reads primitive and simple types efficiently.
+    /// </summary>
+    private object? ReadSimpleType(ref Utf8JsonReader reader, Type type)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+            return null;
+
+        return JsonSerializer.Deserialize(ref reader, type);
+    }
+
+    /// <summary>
+    /// Reads a collection (List, Array, HashSet, etc.), keeping its structure intact.
+    /// </summary>
+    private object? ReadIEnumerable(ref Utf8JsonReader reader, Type collectionType, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+            return null;
+
+        if (reader.TokenType != JsonTokenType.StartArray)
+            throw new JsonException($"Expected StartArray token but got {reader.TokenType}.");
+
+        // Determine the item type of the collection
+        Type itemType = collectionType.IsArray
+            ? collectionType.GetElementType()!
+            : collectionType.GenericTypeArguments.FirstOrDefault() ?? typeof(object);
+
+        var listType = typeof(List<>).MakeGenericType(itemType);
+        var list = (IList)Activator.CreateInstance(listType)!;
+
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndArray)
+                break;
+
+            object? item;
+
+            // 🔥 If it's a complex type, we need to deserialize it recursively
+            if (PropertyMappingCache.IsComplexType(itemType))
+            {
+                item = ReadComplexObject(ref reader, itemType, options);
+            }
+            else
+            {
+                item = ReadSimpleType(ref reader, itemType);
+            }
+
+            list.Add(item);
+        }
+
+        // Convert to array if original type was an array
+        if (collectionType.IsArray)
+        {
+            var array = Array.CreateInstance(itemType, list.Count);
+            list.CopyTo(array, 0);
+            return array;
+        }
+
+        return list;
+    }
+
+    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+    {
+        if (value == null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        var type = typeof(T);
+
+        // Handle collections
+        if (SerializeIEnumerable(writer, value, options))
+        {
+            return;
+        }
+
+        if (SerializeSimple(writer, value))
+        {
+            return;
+        }
+
+
+        var properties = PropertyMappingCache.GetTypeOfTProperties(type);
+
+        // 🔥 Handle complex objects recursively
+        writer.WriteStartObject();
+        SerializeComplexProperties(writer, value, properties.propertyEntries, options);
+        writer.WriteEndObject();
+    }
+
+
+    /// <summary>
+    /// 🔥 Serializes primitive & simple types
+    /// </summary>
+    private bool SerializeSimple(Utf8JsonWriter writer, object value)
+    {
+        if (value == null)
+        {
+            writer.WriteNullValue();
+            return true;
+        }
+
+        var type = value.GetType();
+
+        // Handle simple or primitive types directly
+        if (type == typeof(string) || PropertyMappingCache.IsSimpleType(type))
+        {
+            WriteSimpleType(writer, value);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 🔥 Serializes lists (IEnumerable)
+    /// </summary>
+    private bool SerializeIEnumerable(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+        {
+            writer.WriteNullValue();
+            return true;
+        }
+
+        var type = value.GetType();
+
+        if (value is IEnumerable enumerable && type != typeof(string))
+        {
+            writer.WriteStartArray();
+            foreach (var item in enumerable)
+            {
+                if (SerializeSimple(writer, item))
+                {
+                    continue;
+                }
+
+                if (item != null)
+                {
+                    Type itemType = item.GetType();
+                    if (PropertyMappingCache.IsComplexType(itemType))
+                    {
+                        var nestedProperties = PropertyMappingCache.GetTypeOfTProperties(itemType);
+                        writer.WriteStartObject();
+                        SerializeComplexProperties(writer, item, nestedProperties.propertyEntries, options);
+                        writer.WriteEndObject();
+                    }
+                    else
+                    {
+                        WriteSimpleType(writer, item);
+                    }
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
+            }
+            writer.WriteEndArray();
+            return true;
+        }
+
+        return false;
+    }
+
+    private void WriteSimpleType(Utf8JsonWriter writer, object value)
+    {
+        switch (value)
+        {
+            case string str:
+                writer.WriteStringValue(str);
+                break;
+            case bool b:
+                writer.WriteBooleanValue(b);
+                break;
+            case int i:
+                writer.WriteNumberValue(i);
+                break;
+            case long l:
+                writer.WriteNumberValue(l);
+                break;
+            case double d:
+                writer.WriteNumberValue(d);
+                break;
+            case decimal dec:
+                writer.WriteNumberValue(dec);
+                break;
+            case DateTime dt:
+                writer.WriteStringValue(dt.ToString("o")); // ISO format
+                break;
+            case Guid guid:
+                writer.WriteStringValue(guid.ToString());
+                break;
+            default:
+                JsonSerializer.Serialize(writer, value);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 🔥 Serializes complex objects recursively
+    /// </summary>
+    private void SerializeComplexProperties(Utf8JsonWriter writer, object value, Dictionary<string, MagicPropertyEntry> properties, JsonSerializerOptions options)
+    {
+        var type = value.GetType();
+        var cache = PropertyMappingCache.GetTypeOfTProperties(type);
+
+        foreach (var (propertyName, mpe) in properties)
+        {
+            if (mpe.NotMapped)
+                continue;
+
+            // 💡 Handle constructor-only properties by using reflection
+            object? propValue = null;
+
+            try
+            {
+                propValue = mpe.Getter(value);
+            }
+            catch
+            {
+                // If it's a constructor-only param with no backing field or getter, ignore
+                continue;
+            }
+
+            // Skip default primary key if needed
+            if (mpe.PrimaryKey && IsDefaultValue(propValue, mpe))
+                continue;
+
+            // Figure out the actual output property name
+            string finalPropertyName = mpe.NeverCamelCase
+                ? mpe.JsPropertyName
+                : (options.PropertyNamingPolicy == JsonNamingPolicy.CamelCase
+                    ? char.ToLowerInvariant(mpe.JsPropertyName[0]) + mpe.JsPropertyName.Substring(1)
+                    : mpe.JsPropertyName);
+
+            writer.WritePropertyName(finalPropertyName);
+
+            // Handle primitives/collections
+            if (SerializeIEnumerable(writer, propValue, options) || SerializeSimple(writer, propValue))
+                continue;
+
+            // Handle complex types
+            if (propValue != null && mpe.IsComplexType)
+            {
+                var nestedProps = PropertyMappingCache.GetTypeOfTProperties(propValue.GetType());
+                writer.WriteStartObject();
+                SerializeComplexProperties(writer, propValue, nestedProps.propertyEntries, options);
+                writer.WriteEndObject();
+            }
+        }
+    }
+
+    private bool IsDefaultValue(object? value, MagicPropertyEntry mpe)
+    {
+        if (value == null)
+            return true;
+
+        return value.Equals(mpe.DefaultValue); // ✅ Use precomputed default value
     }
 }

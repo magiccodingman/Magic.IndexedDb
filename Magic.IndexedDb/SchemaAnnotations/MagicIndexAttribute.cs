@@ -1,31 +1,24 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Magic.IndexedDb.Interfaces;
-using Magic.IndexedDb.SchemaAnnotations;
+﻿using Magic.IndexedDb.Interfaces;
 
-namespace Magic.IndexedDb.SchemaAnnotations
+namespace Magic.IndexedDb.SchemaAnnotations;
+
+/// <summary>
+/// Indexes this key
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public class MagicIndexAttribute : Attribute, IColumnNamed
 {
-    /// <summary>
-    /// Indexes this key
-    /// </summary>
-    [AttributeUsage(AttributeTargets.Property)]
-    public class MagicIndexAttribute : Attribute, IColumnNamed
-    {
-        public string ColumnName { get; }
+    public string ColumnName { get; }
 
-        public MagicIndexAttribute(string columnName = null)
+    public MagicIndexAttribute(string columnName = null)
+    {
+        if (!String.IsNullOrWhiteSpace(columnName))
         {
-            if (!String.IsNullOrWhiteSpace(columnName))
-            {
-                ColumnName = columnName;
-            }
-            else
-            {
-                ColumnName = null;
-            }
+            ColumnName = columnName;
+        }
+        else
+        {
+            ColumnName = null;
         }
     }
 }
