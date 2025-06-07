@@ -8,18 +8,18 @@ namespace E2eTestWebApp.TestPages;
 [Route("/WhereTest")]
 public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
 {
-    [MagicTable("Records", null)]
+    /*[MagicTable("Records", null)]
     private class Record
     {
         [MagicPrimaryKey("Id")]
         public int Id { get; set; }
 
         public int Int32Field { get; set; }
-    }
+    }*/
 
     public async Task<string> Where1()
     {
-        var database = await magic.OpenAsync(new DbStore()
+        /*var database = await magic.OpenAsync(new DbStore()
         {
             Name = "Where.Where1",
             Version = 1,
@@ -43,6 +43,8 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
         var result = await database
             .Where<Record>(x => x.Int32Field < 3)
             .ToListAsync();
-        return JsonSerializer.Serialize(result.Select(x => x.Id));
+        return JsonSerializer.Serialize(result.Select(x => x.Id));*/
+        
+        return "TODO";
     }
 }

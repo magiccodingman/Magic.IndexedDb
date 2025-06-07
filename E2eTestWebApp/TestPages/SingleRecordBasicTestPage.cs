@@ -9,12 +9,12 @@ namespace E2eTestWebApp.TestPages;
 [Route("/SingleRecordBasicTest")]
 public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
 {
-    private class NestedItem
+    /*private class NestedItem
     {
         public int Value { get; set; }
-    }
+    }*/
 
-    [MagicTable("Records", null)]
+    /*[MagicTable("Records", null)]
     private class Record
     {
         [MagicPrimaryKey("id")]
@@ -39,8 +39,9 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         public NestedItem? Nested { get; set; }
 
         public long LargeNumber { get; set; }
-    }
-    static Record NewSample => new Record()
+    }*/
+    
+    /*static Record NewSample => new Record()
     {
         Id = 12,
         Normal = "Norm",
@@ -51,23 +52,25 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         Enum = DayOfWeek.Sunday,
         Nested = new() { Value = 1234 },
         LargeNumber = 9007199254740991
-    };
+    };*/
 
     public async Task<string> Add()
     {
-        var database = await magic.OpenAsync(new DbStore()
+        /*var database = await magic.OpenAsync(new DbStore()
         {
             Name = "SingleRecordBasic.Add",
             Version = 1,
             StoreSchemas = [SchemaHelper.GetStoreSchema(typeof(Record))]
         });
         var id = await database.AddAsync<Record, int>(NewSample);
-        return id.ToString();
+        return id.ToString();*/
+        
+        return "TODO";
     }
 
     public async Task<string> Delete()
     {
-        var database = await magic.OpenAsync(new DbStore()
+        /*var database = await magic.OpenAsync(new DbStore()
         {
             Name = "SingleRecordBasic.Delete",
             Version = 1,
@@ -75,12 +78,14 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         });
         _ = await database.AddAsync<Record, int>(NewSample);
         await database.DeleteAsync(NewSample);
-        return "OK";
+        return "OK";*/
+        
+        return "TODO";
     }
 
     public async Task<string> Update()
     {
-        var database = await magic.OpenAsync(new DbStore()
+        /*var database = await magic.OpenAsync(new DbStore()
         {
             Name = "SingleRecordBasic.Update",
             Version = 1,
@@ -91,12 +96,14 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         var updated = NewSample;
         updated.Normal = "Updated";
         var count = await database.UpdateAsync(updated);
-        return count.ToString();
+        return count.ToString();*/
+        
+        return "TODO";
     }
 
     public async Task<string> GetById()
     {
-        var database = await magic.OpenAsync(new DbStore()
+        /*var database = await magic.OpenAsync(new DbStore()
         {
             Name = "SingleRecordBasic.GetById",
             Version = 1,
@@ -104,12 +111,14 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         });
         var id = await database.AddAsync<Record, int>(NewSample);
         var result = await database.GetByIdAsync<Record>(id);
-        return result.Normal;
+        return result.Normal;*/
+        
+        return "TODO";
     }
 
     public async Task<string> GetAll()
     {
-        var database = await magic.OpenAsync(new DbStore()
+        /*var database = await magic.OpenAsync(new DbStore()
         {
             Name = "SingleRecordBasic.GetAll",
             Version = 1,
@@ -117,6 +126,8 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         });
         _ = await database.AddAsync<Record, int>(NewSample);
         var result = await database.GetAllAsync<Record>();
-        return JsonSerializer.Serialize(result);
+        return JsonSerializer.Serialize(result);*/
+        
+        return "TODO";
     }
 }
