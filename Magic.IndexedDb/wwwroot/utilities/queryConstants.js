@@ -119,6 +119,7 @@ export const QUERY_ADDITIONS = {
     SKIP: "skip",
     TAKE: "take",
     TAKE_LAST: "takeLast",
+    STABLE_ORDERING: "stableOrdering",
 };
 
 //  Query Combination Ruleset (What Can Be Combined in AND `&&`)

@@ -34,6 +34,11 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         throw new Error("A valid Dexie table instance must be provided.");
     }
 
+    const stableOrderingRequested = hasStableOrdering(queryAdditions);
+    if (stableOrderingRequested) {
+        forceCursor = true;
+    }
+
     debugLog('universal serialized predicate');
     debugLog(universalSerializedPredicate);
     const { nestedOrFilterUnclean, isUniversalTrue, isUniversalFalse } = flattenUniversalPredicate(universalSerializedPredicate);
@@ -114,6 +119,10 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         }
     }
 
+}
+
+function hasStableOrdering(queryAdditions) {
+    return queryAdditions?.some(q => q.additionFunction === QUERY_ADDITIONS.STABLE_ORDERING);
 }
 
 async function runIndexedQueries(db, table, universalQueries,
@@ -281,6 +290,8 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
                     return query.first();
                 case QUERY_ADDITIONS.LAST:
                     return query.last();
+                case QUERY_ADDITIONS.STABLE_ORDERING:
+                    break; // do nothing
                 default:
                     throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
             }

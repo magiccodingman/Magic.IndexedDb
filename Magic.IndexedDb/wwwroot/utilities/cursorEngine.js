@@ -24,10 +24,20 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
     );
 
     if (requiresMetaProcessing) {
-        // **Metadata Path: Extract primary keys and sorting properties**
-        let primaryKeyList = await runMetaDataCursorQuery(db, table, structuredPredicateTree, queryAdditions, yieldedPrimaryKeys, compoundKeys);
 
-        const indexOrderProps = detectIndexOrderProperties(structuredPredicateTree, table);
+        let stableOrdering = hasStableOrdering(queryAdditions);
+
+        let indexOrderProps = [];
+
+        if (!stableOrdering) {
+            indexOrderProps = detectIndexOrderProperties(structuredPredicateTree, table);
+        }
+        else {
+            debugLog("Stable Ordering detected. Disabling any ordering by indexed queries.");
+        }
+
+        // **Metadata Path: Extract primary keys and sorting properties**
+        let primaryKeyList = await runMetaDataCursorQuery(db, table, structuredPredicateTree, queryAdditions, yieldedPrimaryKeys, compoundKeys, indexOrderProps);
 
         // **Apply sorting, take, and skip operations**
         let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, true, indexOrderProps);
@@ -42,6 +52,11 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
         return await runDirectCursorQuery(db, table, structuredPredicateTree, yieldedPrimaryKeys, compoundKeys);
     }
 }
+
+function hasStableOrdering(queryAdditions) {
+    return queryAdditions?.some(q => q.additionFunction === QUERY_ADDITIONS.STABLE_ORDERING);
+}
+
 
 function detectIndexOrderProperties(predicateTree, table) {
     const indexedProps = new Set();
@@ -183,7 +198,7 @@ function optimizeSingleCondition(condition) {
     // Lowercase normalization for string values if not case-sensitive
     if (!condition.caseSensitive && typeof condition.value === "string") {
         optimized.value = condition.value.toLowerCase();
-    }    
+    }
 
     optimized.comparisonFunction = getComparisonFunction(condition.operation);
     return optimized;
@@ -226,7 +241,7 @@ async function runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, c
 /**
  * Extracts only necessary metadata using a Dexie cursor in a transaction.
  */
-async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
+async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys, detectedIndexOrderProperties = []) {
     debugLog("Extracting Metadata for Cursor Query", { conditions, queryAdditions });
 
     let requiredProperties = new Set();
@@ -251,6 +266,12 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     for (const key of compoundKeys) {
         requiredProperties.add(key);
     }
+
+    // Include all indexable props that affect ordering
+    for (const prop of detectedIndexOrderProperties) {
+        requiredProperties.add(prop);
+    }
+
 
     requiredProperties.add("_MagicOrderId");
 
@@ -819,6 +840,9 @@ function applyCursorQueryAdditions(
             case QUERY_ADDITIONS.LAST:
                 primaryKeyList = primaryKeyList.length > 0 ? [primaryKeyList[primaryKeyList.length - 1]] : [];
                 break;
+
+            case QUERY_ADDITIONS.STABLE_ORDERING:                
+                break; // skip this
 
             default:
                 throw new Error(`Unsupported query addition: ${addition.additionFunction}`);

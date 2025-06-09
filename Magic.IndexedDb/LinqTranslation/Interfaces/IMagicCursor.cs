@@ -31,4 +31,13 @@ public interface IMagicCursor<T> : IMagicExecute<T> where T : class
     /// <param name="predicate"></param>
     /// <returns></returns>
     IMagicCursorStage<T> OrderByDescending(Expression<Func<T, object>> predicate);
+
+    /// <summary>
+    /// Removes ordering of any indexed columns. Only orders by 
+    /// what you dictate then by the row insert order. This creates 
+    /// a much more predictable and stable ordering. Only needs 
+    /// to be applied once. 
+    /// </summary>
+    /// <returns></returns>
+    IMagicCursorStage<T> StableOrdering();
 }

@@ -1,4 +1,5 @@
 ﻿using Magic.IndexedDb.LinqTranslation.Extensions;
+using Magic.IndexedDb.Models;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 
@@ -34,6 +35,15 @@ internal class MagicCursor<T> : IMagicCursor<T> where T : class
 
     public IMagicCursorStage<T> OrderByDescending(Expression<Func<T, object>> predicate)
         => new MagicCursorExtension<T>(MagicQuery).OrderByDescending(predicate);
+
+    public IMagicCursorStage<T> StableOrdering()
+    {
+        var _MagicQuery = new MagicQuery<T>(this.MagicQuery);
+        StoredMagicQuery smq = new StoredMagicQuery();
+        smq.additionFunction = MagicQueryFunctions.StableOrdering;
+        _MagicQuery.StoredMagicQueries.Add(smq);
+        return new MagicCursorExtension<T>(_MagicQuery);
+    }
 
     public async IAsyncEnumerable<T> AsAsyncEnumerable(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

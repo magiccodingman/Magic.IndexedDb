@@ -40,6 +40,7 @@ internal class MagicQuery<T> : IMagicQuery<T>, IMagicQueryStaging<T> where T : c
         StoredMagicQueries = new List<StoredMagicQuery>(_MagicQuery.StoredMagicQueries); // Deep copy
         ResultsUnique = _MagicQuery.ResultsUnique;
         Predicates = new List<Expression<Func<T, bool>>>(_MagicQuery.Predicates); // Deep copy
+        ForceCursorMode = _MagicQuery.ForceCursorMode;
     }
 
     public IMagicQueryStaging<T> Where(Expression<Func<T, bool>> predicate)

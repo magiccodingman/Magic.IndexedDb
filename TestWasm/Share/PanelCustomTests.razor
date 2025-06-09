@@ -91,10 +91,13 @@
                 StateHasChanged();
 
 
-                RunTest("Weird IndexedDB order by test",
+                RunTest("Indexed Column in predicate order by",
                                await personQuery.Where(x => x.TestInt > 2).Take(2).ToListAsync(),
                                allPeople.Where(x => x.TestInt > 2).OrderBy(x => x.TestInt).ThenBy(x => x._Id).Take(2));
 
+                RunTest("Indexed Column in predicate order by StableOrderBy",
+                await personQuery.Cursor(x => x.TestInt > 2).StableOrdering().Take(2).ToListAsync(),
+                allPeople.Where(x => x.TestInt > 2).OrderBy(x => x._Id).Take(2));
 
                 RunTest("Date Equal",
                     await personQuery.Where(x => x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)).ToListAsync(),

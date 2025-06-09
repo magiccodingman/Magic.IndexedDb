@@ -10,6 +10,7 @@ internal struct MagicQueryFunctions
     public const string Reverse = "reverse";
     public const string First = "first";
     public const string Last = "last";
+    public const string StableOrdering = "stableOrdering";
 
 }
 public class StoredMagicQuery

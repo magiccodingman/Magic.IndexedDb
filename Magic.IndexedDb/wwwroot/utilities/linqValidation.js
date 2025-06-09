@@ -4,8 +4,14 @@
 import { QUERY_OPERATIONS, QUERY_ADDITIONS, QUERY_COMBINATION_RULES, QUERY_ADDITION_RULES } from "./queryConstants.js";
 import { debugLog } from "./utilityHelpers.js";
 
-export function validateQueryAdditions(queryAdditions, indexCache) {
-    queryAdditions = queryAdditions || []; // Ensure it's always an array
+export function validateQueryAdditions(queryAdditionsPre, indexCache) {
+    queryAdditionsPre = queryAdditionsPre || []; // Ensure it's always an array
+
+    // Filter out non-actionable additions like STABLE_ORDERING
+    const queryAdditions = queryAdditionsPre.filter(q =>
+        q.additionFunction !== QUERY_ADDITIONS.STABLE_ORDERING
+    );
+
     let seenAdditions = new Set();
     let requiresCursor = false;
 
@@ -148,6 +154,11 @@ export function isValidQueryAdditions(arr) {
         if (!obj || typeof obj !== 'object') {
             console.error(`Error at index ${index}: Expected an object but received:`, obj);
             isValid = false;
+            return;
+        }
+
+        // Skip intValue and property validation for STABLE_ORDERING
+        if (obj.additionFunction === QUERY_ADDITIONS.STABLE_ORDERING) {
             return;
         }
 
