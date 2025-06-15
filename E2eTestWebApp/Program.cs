@@ -16,21 +16,14 @@ public class Program
 
         var builder = WebApplication.CreateBuilder(args);
         _ = builder.Services.AddRazorComponents().AddInteractiveServerComponents();
-
-        _ = builder.Services.AddBlazorDB((x) =>
-        {
-            x.Name = "OpenTest.RegisteredOpen1";
-            x.Version = 2;
-            x.StoreSchemas = [];
-        });
+        _ = builder.Services.AddMagicBlazorDB(BlazorInteropMode.WASM, true);
         _ = builder.Services.AddSingleton(new DbStore()
         {
             Name = "OpenTest.RegisteredOpen2",
             Version = 3,
             StoreSchemas = []
         });
-
-
+        
         var app = builder.Build();
         _ = app.UseExceptionHandler("/Error", createScopeForErrors: true);
         _ = app.UseAntiforgery();

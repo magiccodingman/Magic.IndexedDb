@@ -10,8 +10,8 @@ public class WhereTest : TestBase<WhereTestPage>
     public async Task Where1Test()
     {
         var page = await this.NewPageAsync();
-        await page.DeleteDatabaseAsync("Where.Where1");
+        await page.DeleteDatabaseAsync("Person");
         var result = await this.RunTestPageMethodAsync(p => p.Where1);
-        Assert.That.AreJsonEqual("[1,2]", result);
+        Assert.AreEqual(result, "OK");
     }
 }
