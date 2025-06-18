@@ -13,12 +13,11 @@ public class Person : MagicTableTool<Person>, IMagicTable<Person.DbSets>
 {
     public List<IMagicCompoundIndex> GetCompoundIndexes() =>
         new List<IMagicCompoundIndex>() {
-            CreateCompoundIndex(x => x.TestIntStable2, x => x.Name)
+            CreateCompoundIndex(x => x.TestIntStable, x => x.Name)
         };
 
     // Endobject when compund key contains two or more keys
-    public IMagicCompoundKey GetKeys() =>
-        CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);
+    public IMagicCompoundKey GetKeys() => CreateCompoundKey(x => x.TestIntStable);
 
     public string GetTableName() => "Person";
     public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;
