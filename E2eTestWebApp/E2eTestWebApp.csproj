@@ -11,4 +11,13 @@
     <ProjectReference Include="..\TestBase\TestBase.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <_ContentIncludedByDefault Remove="Pages\Error.razor" />
+    <_ContentIncludedByDefault Remove="Pages\Home.razor" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Data\" />
+  </ItemGroup>
+
 </Project>

@@ -2,7 +2,7 @@ using Magic.IndexedDb;
 using Magic.IndexedDb.Helpers;
 using Microsoft.AspNetCore.Components;
 using System.Text.Json;
-using E2eTestWebApp.Models;
+using TestBase.Models;
 
 namespace E2eTestWebApp.TestPages;
 

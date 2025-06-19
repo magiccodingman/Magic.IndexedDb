@@ -1,6 +1,6 @@
-﻿using E2eTestWebApp.Models;
+﻿using TestBase.Models;
 
-namespace E2eTestWebApp.Data;
+namespace TestBase.Data;
 
 public static class PersonData
 {
