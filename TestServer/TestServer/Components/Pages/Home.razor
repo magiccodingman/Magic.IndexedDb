@@ -41,7 +41,6 @@
     // Display the storage size on the front-end
     <p>Storage Used: @storageUsageText</p>
     <p>Storage Quota: @storageQuotaText</p>
-
 }
 
 <PageTitle>Example</PageTitle>
@@ -169,59 +168,7 @@
             // // // DO NOT DO THIS! I only am allowing this for maximum flexibility but this is very dangerous.
             // IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
 
-
-
-
-            Person[] persons = new Person[] {
-                new Person { Name = "Zack", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
-                new Person { Name = "Luna", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
-                new Person { Name = "Jerry", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
-                new Person { Name = "Jamie", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
-                new Person { Name = "James", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
-                new Person { Name = "Jack", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
-                new Person { Name = "Jon", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I black mail Luna for money because I know her secret", Access = Person.Permissions.CanRead},
-                new Person { Name = "Jack", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 37, GUIY = Guid.NewGuid(), DoNotMapTest = "I have a drug problem", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
-                new Person { Name = "Cathy", TestInt = 9, DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 22, GUIY = Guid.NewGuid(), DoNotMapTest = "I got away with reading Bobs diary.", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
-                new Person { Name = "Bob", TestInt = 3 , DateOfBirth = GetDateWithSameMonthDay(GetRandomYear()), _Age = 69, GUIY = Guid.NewGuid(), DoNotMapTest = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
-                new Person { Name = "Alex", TestInt = 3 , DateOfBirth = null, _Age = 80, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm naked! But nobody can know!" },
-                new Person { Name = "Zapoo", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
-
-                new Person { Name = "Sarah", TestInt = -1, _Age = 30, GUIY = Guid.NewGuid(), DoNotMapTest = "I hate my job", Access=Person.Permissions.CanRead},
-                new Person { Name = "Michael", TestInt = 15, _Age = 50, GUIY = Guid.NewGuid(), DoNotMapTest = "I'm hiding a big secret", Access=Person.Permissions.CanRead | Person.Permissions.CanWrite},
-                new Person { Name = "Tommy", TestInt = 7, _Age = 12, GUIY = Guid.NewGuid(), DoNotMapTest = "I am just a kid" },
-                new Person { Name = "Grace", TestInt = 3, _Age = 90, GUIY = Guid.NewGuid(), DoNotMapTest = "I have seen the world" },
-                new Person { Name = "Xylophone", TestInt = 9, _Age = 27, GUIY = Guid.NewGuid(), DoNotMapTest = "I have the weirdest name" },
-                new Person { Name = "Yasmine", TestInt = 9, _Age = 40, GUIY = Guid.NewGuid(), DoNotMapTest = null },
-                
-                // Additional test case persons to stress-test LINQ validation
-                new Person { Name = "Alicia", TestInt = 42, _Age = 16, GUIY = Guid.NewGuid(), DoNotMapTest = "I just got my driver's license" },
-                new Person { Name = "Ben", TestInt = 0, _Age = 25, GUIY = Guid.NewGuid(), DoNotMapTest = "I have no TestInt value" },
-                new Person { Name = "Clara", TestInt = 100, _Age = 65, GUIY = Guid.NewGuid(), DoNotMapTest = "I retired last week", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite },
-                new Person { Name = "Danny", TestInt = 9, _Age = 40, GUIY = Guid.NewGuid(), DoNotMapTest = null }, // Null handling
-                new Person { Name = "Elliot", TestInt = -20, _Age = 55, GUIY = Guid.NewGuid(), DoNotMapTest = "My test int is negative" },
-                new Person { Name = "Fiona", TestInt = 11, _Age = 33, GUIY = Guid.NewGuid(), DoNotMapTest = "I like puzzles" },
-                new Person { Name = "George", TestInt = 8, _Age = 72, GUIY = Guid.NewGuid(), DoNotMapTest = "I fought in a war", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite | Person.Permissions.CanCreate },
-                new Person { Name = "Henry", TestInt = 99, _Age = 29, GUIY = Guid.NewGuid(), DoNotMapTest = "I almost made it to 100 TestInt" },
-                new Person { Name = "Isla", TestInt = 2, _Age = 18, GUIY = Guid.NewGuid(), DoNotMapTest = "I just turned into an adult" },
-                new Person { Name = "Jackie", TestInt = 75, _Age = 60, GUIY = Guid.NewGuid(), DoNotMapTest = "I love cooking" },
-                new Person { Name = "Kevin", TestInt = 5, _Age = 48, GUIY = Guid.NewGuid(), DoNotMapTest = "I own a small business" },
-                new Person { Name = "Liam", TestInt = 9, _Age = 55, GUIY = Guid.NewGuid(), DoNotMapTest = "I just became a grandfather" },
-                new Person { Name = "Mona", TestInt = 88, _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "I am a detective", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite },
-                new Person { Name = "Nathan", TestInt = 7, _Age = 27, GUIY = Guid.NewGuid(), DoNotMapTest = "I play guitar" },
-                new Person { Name = "Olivia", TestInt = 13, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I run marathons" },
-                new Person { Name = "Patrick", TestInt = 3, _Age = 52, GUIY = Guid.NewGuid(), DoNotMapTest = "I work in IT" },
-                new Person { Name = "Quinn", TestInt = 22, _Age = 42, GUIY = Guid.NewGuid(), DoNotMapTest = "I design board games" },
-                new Person { Name = "Rachel", TestInt = 77, _Age = 36, GUIY = Guid.NewGuid(), DoNotMapTest = "I am a pilot" },
-                new Person { Name = "Steve", TestInt = 9, _Age = 38, GUIY = Guid.NewGuid(), DoNotMapTest = "I am an engineer" },
-                new Person { Name = "Tina", TestInt = 3, _Age = 68, GUIY = Guid.NewGuid(), DoNotMapTest = "I just got my pension" },
-                new Person { Name = "Uma", TestInt = 14, _Age = 39, GUIY = Guid.NewGuid(), DoNotMapTest = "I teach yoga" },
-                new Person { Name = "Victor", TestInt = 6, _Age = 31, GUIY = Guid.NewGuid(), DoNotMapTest = "I am an artist" },
-                new Person { Name = "Wendy", TestInt = 50, _Age = 50, GUIY = Guid.NewGuid(), DoNotMapTest = "My age matches my test int" },
-                new Person { Name = "Xander", TestInt = 19, _Age = 21, GUIY = Guid.NewGuid(), DoNotMapTest = "I am a college student" },
-                new Person { Name = "Yara", TestInt = 90, _Age = 32, GUIY = Guid.NewGuid(), DoNotMapTest = "I work in finance" },
-                new Person { Name = "Zane", TestInt = 101, _Age = 47, DateOfBirth = new DateTime(2020, 2, 10), GUIY = Guid.NewGuid(), DoNotMapTest = "I love motorcycles" },
-            };
-
+            Person[] persons = TestBase.Data.PersonData.persons;
 
             var count = 0;
             foreach (var p in persons)
@@ -232,14 +179,9 @@
                 p.TestIntStable2 = 10;
             }
 
-
-
             //var storageInfo = await _MagicDb.GetStorageEstimateAsync();
             //storageQuota = storageInfo.QuotaInMegabytes;
             //storageUsage = storageInfo.UsageInMegabytes;
-
-
-
 
             // WhereExample = await (manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
             // || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
@@ -252,8 +194,6 @@
             await personQuery.AddRangeAsync(persons);
 
             allPeople = await personQuery.ToListAsync();
-
-
 
             List<Person> people = await personQuery.ToListAsync();
             StateHasChanged();
@@ -271,11 +211,8 @@
             var asdf = d.DayOfWeek;
             var asdf2 = d.DayOfYear;
 
-
             // I know the validation of "allPeople" targets differently but I know this is the right result.
             // This is a weird .NET memory grab weirdess.
-
-
 
             RunTest("Date Equal",
            await personQuery.Where(x => x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)).ToListAsync(),
@@ -357,7 +294,6 @@
                 await personQuery.Where(x => x.DateOfBirth.Value.DayOfYear <= 41).ToListAsync(),
                 allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfYear <= 41));
 
-
             RunTest("Date Day Of Week Equal",
                 await personQuery.Where(x => x.DateOfBirth.Value.DayOfWeek == DayOfWeek.Monday).ToListAsync(),
                 allPeople.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.DayOfWeek == DayOfWeek.Monday));
@@ -421,7 +357,6 @@
 
             RunTest("Contains Test", await personQuery.Where(x => x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
             allPeople.Where(x => x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)));
-
 
             RunTest("Not Contains Test", await personQuery.Where(x => !x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)).ToListAsync(),
             allPeople.Where(x => !x.Name.Contains("zac", StringComparison.OrdinalIgnoreCase)));
@@ -494,7 +429,6 @@
                                */
                       allPeople.OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2));
 
-
             var totalPersons = await personQuery.CountAsync();
             var test1 = await personQuery.FirstOrDefaultAsync();
             var test2 = await personQuery.FirstOrDefaultAsync(x => x.Name == "Victor");
@@ -517,7 +451,6 @@
 
             RunTest("Cursor Last Or Default Where Test", new List<Person>() { await personQuery.Cursor(x => x.Name == "Victor").OrderBy(x => x._Age).LastOrDefaultAsync() },
                  new List<Person>() { allPeople.Where(x => x.Name == "Victor").OrderBy(x => x._Age).ThenBy(x => x._Id).LastOrDefault() });
-
 
             RunTest("Index First Or Default Test", new List<Person>() { await personQuery.OrderBy(x => x._Id).FirstOrDefaultAsync() },
             new List<Person>() { allPeople.OrderBy(x => x._Id).ThenBy(x => x._Id).FirstOrDefault() });
@@ -595,7 +528,6 @@
                                  .ToListAsync(),
                 allPeople.Where(x => x._Age < 60).OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(2));
 
-
             //await Task.Delay(10000);
             // 🧩 Complex Nested Conditions
             RunTest("Nested OR within AND",
@@ -672,7 +604,6 @@
                                  .TakeLast(5)
                                  .ToListAsync(),
                 allPeople.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(5));
-
 
             // Return ToListAsync
             RunTest("Return ToListAsync",

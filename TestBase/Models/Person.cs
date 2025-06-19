@@ -19,12 +19,12 @@ public class Person : MagicTableTool<Person>, IMagicTable<Person.DbSets>
         };
 
     // When using this, the e2e fails, but the Testserver succeeds
-    public IMagicCompoundKey GetKeys() =>
-        CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);
-
-    // When using this, the e2e succeeds, but the Testserver fails
     /*public IMagicCompoundKey GetKeys() =>
-        CreatePrimaryKey(x => x._Id, true);*/
+        CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);*/
+
+    // When using this, the e2e succeeds, but the Testserver fails when not in debug mode 🤯
+    public IMagicCompoundKey GetKeys() =>
+        CreatePrimaryKey(x => x._Id, true);
 
     public string GetTableName() => "Person";
     public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;

@@ -16,8 +16,4 @@
     <_ContentIncludedByDefault Remove="Pages\Home.razor" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Data\" />
-  </ItemGroup>
-
 </Project>
