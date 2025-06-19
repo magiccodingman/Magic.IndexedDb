@@ -15,7 +15,22 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
         return db;
     }
 
-    public async Task<string> TestWhere0() {
+    public async Task<string> GetDebugString()
+    {
+        var db = await SetupData();
+        var items = await db.ToListAsync();
+        var ret = string.Empty;
+        foreach (var item in items)
+        {
+            ret += System.Text.Json.JsonSerializer.Serialize(item) + "\n";
+        }
+        return ret;
+    }
+
+    public async Task<string> TestWhere0()
+    {
+        return await GetDebugString();
+        
         var result = RunTest("Date Equal",
             await (await SetupData()).Where(x => x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)).ToListAsync(),
             PersonData.persons.Where(x => x.DateOfBirth.HasValue && x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)));
