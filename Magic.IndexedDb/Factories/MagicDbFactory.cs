@@ -113,9 +113,8 @@ internal class MagicDbFactory : IMagicIndexedDb, IAsyncDisposable
 
         // Get database name and schema name
         string databaseName = indexedDbSet.DatabaseName;
-        string schemaName = SchemaHelper.GetTableName<T>();
 
-        return await QueryOverride<T>(databaseName, schemaName);
+        return await QueryOverride<T>(databaseName);
     }
 
 
@@ -133,10 +132,9 @@ internal class MagicDbFactory : IMagicIndexedDb, IAsyncDisposable
 
         // Get database name and schema name
         string databaseName = selectedDbSet.DatabaseName;
-        string schemaName = SchemaHelper.GetTableName<T>();
 
 #pragma warning disable CS0618
-        return await QueryOverride<T>(databaseName, schemaName);
+        return await QueryOverride<T>(databaseName);
 #pragma warning restore CS0618
     }
 
@@ -149,21 +147,19 @@ internal class MagicDbFactory : IMagicIndexedDb, IAsyncDisposable
         ObjectDisposedException.ThrowIf(this._jsModule is null, this);
 
         string databaseName = SchemaHelper.GetDefaultDatabaseName<T>();
-        string schemaName = SchemaHelper.GetTableName<T>();
-        var dbManager = await this._magicJsManager.Value;
 #pragma warning disable CS0618
-        return await QueryOverride<T>(databaseName, schemaName);
+        return await QueryOverride<T>(databaseName);
 #pragma warning restore CS0618
     }
 
     [Obsolete("Not decided if this will be built in further or removed")]
-    public async ValueTask<IMagicQuery<T>> QueryOverride<T>(string databaseNameOverride, string schemaNameOverride) 
+    public async ValueTask<IMagicQuery<T>> QueryOverride<T>(string databaseNameOverride) 
         where T: class, IMagicTableBase, new ()
     {
         ObjectDisposedException.ThrowIf(this._jsModule is null, this);
 
         var dbManager = await this._magicJsManager.Value;
-        return dbManager.Query<T>(databaseNameOverride, schemaNameOverride);
+        return dbManager.Query<T>(databaseNameOverride, SchemaHelper.GetTableName<T>());
     }
         
     public async ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet)

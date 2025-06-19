@@ -158,20 +158,18 @@
         {
             // Targets the default database automatically if called without any parameters.
             IMagicQuery<Person> personQuery = await _MagicDb.Query<Person>();
-            await personQuery.ClearTable();
 
             // Choose an assigned database to Person with strictly typed enforced connected Db's.
-            IMagicQuery<Person> employeeDbQuery = await _MagicDb.Query<Person>(x => x.Databases.Client);
+            // IMagicQuery<Person> EmployeeQuery = await _MagicDb.Query<Person>(x => x.Databases.Employee);
 
             // Not implemented yet
             // // // Highly not suggested, but you're allowed to target databases not assigned to the Person table
-            // IMagicQuery<Person> animalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
+            //IMagicQuery<Person> AnimalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
 
             // // // DO NOT DO THIS! I only am allowing this for maximum flexibility but this is very dangerous.
-            // IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
-
-
-
+            // IMagicQuery<Person> DangerousDbQuery = await _MagicDb.QueryOverride<Person>("Animal");
+            
+            await personQuery.ClearTable();
 
             Person[] persons = new Person[] {
                 new Person { Name = "Zack", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},

@@ -16,8 +16,7 @@ public interface IMagicIndexedDb
     /// <param name="databaseNameOverride"></param>
     /// <param name="schemaNameOverride"></param>
     /// <returns></returns>
-    //ValueTask<IMagicQuery<T>> QueryOverride<T>(string? databaseNameOverride = null, 
-    //    string? schemaNameOverride = null) where T : class, IMagicTableBase, new();
+    ValueTask<IMagicQuery<T>> QueryOverride<T>(string? databaseNameOverride = null) where T : class, IMagicTableBase, new();
 
     /// <summary>
     /// Opens a ready query to utilize IndexDB database and capabilities utilizing LINQ to IndexDB. 
