@@ -1,6 +1,7 @@
-﻿using Magic.IndexedDb.Interfaces;
+﻿using Magic.IndexedDb;
+using Magic.IndexedDb.Interfaces;
 
-namespace Magic.IndexedDb.Testing.Helpers;
+namespace TestBase.Helpers;
 
 internal static class MagicInMemoryExecutor
 {

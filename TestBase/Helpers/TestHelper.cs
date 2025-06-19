@@ -1,11 +1,11 @@
-﻿using Magic.IndexedDb.Helpers;
+﻿using System.Reflection;
+using System.Text.Json;
+using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Models;
 using Magic.IndexedDb.SchemaAnnotations;
-using Magic.IndexedDb.Testing.Models;
-using System.Reflection;
-using System.Text.Json;
+using TestBase.Models;
 
-namespace Magic.IndexedDb.Testing.Helpers;
+namespace TestBase.Helpers;
 
 public static class TestValidator
 {

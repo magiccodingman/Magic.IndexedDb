@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Magic.IndexedDb\Magic.IndexedDb.csproj" />
+    <ProjectReference Include="..\..\TestBase\TestBase.csproj" />
     <ProjectReference Include="..\TestServer.Client\TestServer.Client.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.3" />
     <PackageReference Include="MudBlazor" Version="8.7.0" />
