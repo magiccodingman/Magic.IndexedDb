@@ -9,15 +9,6 @@ namespace E2eTestWebApp.TestPages;
 [Route("/WhereTest")]
 public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
 {
-    /*[MagicTable("Records", null)]
-    private class Record
-    {
-        [MagicPrimaryKey("Id")]
-        public int Id { get; set; }
-
-        public int Int32Field { get; set; }
-    }*/
-
     public async Task<string> Where1()
     {
         var db = await magic.Query<Person>();

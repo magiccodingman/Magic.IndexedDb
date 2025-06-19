@@ -13,11 +13,37 @@ public class Person : MagicTableTool<Person>, IMagicTable<Person.DbSets>
 {
     public List<IMagicCompoundIndex> GetCompoundIndexes() =>
         new List<IMagicCompoundIndex>() {
-            CreateCompoundIndex(x => x.TestIntStable, x => x.Name)
+            CreateCompoundIndex(x => x.TestIntStable2, x => x.Name)
         };
-
-    // Endobject when compund key contains two or more keys
-    public IMagicCompoundKey GetKeys() => CreateCompoundKey(x => x.TestIntStable);
+    
+    // With this getKeys everything works
+    public IMagicCompoundKey GetKeys() =>
+        CreatePrimaryKey(x => x._Id, true);
+    
+    // sometimes doesn't work, The JSON value could not be converted to System.Boolean
+    /*public IMagicCompoundKey GetKeys() =>
+        CreatePrimaryKey(x => x.TestIntStable, true);*/
+    
+    // Doesnt work, deserialization issue json.endobject
+    /*public IMagicCompoundKey GetKeys() =>
+        CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);*/
+    
+    // sometimes doesn't work, deserialization issue json.endobject
+    /*public IMagicCompoundKey GetKeys() =>
+        CreateCompoundKey(x => x.TestIntStable2, x => x._Age);*/
+    
+    // Doesnt work, deserialization issue json.endobject
+    /*public IMagicCompoundKey GetKeys() =>
+        CreateCompoundKey(x => x.TestIntStable, x => x._Age);*/
+    
+    // Doesnt work, deserialization issue json.endobject
+    /*public IMagicCompoundKey GetKeys() =>
+        CreateCompoundKey(x => x.TestIntStable, x => x.Name);*/
+    
+    // sometimes doesn't work, deserialization issue json.endobject
+    /*public IMagicCompoundKey GetKeys() =>
+        CreateCompoundKey(x => x.TestIntStable2);*/
+    
 
     public string GetTableName() => "Person";
     public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;
