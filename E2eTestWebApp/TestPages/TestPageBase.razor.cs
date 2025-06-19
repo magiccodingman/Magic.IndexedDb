@@ -1,4 +1,5 @@
 using TestBase.Helpers;
+using TestBase.Models;
 
 namespace E2eTestWebApp.TestPages;
 
@@ -39,9 +40,9 @@ partial class TestPageBase
         this.output = "";
     }
     
-    private bool RunTest<T>(string testName,
+    public TestResponse RunTest<T>(string testName,
         IEnumerable<T> indexDbResults, IEnumerable<T> correctResults) where T : class
     {
-        return TestValidator.ValidateLists(correctResults, indexDbResults).Success;
+        return TestValidator.ValidateLists(correctResults, indexDbResults);
     }
 }
