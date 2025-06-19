@@ -29,7 +29,7 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
 
     public async Task<string> TestWhere0()
     {
-        return await GetDebugString();
+        // return await GetDebugString();
         
         var result = RunTest("Date Equal",
             await (await SetupData()).Where(x => x.DateOfBirth.Value.Date == new DateTime(2020, 2, 10)).ToListAsync(),
