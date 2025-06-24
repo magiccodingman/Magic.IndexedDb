@@ -725,14 +725,12 @@ return result.Success ? "OK" : result.Message;
                                 .ToListAsync(),
         PersonData.persons.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null)));
     return result.Success ? "OK" : result.Message;
-
-        // 📌 Edge Case: Querying on a Property That Doesn't Exist in Some Objects
     }
-    // THis test worked but now I secured it via the wrapper to throw an error to prevent user error!
+    
     public async Task<string> TestWhere90() {
-        var result = RunTest("Query on Optional Property (Some Missing Values)",
+        var result = RunTest("Query on Not mapped Property",
             await (await SetupData()).Where(x => x.DoNotMapTest.Contains("diary")).ToListAsync(),
-            PersonData.persons.Where(x => x.DoNotMapTest != null && x.DoNotMapTest.Contains("diary")));
+            []);
         return result.Success ? "OK" : result.Message;
     }
 

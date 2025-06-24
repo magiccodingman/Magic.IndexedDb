@@ -193,7 +193,7 @@
 
             await personQuery.AddRangeAsync(persons);
 
-            allPeople = await personQuery.ToListAsync();
+            allPeople = persons.ToList();
 
             List<Person> people = await personQuery.ToListAsync();
             StateHasChanged();
@@ -640,12 +640,10 @@
                 await personQuery.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null))
                                  .ToListAsync(),
                 allPeople.Where(x => (x._Age < 50 || x.Name.StartsWith("Z")) && (x.TestInt == 9 && x.DateOfBirth != null)));
-
-            // 📌 Edge Case: Querying on a Property That Doesn't Exist in Some Objects
-            // THis test worked but now I secured it via the wrapper to throw an error to prevent user error!
-            RunTest("Query on Optional Property (Some Missing Values)",
+            
+            RunTest("Query on Not mapped Property",
                 await personQuery.Where(x => x.DoNotMapTest.Contains("diary")).ToListAsync(),
-                allPeople.Where(x => x.DoNotMapTest != null && x.DoNotMapTest.Contains("diary")));
+                []);
 
             RunTest("Where + OrderBy + Skip + TakeLast",
                 await personQuery.Cursor(x => x.TestInt > 2)
