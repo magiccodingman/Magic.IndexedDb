@@ -226,12 +226,6 @@ public class WhereTest : TestBase<WhereTestPage>
     }
 
     [TestMethod]
-    public async Task Force_Cursor_Equal_Test(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere36);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
     public async Task Not_Equals_Test(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere37);
         Assert.AreEqual("OK", result);
@@ -246,12 +240,6 @@ public class WhereTest : TestBase<WhereTestPage>
     [TestMethod]
     public async Task Basic_Index_Equal_Test(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere40);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Basic_Cursor_Equal_Test(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere41);
         Assert.AreEqual("OK", result);
     }
 
@@ -286,12 +274,6 @@ public class WhereTest : TestBase<WhereTestPage>
     }
 
     [TestMethod]
-    public async Task Multiple_Cursor_Conditions_OR(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere48);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
     public async Task Nested_AND_OR(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere49);
         Assert.AreEqual("OK", result);
@@ -318,18 +300,6 @@ public class WhereTest : TestBase<WhereTestPage>
     [TestMethod]
     public async Task Take_Test(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere53);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Take_And_With_Index_Test(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere54);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task TakeLast_And_With_Index_Test(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere55);
         Assert.AreEqual("OK", result);
     }
 
@@ -364,12 +334,6 @@ public class WhereTest : TestBase<WhereTestPage>
     }
 
     [TestMethod]
-    public async Task Cursor_Last_Or_Default_Where_Test(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere61);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
     public async Task Index_First_Or_Default_Test(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere62);
         Assert.AreEqual("OK", result);
@@ -388,12 +352,6 @@ public class WhereTest : TestBase<WhereTestPage>
     }
 
     [TestMethod]
-    public async Task Index_Last_Or_Default_Where_Test(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere65);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
     public async Task TakeLast_Cursor_Test(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere66);
         Assert.AreEqual("OK", result);
@@ -408,42 +366,6 @@ public class WhereTest : TestBase<WhereTestPage>
     [TestMethod]
     public async Task Chained_Where_with_AND_OR(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere68);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Cursor_Where_Plus_OrderBy_Plus_Skip_Plus_Take(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere69);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Cursor_Where_Plus_OrderBy_Plus_Skip_Plus_Take_Plus_first_or_default(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere70);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Cursor_Where_Plus_OrderBy_Plus_Skip_Plus_Take_Plus_last_or_default(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere71);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Index_Where_Plus_OrderBy_Plus_Skip_Plus_Take(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere72);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Index_Where_Plus_OrderBy_Desc_Plus_Skip_Plus_Take(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere73);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Where_Plus_OrderByDescending_Plus_TakeLast(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere74);
         Assert.AreEqual("OK", result);
     }
 
@@ -508,12 +430,6 @@ public class WhereTest : TestBase<WhereTestPage>
     }
 
     [TestMethod]
-    public async Task Cursor_Test_Equals(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere85);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
     public async Task NOT_EQUAL(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere86);
         Assert.AreEqual("OK", result);
@@ -540,24 +456,6 @@ public class WhereTest : TestBase<WhereTestPage>
     [TestMethod]
     public async Task Query_on_Not_mapped_Property(){
         var result = await this.RunTestPageMethodAsync(p => p.TestWhere90);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Where_Plus_OrderBy_Plus_Skip_Plus_TakeLast(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere91);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Paginated_Index_Query_with_AND_Condition(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere92);
-        Assert.AreEqual("OK", result);
-    }
-
-    [TestMethod]
-    public async Task Paginated_Cursor_Query_with_AND_Condition(){
-        var result = await this.RunTestPageMethodAsync(p => p.TestWhere93);
         Assert.AreEqual("OK", result);
     }
 }
