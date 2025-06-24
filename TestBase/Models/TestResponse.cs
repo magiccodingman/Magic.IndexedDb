@@ -1,4 +1,4 @@
-﻿namespace Magic.IndexedDb.Testing.Models;
+﻿namespace TestBase.Models;
 
 public class TestResponse
 {

@@ -1,7 +1,7 @@
 ﻿using Magic.IndexedDb;
-using TestWasm.Repository;
+using TestBase.Repository;
 
-namespace TestWasm.Models;
+namespace TestBase.Models;
 
 public class Car : MagicTableTool<Car>, IMagicTable<Person.DbSets>
 {

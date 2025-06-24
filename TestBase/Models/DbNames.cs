@@ -1,4 +1,4 @@
-﻿namespace TestWasm.Models;
+﻿namespace TestBase.Models;
 
 public static class DbNames
 {

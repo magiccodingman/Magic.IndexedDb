@@ -1,6 +1,7 @@
 ﻿using System.Linq.Expressions;
+using Magic.IndexedDb;
 
-namespace Magic.IndexedDb.Testing.Helpers;
+namespace TestBase.Helpers;
 
 public class QueryTestBlueprint<T>
 {

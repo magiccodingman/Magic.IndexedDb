@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.Playwright;
 using System.Linq.Expressions;
 using System.Reflection;
+using E2eTest.Extensions;
 
 namespace E2eTest;
 
@@ -49,6 +50,10 @@ public abstract partial class TestBase<TPage> : ContextTest
 
         await page.GotoAsync(typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "");
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync("Loaded.");
+        
+        await page.DeleteDatabaseAsync("Animal");
+        await page.DeleteDatabaseAsync("Client");
+        await page.DeleteDatabaseAsync("Employee");
 
         await page.GetByTestId("method").FillAsync(ResolveMethod(method));
         await page.WaitForTimeoutAsync(500);

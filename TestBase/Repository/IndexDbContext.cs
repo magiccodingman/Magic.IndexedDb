@@ -1,7 +1,7 @@
 ﻿using Magic.IndexedDb;
 using Magic.IndexedDb.Interfaces;
 
-namespace TestWasm.Repository;
+namespace TestBase.Repository;
 
 public class IndexDbContext : IMagicRepository
 {

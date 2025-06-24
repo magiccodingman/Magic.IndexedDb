@@ -1,8 +1,9 @@
-﻿using Magic.IndexedDb.Helpers;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
+using Magic.IndexedDb;
+using Magic.IndexedDb.Helpers;
 
-namespace Magic.IndexedDb.SnapshotBuilder;
+namespace TestBase.SnapshotBuilder;
 
 public static class BuildTools
 {

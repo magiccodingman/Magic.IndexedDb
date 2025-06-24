@@ -8,6 +8,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Magic.IndexedDb\Magic.IndexedDb.csproj" />
+    <ProjectReference Include="..\TestBase\TestBase.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <_ContentIncludedByDefault Remove="Pages\Error.razor" />
+    <_ContentIncludedByDefault Remove="Pages\Home.razor" />
   </ItemGroup>
 
 </Project>
