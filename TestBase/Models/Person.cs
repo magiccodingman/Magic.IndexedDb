@@ -1,10 +1,9 @@
 ﻿using Magic.IndexedDb;
-
 using Magic.IndexedDb.SchemaAnnotations;
-using TestWasm.Repository;
-using static TestWasm.Models.Person;
+using TestBase.Repository;
+using static TestBase.Models.Person;
 
-namespace TestWasm.Models;
+namespace TestBase.Models;
 
 public class Nested
 {
@@ -19,11 +18,13 @@ public class Person : MagicTableTool<Person>, IMagicTable<DbSets>
             CreateCompoundIndex(x => x.TestIntStable2, x => x.Name)
         };
 
-    public IMagicCompoundKey GetKeys() =>
-        CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);
+    // When using this, the e2e fails, but the Testserver succeeds
+    /*public IMagicCompoundKey GetKeys() =>
+        CreateCompoundKey(x => x.TestIntStable2, x => x.TestIntStable);*/
 
-    //public IMagicCompoundKey GetKeys() =>
-    //    CreatePrimaryKey(x => x._Id, true);
+    // When using this, the e2e succeeds, but the Testserver fails when not in debug mode 🤯
+    public IMagicCompoundKey GetKeys() =>
+        CreatePrimaryKey(x => x._Id, true);
 
     public string GetTableName() => "Person";
     public IndexedDbSet GetDefaultDatabase() => IndexDbContext.Client;
