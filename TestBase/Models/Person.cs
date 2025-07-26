@@ -11,7 +11,7 @@ public class Nested
 }
 
 
-public class Person : MagicTableTool<Person>, IMagicTable<Person.DbSets>
+public class Person : MagicTableTool<Person>, IMagicTable<DbSets>
 {
     public List<IMagicCompoundIndex> GetCompoundIndexes() =>
         new List<IMagicCompoundIndex>() {
