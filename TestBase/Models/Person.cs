@@ -13,6 +13,14 @@ public class Nested
 
 public class Person : MagicTableTool<Person>, IMagicTable<DbSets>
 {
+    public Person()
+    {
+    }
+
+    public Person(int? t)
+    {
+    }
+
     public List<IMagicCompoundIndex> GetCompoundIndexes() =>
         new List<IMagicCompoundIndex>() {
             CreateCompoundIndex(x => x.TestIntStable2, x => x.Name)

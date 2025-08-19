@@ -62,6 +62,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
     private object CreateObjectFromDictionary(Type type, Dictionary<string, object?> propertyValues, SearchPropEntry search)
     {
+        object? obj = null;
         // 🚀 If there's a constructor with parameters, use it
         if (search.ConstructorParameterMappings.Count > 0)
         {
@@ -75,11 +76,18 @@ internal class MagicContractResolver<T> : JsonConverter<T>
                     constructorArgs[index] = GetDefaultValue(type.GetProperty(paramName)?.PropertyType ?? typeof(object));
             }
 
-            return search.InstanceCreator(constructorArgs) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
+            obj = search.InstanceCreator(constructorArgs);
+        }
+        else
+        {
+            // 🚀 Use parameterless constructor
+            obj = search.InstanceCreator([]);
         }
 
-        // 🚀 Use parameterless constructor
-        var obj = search.InstanceCreator(Array.Empty<object?>()) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
+        if (obj == null)
+        {
+            throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
+        }
 
         // 🚀 Assign property values
         foreach (var (propName, value) in propertyValues)
