@@ -1,4 +1,5 @@
-﻿using Magic.IndexedDb;
+﻿using System.Text.Json.Serialization;
+using Magic.IndexedDb;
 using Magic.IndexedDb.SchemaAnnotations;
 using TestBase.Repository;
 using static TestBase.Models.Person;
@@ -13,6 +14,17 @@ public class Nested
 
 public class Person : MagicTableTool<Person>, IMagicTable<DbSets>
 {
+    [JsonConstructor]
+    public Person()
+    {
+        DoNotMapTest2 = "Test";
+    }
+
+    public Person(int _Id)
+    {
+        DoNotMapTest2 = _Id.ToString();
+    }
+
     public List<IMagicCompoundIndex> GetCompoundIndexes() =>
         new List<IMagicCompoundIndex>() {
             CreateCompoundIndex(x => x.TestIntStable2, x => x.Name)

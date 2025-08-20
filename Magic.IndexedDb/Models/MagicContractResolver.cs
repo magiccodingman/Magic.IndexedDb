@@ -66,7 +66,6 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         if (search.ConstructorParameterMappings.Count > 0)
         {
             var constructorArgs = new object?[search.ConstructorParameterMappings.Count];
-
             foreach (var (paramName, index) in search.ConstructorParameterMappings)
             {
                 if (propertyValues.TryGetValue(paramName, out var value))
@@ -89,7 +88,6 @@ internal class MagicContractResolver<T> : JsonConverter<T>
                 propEntry.Setter(obj, value);
             }
         }
-
         return obj;
     }
 
