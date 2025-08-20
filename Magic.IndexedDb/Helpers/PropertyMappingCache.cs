@@ -4,6 +4,7 @@ using Magic.IndexedDb.SchemaAnnotations;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text.Json.Serialization;
 
 namespace Magic.IndexedDb.Helpers;
 
@@ -36,15 +37,18 @@ public struct SearchPropEntry
             EnforcePascalCase = false;
         }
 
-        // 🔥 Pick the best constructor: Prefer a parameterized one, else fallback to parameterless
-        var constructor = constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
-        Constructor = constructor; // ✅ Assign to instance variable
-        HasConstructorParameters = constructor != null && constructor.GetParameters().Length > 0;
+        // 🔥 Pick the best constructor: Prefer JsonConstructor, then fall back to a parameterized one, else fallback to parameterless
+        var jsonConstructor = constructors.FirstOrDefault(c => c.GetCustomAttribute<JsonConstructorAttribute>() != null);
+        if (jsonConstructor == null)
+        {
+            Constructor = constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
+        }
+        HasConstructorParameters = Constructor != null && Constructor.GetParameters().Length > 0;
 
         // 🔥 Cache constructor parameter mappings
         if (HasConstructorParameters)
         {
-            var parameters = constructor.GetParameters();
+            var parameters = Constructor.GetParameters();
             for (int i = 0; i < parameters.Length; i++)
             {
                 ConstructorParameterMappings[parameters[i].Name!] = i;
@@ -52,7 +56,7 @@ public struct SearchPropEntry
         }
 
         // 🔥 Store constructor in a local variable before using in lambda (Fix for struct issue)
-        var localConstructor = constructor;
+        var localConstructor = Constructor;
 
         // 🔥 Cache fast instance creator
         if (localConstructor != null)

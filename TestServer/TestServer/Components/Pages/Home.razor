@@ -46,6 +46,9 @@
 <PageTitle>Example</PageTitle>
 
 <h3>Unit Tests</h3>
+
+@(System.Text.Json.JsonSerializer.Serialize(new Person()))
+
 @foreach (var (testName, response, countResults) in TestResults)
 {
     <div>
