@@ -51,7 +51,5 @@ public interface IMagicIndexedDb
     // I think this should be under a utilities functionality?
     Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default);
 
-    //ValueTask<IMagicDatabaseGlobal> Database();
-
     ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet);
 }

@@ -1,9 +1,4 @@
 ﻿namespace Magic.IndexedDb.LinqTranslation.Interfaces;
-//public interface IMagicDatabaseGlobal
-//{
-//    Task DeleteAll();
-//    Task ClearAll();
-//}
 
 public interface IMagicDatabaseScoped
 {
