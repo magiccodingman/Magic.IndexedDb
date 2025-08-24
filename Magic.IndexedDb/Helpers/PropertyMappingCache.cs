@@ -41,16 +41,13 @@ public struct SearchPropEntry
         // 🔥 Pick the best constructor: Prefer MagicConstructor, then fall back to a parameterized one, else fallback to parameterless
         try
         {
-            var magicConstructor = constructors.SingleOrDefault(c => c.GetCustomAttribute<MagicConstructorAttribute>() != null);
-            if (magicConstructor == null)
-            {
-                Constructor = constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
-            }
+            Constructor = constructors.SingleOrDefault(c => c.GetCustomAttribute<MagicConstructorAttribute>() is not null);
         }
-        
-        catch (InvalidOperationException){
+        catch (InvalidOperationException)
+        {
             throw new MagicConstructorException("Only one magic constructor is allowed");
         }
+        Constructor ??= constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
 
         HasConstructorParameters = Constructor != null && Constructor.GetParameters().Length > 0;
 
