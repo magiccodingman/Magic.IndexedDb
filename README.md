@@ -9,13 +9,13 @@ Note the migration system is under construction. Stability of the query engine a
 
 ## **What is Magic IndexedDB?**
 
-Welcome to the first-ever **true** LINQ to IndexedDB system. This project is not just another wrapper around IndexedDB—it is a **complete transformation** of how we interact with browser databases, unlocking **seamless, optimized querying** that **feels like LINQ to SQL but is built for IndexedDB**.
+Welcome to the first-ever **true** LINQ to IndexedDB system. This project is not just another wrapper around IndexedDB, it is a **complete transformation** of how we interact with browser databases, unlocking **seamless, optimized querying** that **feels like LINQ to SQL but is built for IndexedDB**.
 
 At its core, this system allows **C# developers in Blazor** to write LINQ queries that are automatically translated into **the most efficient IndexedDB queries possible**. But beyond that, we have designed a **universal layer** that any programming framework can wrap around, enabling a truly **universal LINQ to IndexedDB library for any language**.
 
 ## **What Makes This Different?**
 
-Many past attempts at “LINQ to IndexedDB” were **not** actually LINQ to IndexedDB—they were **just LINQ-like syntax calling IndexedDB’s APIs directly**. These libraries still loaded massive amounts of data into memory before filtering it, **completely missing the point** of LINQ’s efficiency.
+Many past attempts at “LINQ to IndexedDB” were **not** actually LINQ to IndexedDB, they were **just LINQ-like syntax calling IndexedDB’s APIs directly**. These libraries still loaded massive amounts of data into memory before filtering it, **completely missing the point** of LINQ’s efficiency.
 
 ### **A Real LINQ to IndexedDB System**
 To understand what makes **Magic IndexedDB** revolutionary, we need to compare it to **LINQ in memory vs. LINQ to SQL**:
@@ -81,9 +81,10 @@ This is **the first and only true LINQ to IndexedDB implementation**—not a fak
 Welcome to **Magic IndexedDB**.  
 Where **everything is truly magic**.
 
-## Special Thanks
-Back in 2023, I ran into IndexedDB for the first time. I hated how hard it was to use, so I ventured to look for a good LINQ to IndexedDB library for Blazor. I would then discover nobody built a true Blazor to IndexedDB translation layer. Any that did exist were just replicating LINQ syntax, were depreciated/archived, or missed the point entirely. More shockingly, there was no library at all that did this in any language or framework! Everyone simply wrote their own wrappers around API's, but didn't built true LINQ like translated intent. But shortly after I released the project, I would get swept away by life and tune out for well over a year.
 
-But in 2024 recognizing there was peer review submissions for fixes that had sat for what seemed like ages. I decided to get involved enough to watch PR's and accept them. I'd eventually request contributor support and [@yueyinqiu](https://github.com/yueyinqiu) would answer that call. And thanks to your help, brain storming, suggestions, code, tests, and ideas, I was able to see how to accomplish the original goal of this project. I very likely never would have touched this project again if you hadn't provided support.
+# 🏆 Contributors Hall of Fame 🏆
+Thank you to all contributors whether large or small! But this section is for those who put in significant work and contributions!
 
-But thank you to everyone who supported the v1.0 era. But now, it's time for v2.0 which truly accomplishes the goal of building a true LINQ to IndexedDB translation layer.
+[@yueyinqiu](https://github.com/yueyinqiu) - I built this project in ~2 weeks in 2023. Then I told nobody about this project. I then just walked away and forgot about it. It wasn't until 2024 that I realized there were PR's and tickets from others. But yueyinqiu provided significant contributions during this time, and worked with me closely as we both completed version 1 together. This project would have died without you my friend and you made it fun for me to come back and see it through. Toggether we finished v1 and it set up the system to move to v2.
+
+[@Ard2025](https://github.com/Ard2025) - Dude you came out of left field in 2025 and became a powerhouse contributor! I swear you were a pest control exterminator in a past life because you just can't stop killing bugs. You also have worked closely with me providing valuable brainstorming sessions, large cleanup, refactors of code, and more after the version 2 alpha launch. Seriously thank you, this project thrives because you're here.
