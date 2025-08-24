@@ -14,7 +14,7 @@ public class Nested
 
 public class Person : MagicTableTool<Person>, IMagicTable<DbSets>
 {
-    [JsonConstructor]
+    [MagicConstructor]
     public Person()
     {
         DoNotMapTest2 = "Test";

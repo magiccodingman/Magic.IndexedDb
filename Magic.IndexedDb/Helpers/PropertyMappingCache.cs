@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json.Serialization;
+using Magic.IndexedDb.Exceptions;
 
 namespace Magic.IndexedDb.Helpers;
 
@@ -37,9 +38,14 @@ public struct SearchPropEntry
             EnforcePascalCase = false;
         }
 
-        // 🔥 Pick the best constructor: Prefer JsonConstructor, then fall back to a parameterized one, else fallback to parameterless
-        var jsonConstructor = constructors.FirstOrDefault(c => c.GetCustomAttribute<JsonConstructorAttribute>() != null);
-        if (jsonConstructor == null)
+        // 🔥 Pick the best constructor: Prefer MagicConstructor, then fall back to a parameterized one, else fallback to parameterless
+        if (constructors.Count(c => c.GetCustomAttribute<MagicConstructorAttribute>() != null) > 1)
+        {
+            throw new MagicConstructorException("Only one magic constructor is allowed");
+        }
+
+        var magicConstructor = constructors.FirstOrDefault(c => c.GetCustomAttribute<MagicConstructorAttribute>() != null);
+        if (magicConstructor == null)
         {
             Constructor = constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
         }
