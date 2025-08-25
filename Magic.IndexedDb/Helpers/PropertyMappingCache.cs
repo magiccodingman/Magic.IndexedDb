@@ -428,8 +428,6 @@ public static class PropertyMappingCache
 
     internal static void EnsureTypeIsCached(Type type)
     {
-        //string typeKey = type.FullName!;
-
         // Avoid re-registering types if the typeKey already exists
         if (_propertyCache.ContainsKey(type))
             return;
@@ -496,7 +494,7 @@ public static class PropertyMappingCache
         _propertyCache[type] = new SearchPropEntry(type, propertyEntries,
             constructors);
 
-        var complexTypes = GetAllNestedComplexTypes(newMagicPropertyEntry.Select(x => x.Property));
+        var complexTypes = GetAllNestedComplexTypes(newMagicPropertyEntry.Where(x => x.Property.PropertyType != typeof(System.Type)).Select(x => x.Property));
         if (complexTypes != null && complexTypes.Any())
         {
             foreach (var comp in complexTypes)

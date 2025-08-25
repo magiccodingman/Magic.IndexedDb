@@ -12,7 +12,7 @@ public class Nested
 }
 
 
-public class Person : MagicTableTool<Person>, IMagicTable<DbSets>
+public record Person : MagicTableToolRecord<Person>, IMagicTable<DbSets>
 {
     [JsonConstructor]
     public Person()
