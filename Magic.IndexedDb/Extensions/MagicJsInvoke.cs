@@ -115,11 +115,6 @@ internal class MagicJsInvoke
             await MagicSerializationHelper.SerializeObjectToStreamAsync(writer, package, settings);
         }
 
-        // ✅ Immediately release reference to `package`
-        package = null;
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-
         stream.Position = 0;
 
         using var streamRef = new DotNetStreamReference(stream);
