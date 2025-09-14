@@ -6,7 +6,7 @@ public static class PersonData
 {
     public static Person[] persons =
     [
-        new Person { _Id = 1, Name = "Zack", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
+        new Person { _Id = 1, Name = "Zack", DateOfBirth = null, TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), DoNotMapTest = "I buried treasure behind my house", Access=Person.Permissions.CanRead, Secret = new string('a', 45000000)},
         new Person { _Id = 2, Name = "Luna", TestInt = 9, DateOfBirth = new DateTime(1980, 1, 1), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
         new Person { _Id = 3, Name = "Jerry", TestInt = 9, DateOfBirth = new DateTime(1981, 1, 1), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
         new Person { _Id = 4, Name = "Jamie", TestInt = 9, DateOfBirth = new DateTime(1982, 1, 1), _Age = 35, GUIY = Guid.NewGuid(), DoNotMapTest = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
