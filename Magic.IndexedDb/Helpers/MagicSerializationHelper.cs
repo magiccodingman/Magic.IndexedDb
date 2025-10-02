@@ -1,5 +1,6 @@
 ﻿using System.Buffers;
 using System.IO.Pipelines;
+using System.Text;
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Models;
 using System.Text.Json;
@@ -45,8 +46,7 @@ public static class MagicSerializationHelper
         var result = await pipe.Reader.ReadAsync();
         await pipe.Reader.CompleteAsync();
         var resultbytes = result.Buffer.ToArray();
-        var resultchars = resultbytes.Select(c => (char)c).ToArray();
-        var jsonString = String.Join("", resultchars);
+        var jsonString = Encoding.Default.GetString(resultbytes);
 
         // Convert the string to a JsonElement so that Blazor treats it as a structured object
         using JsonDocument doc = JsonDocument.Parse(jsonString);
@@ -86,8 +86,7 @@ public static class MagicSerializationHelper
         await pipe.Writer.CompleteAsync();
         var result = await pipe.Reader.ReadAsync();
         var resultbytes = result.Buffer.ToArray();
-        var resultchars = resultbytes.Select(c => (char)c).ToArray();
-        var jsonString = String.Join("", resultchars);
+        var jsonString = Encoding.Default.GetString(resultbytes);
         return jsonString;
     }
 
@@ -99,11 +98,8 @@ public static class MagicSerializationHelper
         if (settings == null)
             settings = new MagicJsonSerializationSettings();
         
-        Type type = typeof(T);
-
         var options = settings.GetOptionsWithResolver<T>(); // Ensure correct resolver for deserialization
-        char[] chars = json.ToCharArray();
-        byte[] bytes = chars.Select(c => (byte)c).ToArray();
+        var bytes = Encoding.Default.GetBytes(json);
         var span = new ReadOnlyMemory<byte>(bytes);
         var pipe = new Pipe(GetPipeOptions());
         await pipe.Writer.WriteAsync(span);
