@@ -1,6 +1,6 @@
 "use strict";
 
-const DEBUG_MODE = true; // Set to false before release
+const DEBUG_MODE = false; // Set to false before release
 
 export function debugLog(...args) {
     if (DEBUG_MODE) {

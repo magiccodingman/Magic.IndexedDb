@@ -39,9 +39,11 @@ public static class MagicSerializationHelper
 
         var options = settings.GetOptionsWithResolver<T>(); // Ensure the correct resolver is applied
         
-        var pipe = new Pipe();
+        var pipe = new Pipe(GetPipeOptions());
         await JsonSerializer.SerializeAsync(pipe.Writer, value, typeof(T), options, default);
+        await pipe.Writer.CompleteAsync();
         var result = await pipe.Reader.ReadAsync();
+        await pipe.Reader.CompleteAsync();
         var resultbytes = result.Buffer.ToArray();
         var resultchars = resultbytes.Select(c => (char)c).ToArray();
         var jsonString = String.Join("", resultchars);
@@ -78,9 +80,10 @@ public static class MagicSerializationHelper
             throw new ArgumentNullException(nameof(value), "Object cannot be null");
 
         var options = settings.GetOptionsWithResolver<T>(); // Ensure the correct resolver is applied
-
-        var pipe = new Pipe();
-        await JsonSerializer.SerializeAsync(pipe.Writer, value, typeof(T), options, default);
+        
+        var pipe = new Pipe(GetPipeOptions());
+        await JsonSerializer.SerializeAsync(pipe.Writer, value, typeof(T), options);
+        await pipe.Writer.CompleteAsync();
         var result = await pipe.Reader.ReadAsync();
         var resultbytes = result.Buffer.ToArray();
         var resultchars = resultbytes.Select(c => (char)c).ToArray();
@@ -102,9 +105,11 @@ public static class MagicSerializationHelper
         char[] chars = json.ToCharArray();
         byte[] bytes = chars.Select(c => (byte)c).ToArray();
         var span = new ReadOnlyMemory<byte>(bytes);
-        var pipe = new Pipe();
+        var pipe = new Pipe(GetPipeOptions());
         await pipe.Writer.WriteAsync(span);
+        await pipe.Writer.CompleteAsync();
         var ret = await JsonSerializer.DeserializeAsync<T?>(pipe.Reader, options);
+        await pipe.Reader.CompleteAsync();
         return ret;
     }
 
@@ -121,5 +126,10 @@ public static class MagicSerializationHelper
             var value = prop.GetValue(deserialized);
             prop.SetValue(target, value);
         }
+    }
+
+    public static PipeOptions GetPipeOptions()
+    {
+        return new PipeOptions(pauseWriterThreshold:0);
     }
 }
