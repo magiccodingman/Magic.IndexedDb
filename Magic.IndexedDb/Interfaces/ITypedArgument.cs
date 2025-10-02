@@ -5,7 +5,7 @@ namespace Magic.IndexedDb.Interfaces;
 
 public interface ITypedArgument
 {
-    string Serialize(); // Still needed for some cases
-    JsonElement SerializeToJsonElement(MagicJsonSerializationSettings? settings = null); // Ensures proper object passing
-    string SerializeToJsonString(MagicJsonSerializationSettings? settings = null);
+    Task<string> Serialize(); // Still needed for some cases
+    Task<JsonElement> SerializeToJsonElement(MagicJsonSerializationSettings? settings = null); // Ensures proper object passing
+    Task<string> SerializeToJsonString(MagicJsonSerializationSettings? settings = null);
 }

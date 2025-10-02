@@ -1,4 +1,6 @@
-﻿using Magic.IndexedDb.Interfaces;
+﻿using System.Buffers;
+using System.IO.Pipelines;
+using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Models;
 using System.Text.Json;
 
@@ -16,12 +18,18 @@ public static class MagicSerializationHelper
         return objs.Select(arg => arg.SerializeToJsonElement(settings)).Cast<object>().ToArray();
     }
 
-    public static string[] SerializeObjectsToString(ITypedArgument[] objs, MagicJsonSerializationSettings? settings = null)
+    public static async Task<string[]> SerializeObjectsToString(ITypedArgument[] objs, MagicJsonSerializationSettings? settings = null)
     {
-        return objs.Select(arg => arg.SerializeToJsonString(settings)).ToArray();
+        var arr = new List<string>();
+        foreach (ITypedArgument arg in objs)
+        {
+            string value = await arg.SerializeToJsonString(settings);
+            arr.Add(value);
+        }
+        return arr.ToArray();
     }
 
-    public static JsonElement SerializeObjectToJsonElement<T>(T value, MagicJsonSerializationSettings? settings = null)
+    public static async Task<JsonElement> SerializeObjectToJsonElement<T>(T value, MagicJsonSerializationSettings? settings = null)
     {
         if (settings == null)
             settings = new MagicJsonSerializationSettings();
@@ -30,7 +38,13 @@ public static class MagicSerializationHelper
             throw new ArgumentNullException(nameof(value), "Object cannot be null");
 
         var options = settings.GetOptionsWithResolver<T>(); // Ensure the correct resolver is applied
-        string jsonString = JsonSerializer.Serialize(value, options); // Serialize using your settings
+        
+        var pipe = new Pipe();
+        await JsonSerializer.SerializeAsync(pipe.Writer, value, typeof(T), options, default);
+        var result = await pipe.Reader.ReadAsync();
+        var resultbytes = result.Buffer.ToArray();
+        var resultchars = resultbytes.Select(c => (char)c).ToArray();
+        var jsonString = String.Join("", resultchars);
 
         // Convert the string to a JsonElement so that Blazor treats it as a structured object
         using JsonDocument doc = JsonDocument.Parse(jsonString);
@@ -52,7 +66,7 @@ public static class MagicSerializationHelper
         await writer.FlushAsync();
     }
 
-    public static string SerializeObject<T>(T? value, MagicJsonSerializationSettings? settings = null)
+    public static async Task<string> SerializeObject<T>(T? value, MagicJsonSerializationSettings? settings = null)
     {
         if (value == null)
             return "null";
@@ -65,20 +79,33 @@ public static class MagicSerializationHelper
 
         var options = settings.GetOptionsWithResolver<T>(); // Ensure the correct resolver is applied
 
-        return JsonSerializer.Serialize(value, options);
+        var pipe = new Pipe();
+        await JsonSerializer.SerializeAsync(pipe.Writer, value, typeof(T), options, default);
+        var result = await pipe.Reader.ReadAsync();
+        var resultbytes = result.Buffer.ToArray();
+        var resultchars = resultbytes.Select(c => (char)c).ToArray();
+        var jsonString = String.Join("", resultchars);
+        return jsonString;
     }
 
-    public static T? DeserializeObject<T>(string json, MagicJsonSerializationSettings? settings = null)
+    public static async Task<T?> DeserializeObject<T>(string json, MagicJsonSerializationSettings? settings = null)
     {
         if (string.IsNullOrWhiteSpace(json))
             throw new ArgumentException("JSON cannot be null or empty.", nameof(json));
 
         if (settings == null)
             settings = new MagicJsonSerializationSettings();
+        
+        Type type = typeof(T);
 
         var options = settings.GetOptionsWithResolver<T>(); // Ensure correct resolver for deserialization
-
-        return JsonSerializer.Deserialize<T>(json, options);
+        char[] chars = json.ToCharArray();
+        byte[] bytes = chars.Select(c => (byte)c).ToArray();
+        var span = new ReadOnlyMemory<byte>(bytes);
+        var pipe = new Pipe();
+        await pipe.Writer.WriteAsync(span);
+        var ret = await JsonSerializer.DeserializeAsync<T?>(pipe.Reader, options);
+        return ret;
     }
 
     public static void PopulateObject<T>(T source, T target)

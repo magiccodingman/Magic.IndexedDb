@@ -90,14 +90,14 @@ internal class MagicJsInvoke
     private async Task<T?> TrueMagicStreamJsAsync<T>(string modulePath, string functionName,
         CancellationToken token, bool isVoid, params ITypedArgument[] args)
     {
-        var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+        var settings = new MagicJsonSerializationSettings();
 
         var package = new MagicJsPackage
         {
             YieldResults = false,
             ModulePath = modulePath,
             MethodName = functionName,
-            Parameters = MagicSerializationHelper.SerializeObjectsToString(args, settings),
+            Parameters = await MagicSerializationHelper.SerializeObjectsToString(args, settings),
             IsVoid = isVoid
         };
 
@@ -129,7 +129,7 @@ internal class MagicJsInvoke
 
         string jsonResponse = await reader.ReadToEndAsync();
         await responseStreamRef.DisposeAsync();
-        return MagicSerializationHelper.DeserializeObject<T>(jsonResponse, settings);
+        return await MagicSerializationHelper.DeserializeObject<T>(jsonResponse, settings);
     }
 
     private async IAsyncEnumerable<T?> MagicYieldJsAsync<T>(
@@ -137,13 +137,13 @@ internal class MagicJsInvoke
         [EnumeratorCancellation] CancellationToken token, 
         params ITypedArgument[] args)
     {
-        var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+        var settings = new MagicJsonSerializationSettings();
 
         var package = new MagicJsPackage
         {
             ModulePath = modulePath,
             MethodName = functionName,
-            Parameters = MagicSerializationHelper.SerializeObjectsToString(args, settings),
+            Parameters = await MagicSerializationHelper.SerializeObjectsToString(args, settings),
             IsVoid = false,
             YieldResults = true
         };
@@ -192,7 +192,7 @@ internal class MagicJsInvoke
                     T? deserializedItem;
                     try
                     {
-                        deserializedItem = MagicSerializationHelper.DeserializeObject<T>(completedItem, settings);
+                        deserializedItem = await MagicSerializationHelper.DeserializeObject<T>(completedItem, settings);
                     }
                     catch (Exception deserializationError)
                     {

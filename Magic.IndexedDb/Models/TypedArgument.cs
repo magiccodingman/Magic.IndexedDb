@@ -13,18 +13,18 @@ public class TypedArgument<T> : ITypedArgument
         Value = value;
     }
 
-    public string Serialize()
+    public async Task<string> Serialize()
     {
-        return MagicSerializationHelper.SerializeObject(Value);
+        return await MagicSerializationHelper.SerializeObject(Value);
     }
 
-    public JsonElement SerializeToJsonElement(MagicJsonSerializationSettings? settings = null)
+    public async Task<JsonElement> SerializeToJsonElement(MagicJsonSerializationSettings? settings = null)
     {
-        return MagicSerializationHelper.SerializeObjectToJsonElement(Value, settings);
+        return await MagicSerializationHelper.SerializeObjectToJsonElement(Value, settings);
     }
 
-    public string SerializeToJsonString(MagicJsonSerializationSettings? settings = null)
+    public async Task<string> SerializeToJsonString(MagicJsonSerializationSettings? settings = null)
     {
-        return MagicSerializationHelper.SerializeObject(Value, settings);
+        return await MagicSerializationHelper.SerializeObject(Value, settings);
     }
 }
