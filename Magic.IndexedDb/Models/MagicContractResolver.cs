@@ -409,9 +409,6 @@ internal class MagicContractResolver<T> : JsonConverter<T>
     /// </summary>
     private void SerializeComplexProperties(Utf8JsonWriter writer, object value, Dictionary<string, MagicPropertyEntry> properties, JsonSerializerOptions options)
     {
-        var type = value.GetType();
-        var cache = PropertyMappingCache.GetTypeOfTProperties(type);
-
         foreach (var (propertyName, mpe) in properties)
         {
             if (mpe.NotMapped)
