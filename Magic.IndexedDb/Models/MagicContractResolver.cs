@@ -374,7 +374,8 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         switch (value)
         {
             case string str:
-                writer.WriteStringValue(str);
+                str = str.Replace("\"", "\\\"");
+                writer.WriteRawValue("\"" + str + "\"", true);
                 break;
             case bool b:
                 writer.WriteBooleanValue(b);
@@ -434,11 +435,23 @@ internal class MagicContractResolver<T> : JsonConverter<T>
                 continue;
 
             // Figure out the actual output property name
-            string finalPropertyName = mpe.NeverCamelCase
-                ? mpe.JsPropertyName
-                : (options.PropertyNamingPolicy == JsonNamingPolicy.CamelCase
-                    ? char.ToLowerInvariant(mpe.JsPropertyName[0]) + mpe.JsPropertyName.Substring(1)
-                    : mpe.JsPropertyName);
+            string finalPropertyName = string.Empty;
+
+            if (mpe.NeverCamelCase)
+            {
+                finalPropertyName = mpe.JsPropertyName;
+            }
+            else
+            {
+                if (options.PropertyNamingPolicy == JsonNamingPolicy.CamelCase)
+                {
+                    finalPropertyName = char.ToLowerInvariant(mpe.JsPropertyName[0]) + mpe.JsPropertyName.Substring(1);
+                }
+                else
+                {
+                    finalPropertyName = mpe.JsPropertyName;
+                }
+            }
 
             writer.WritePropertyName(finalPropertyName);
 

@@ -109,21 +109,6 @@ public static class MagicSerializationHelper
         return ret;
     }
 
-    public static void PopulateObject<T>(T source, T target)
-    {
-        if (source == null || target == null)
-            throw new ArgumentNullException("Source and target cannot be null");
-
-        var json = JsonSerializer.Serialize(source);
-        var deserialized = JsonSerializer.Deserialize<T>(json);
-
-        foreach (var prop in typeof(T).GetProperties())
-        {
-            var value = prop.GetValue(deserialized);
-            prop.SetValue(target, value);
-        }
-    }
-
     public static PipeOptions GetPipeOptions()
     {
         return new PipeOptions(pauseWriterThreshold:0);

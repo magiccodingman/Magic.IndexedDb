@@ -1,6 +1,5 @@
 ﻿@page "/"
 @using Magic.IndexedDb
-@using TestWasm.Models
 @using System.Linq;
 @using TestBase.Helpers
 @using TestBase.Models
@@ -225,7 +224,7 @@ IndexOrderingProperties = new List<Func<Person, object>> {
 
                 // Not implemented yet
                 // // // Highly not suggested, but you're allowed to target databases not assigned to the Person table
-                // IMagicQuery<Person> animalDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Animal);
+                // IMagicQuery<Person> clientDbQuery = await _MagicDb.Query<Person>(IndexDbContext.Client);
 
                 // // // DO NOT DO THIS! I only am allowing this for maximum flexibility but this is very dangerous.
                 // IMagicQuery<Person> unassignedDbQuery = await _MagicDb.QueryOverride<Person>("DbName", "SchemaName");
