@@ -24,6 +24,7 @@ public static class Program
         var appContentRoot = Path.GetFullPath(
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "E2eTestWebApp"));
         var webAppArguments = $"--E2eTest {currentProcess.Id}";
+        var output = new ConcurrentQueue<string>();
         var errors = new ConcurrentQueue<string>();
         var server = new Process
         {
@@ -58,7 +59,6 @@ public static class Program
 
         try
         {
-            var lines = new List<string>();
             for (; ; )
             {
                 var line = await server.StandardOutput.ReadLineAsync();
@@ -67,17 +67,18 @@ public static class Program
                     throw new Exception(
                         $"Failed to start E2eTestWebApp. The output stream ended accidentally.{Environment.NewLine}" +
                         $"The previous message is:{Environment.NewLine}" +
-                        string.Join(Environment.NewLine, lines) + Environment.NewLine +
+                        string.Join(Environment.NewLine, output) + Environment.NewLine +
                         $"Standard error:{Environment.NewLine}" +
                         string.Join(Environment.NewLine, errors));
                 }
 
-                lines.Add(line);
+                EnqueueRecent(output, line);
                 line = line.TrimStart();
                 if (line.StartsWith("Now listening on: http://"))
                 {
                     BaseUrl = line.Substring("Now listening on: ".Length).TrimEnd();
                     Program.server = server;
+                    _ = DrainOutputAsync(server.StandardOutput, output);
                     return;
                 }
             }
@@ -89,6 +90,26 @@ public static class Program
             server.Dispose();
             throw;
         }
+    }
+
+    private static async Task DrainOutputAsync(StreamReader reader, ConcurrentQueue<string> output)
+    {
+        try
+        {
+            while (await reader.ReadLineAsync() is { } line)
+                EnqueueRecent(output, line);
+        }
+        catch (Exception exception) when (exception is ObjectDisposedException or IOException)
+        {
+            // Assembly cleanup owns the process and its redirected streams.
+        }
+    }
+
+    private static void EnqueueRecent(ConcurrentQueue<string> output, string line)
+    {
+        output.Enqueue(line);
+        while (output.Count > 200)
+            output.TryDequeue(out _);
     }
 
     [AssemblyCleanup]
