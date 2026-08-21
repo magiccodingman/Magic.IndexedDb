@@ -6,7 +6,7 @@ Instead of treating LINQ as an in-memory filter over an already-loaded collectio
 
 Beneath the current C# API is a language-neutral predicate and schema model. The C# wrapper is the first implementation, but the translation boundary is designed so other languages and frameworks can build wrappers that target the same browser query planner instead of recreating its indexing, cursor, and optimization logic.
 
-[Documentation](docs/README.md) · [NuGet](https://www.nuget.org/packages/Magic.IndexedDb/) · [.NET 10 upgrade notes](docs/upgrading/dotnet-10.md) · [Issues](https://github.com/magiccodingman/Magic.IndexedDb/issues)
+[Documentation](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/README.md) · [NuGet](https://www.nuget.org/packages/Magic.IndexedDb/) · [.NET 10 upgrade notes](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/upgrading/dotnet-10.md) · [Issues](https://github.com/magiccodingman/Magic.IndexedDb/issues)
 
 ## Why use Magic IndexedDB?
 
@@ -31,7 +31,7 @@ Magic IndexedDB deliberately separates the language-facing wrapper from the engi
 
 Today, the supported public wrapper is the C# and Blazor API. A future TypeScript, JavaScript, Python, or other language wrapper could produce the same universal intent and reuse the same IndexedDB engine rather than starting over. Building a wrapper still requires semantic translation, schema mapping, validation, and transport compatibility; the internal JavaScript protocol is not yet presented as an independently versioned public SDK.
 
-See the [universal predicate language](docs/architecture/universal-predicate-language.md) and [query engine architecture](docs/architecture/query-engine.md) for the wrapper contract and execution model.
+See the [universal predicate language](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/architecture/universal-predicate-language.md) and [query engine architecture](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/architecture/query-engine.md) for the wrapper contract and execution model.
 
 ## How it works
 
@@ -115,7 +115,7 @@ await foreach (Person person in people
 }
 ```
 
-Continue with [installation and configuration](docs/getting-started/installation.md), [schema setup](docs/getting-started/schema.md), and the [first complete workflow](docs/getting-started/first-application.md).
+Continue with [installation and configuration](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/getting-started/installation.md), [schema setup](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/getting-started/schema.md), and the [first complete workflow](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/getting-started/first-application.md).
 
 ## Query behavior worth knowing
 
@@ -126,32 +126,32 @@ Continue with [installation and configuration](docs/getting-started/installation
 - `AsAsyncEnumerable()` prioritizes progressive delivery and does not promise final arrival order across query branches.
 - `CountAsync()` on the root query counts the whole table; it is not currently a filtered-count operator.
 
-The [`Where` versus `Cursor`](docs/guides/where-vs-cursor.md) and [ordering and pagination](docs/guides/ordering-and-pagination.md) guides explain these contracts in detail.
+The [`Where` versus `Cursor`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/where-vs-cursor.md) and [ordering and pagination](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/ordering-and-pagination.md) guides explain these contracts in detail.
 
 ## Documentation
 
-The maintained documentation lives entirely in [`docs/`](docs/README.md):
+The maintained documentation lives entirely in [`docs/`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/README.md):
 
-- [Installation](docs/getting-started/installation.md)
-- [Schema setup](docs/getting-started/schema.md)
-- [First application workflow](docs/getting-started/first-application.md)
-- [Querying guide](docs/guides/querying.md)
-- [`Where` versus `Cursor`](docs/guides/where-vs-cursor.md)
-- [Ordering and pagination](docs/guides/ordering-and-pagination.md)
-- [Streaming results](docs/guides/streaming.md)
-- [Database management](docs/guides/database-management.md)
-- [Schema evolution](docs/guides/schema-evolution.md)
-- [Public API reference](docs/reference/public-api.md)
-- [Query expression reference](docs/reference/query-expressions.md)
-- [Query engine architecture](docs/architecture/query-engine.md)
+- [Installation](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/getting-started/installation.md)
+- [Schema setup](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/getting-started/schema.md)
+- [First application workflow](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/getting-started/first-application.md)
+- [Querying guide](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/querying.md)
+- [`Where` versus `Cursor`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/where-vs-cursor.md)
+- [Ordering and pagination](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/ordering-and-pagination.md)
+- [Streaming results](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/streaming.md)
+- [Database management](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/database-management.md)
+- [Schema evolution](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/schema-evolution.md)
+- [Public API reference](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/reference/public-api.md)
+- [Query expression reference](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/reference/query-expressions.md)
+- [Query engine architecture](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/architecture/query-engine.md)
 
-Version 1 documentation remains available in the [legacy archive](MagicIndexDbWiki/Version-1.0-Legacy.md).
+Version 1 documentation remains available in the [legacy archive](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Version-1.0-Legacy.md).
 
 ## Schema evolution
 
 The automated migration protocol is still under construction. Magic IndexedDB does not automatically migrate existing browser data when a C# model changes. Plan and test persisted-name, index, primary-key, and required-property changes against data produced by the previously released application.
 
-See [schema evolution and migrations](docs/guides/schema-evolution.md) before changing a deployed schema.
+See [schema evolution and migrations](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/schema-evolution.md) before changing a deployed schema.
 
 ## Contributing
 
