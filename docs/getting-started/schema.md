@@ -124,7 +124,7 @@ Compound indexes let the optimizer satisfy compatible multi-field predicates wit
 
 ## Nested data and collections
 
-Stored models may contain nested objects, arrays, lists, sets, dictionaries, and nested collections. The current release preserves configured JSON converters, escaped strings, Unicode text, `MagicName` mappings inside nested objects, and supported concrete collection shapes when values are materialized.
+Stored models may contain nested objects, arrays, lists, sets, dictionaries, and nested collections. Dictionaries remain JSON objects when used as entity properties or collection elements; they are not treated as arrays merely because they implement `IEnumerable`. The current release also preserves escaped strings, Unicode text, `MagicName` mappings inside nested objects, and supported concrete collection shapes when values are materialized.
 
 Indexes and primary keys still need to describe values IndexedDB can use as keys. Do not assume an arbitrary nested object is indexable merely because it can be serialized.
 

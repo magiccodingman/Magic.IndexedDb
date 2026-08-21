@@ -50,8 +50,8 @@ Read [schema attributes and constructors](../reference/schema-attributes.md) for
 ## Serialization and streaming corrections
 
 - Backslashes, quotes, newlines, tabs, control characters, and Unicode strings remain valid JSON and round-trip unchanged.
-- Nested collections, arrays, `HashSet<T>`, and dictionaries restore supported requested collection shapes.
-- Configured `System.Text.Json` converters, including enum converters and enums wider than `Int32`, are honored.
+- Nested collections, arrays, `HashSet<T>`, and dictionaries restore supported requested collection shapes, including dictionaries nested inside entities and collections.
+- Enum-type `System.Text.Json` string converters are honored consistently by stored records and equality filters; numeric enum storage remains the default.
 - JavaScript arguments use a versioned raw-JSON envelope internally. JavaScript retains the earlier envelope reader; consumer call syntax does not change.
 - `0`, `false`, an empty string, and `null` are returned as their real values rather than being replaced with an empty object.
 - `AsAsyncEnumerable()` drains chunks while JavaScript is producing them. JavaScript failures propagate to .NET, and interop stream/reference objects are disposed.
@@ -71,6 +71,7 @@ builder.Services.AddMagicBlazorDB(
 
 - Assembly scanning tolerates partially loadable assemblies by using the types that did load.
 - Explicit enum conversions in comparison expressions are recognized.
+- Unrelated member conversions remain unsupported rather than being translated with changed semantics.
 - Closing all cached connections internally closes the actual Dexie instances.
 - Multi-database creation passes each complete store definition to database creation.
 - The bundled Dexie source map is valid BOM-free JSON.
@@ -83,6 +84,6 @@ Materialized queries apply their requested ordering. Progressive `AsAsyncEnumera
 
 ## Verification
 
-The repository includes a .NET 10 unit-test project covering constructor precedence, immutable and hybrid models, public serialization API preservation, escaped strings, dictionaries, nested collections, collection shapes, configured enum converters, explicit enum query casts, and the earlier JavaScript envelope.
+The repository includes a .NET 10 unit-test project covering constructor precedence, immutable and hybrid models, public serialization API preservation, escaped strings, entity and collection dictionaries, nested collections, collection shapes, numeric and named enums, safe enum query casts, and the earlier JavaScript envelope.
 
-Browser end-to-end coverage also exercises escaped and nested records, falsey zero counts, and yield streaming.
+Browser end-to-end coverage also exercises escaped and nested records, dictionary properties, numeric and named enum filters, falsey zero counts, and yield streaming.

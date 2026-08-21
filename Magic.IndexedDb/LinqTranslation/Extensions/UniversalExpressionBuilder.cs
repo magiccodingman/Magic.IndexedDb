@@ -3,12 +3,15 @@ using Magic.IndexedDb.LinqTranslation.Models;
 using Magic.IndexedDb.Models;
 using Magic.IndexedDb.Models.UniversalOperations;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Text.Json;
 
 namespace Magic.IndexedDb.LinqTranslation.Extensions;
 
 public class UniversalExpressionBuilder<T>
 {
+    private static readonly ConcurrentDictionary<Type, bool> StringBackedEnumCache = new();
     private readonly Expression<Func<T, bool>> _predicate;
 
     public UniversalExpressionBuilder(Expression<Func<T, bool>> predicate)
@@ -260,14 +263,13 @@ public class UniversalExpressionBuilder<T>
             return specialNode;
         }
 
-        var leftExpression = UnwrapConvert(bin.Left);
-        var rightExpression = UnwrapConvert(bin.Right);
+        var left = GetComparableParameterMember(bin.Left);
+        var right = GetComparableParameterMember(bin.Right);
 
-        if (IsParameterMember(leftExpression) && !IsParameterMember(rightExpression))
+        if (left != null && right == null)
         {
-            var left = leftExpression as MemberExpression;
-            var right = ToConst(rightExpression);
-            var cond = BuildConditionFromMemberAndConstant(left, right, operation);
+            var constant = ToConst(bin.Right);
+            var cond = BuildConditionFromMemberAndConstant(left, constant, operation);
 
             return new FilterNode
             {
@@ -275,12 +277,11 @@ public class UniversalExpressionBuilder<T>
                 Condition = cond
             };
         }
-        else if (!IsParameterMember(leftExpression) && IsParameterMember(rightExpression))
+        else if (left == null && right != null)
         {
             operation = InvertBinary(operation);
-            var left = rightExpression as MemberExpression;
-            var right = ToConst(leftExpression);
-            var cond = BuildConditionFromMemberAndConstant(left, right, operation);
+            var constant = ToConst(bin.Left);
+            var cond = BuildConditionFromMemberAndConstant(right, constant, operation);
 
             return new FilterNode
             {
@@ -686,7 +687,7 @@ public class UniversalExpressionBuilder<T>
         // If you absolutely need a JSON representation, do:
         // object? val = constExpr.Value != null ? JsonValue.Create(constExpr.Value) : null;
         // Otherwise, you can just store the raw object in FilterCondition.value:
-        object? val = constExpr.Value;
+        object? val = NormalizeEnumComparisonValue(propInfo, constExpr.Value, operation);
 
         // e.g. "name", "age"
         string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
@@ -701,6 +702,35 @@ public class UniversalExpressionBuilder<T>
             isString,
             caseSensitive
         );
+    }
+
+    private static object? NormalizeEnumComparisonValue(
+        System.Reflection.PropertyInfo property,
+        object? value,
+        string operation)
+    {
+        if (value == null)
+            return null;
+
+        Type enumType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+        if (!enumType.IsEnum)
+            return value;
+
+        object enumValue = value.GetType() == enumType
+            ? value
+            : Enum.ToObject(enumType, value);
+
+        bool isStringBacked = StringBackedEnumCache.GetOrAdd(enumType, _ =>
+            JsonSerializer.SerializeToElement(enumValue, enumType).ValueKind == JsonValueKind.String);
+        if (isStringBacked &&
+            operation is not "Equal" and not "NotEqual")
+        {
+            throw new InvalidOperationException(
+                $"Enum property '{property.Name}' is persisted as a JSON string. " +
+                "Only equality and inequality comparisons are supported for string-backed enums.");
+        }
+
+        return enumValue;
     }
 
     private static bool SupportedMethodNameForNegation(string name)
@@ -757,6 +787,38 @@ public class UniversalExpressionBuilder<T>
     {
         return expr is MemberExpression member &&
                member.Expression is ParameterExpression;
+    }
+
+    private static MemberExpression? GetComparableParameterMember(Expression expression)
+    {
+        if (expression is MemberExpression directMember && IsParameterMember(directMember))
+            return directMember;
+
+        if (expression is not UnaryExpression
+            {
+                NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked,
+                Operand: MemberExpression convertedMember
+            } conversion ||
+            !IsParameterMember(convertedMember))
+        {
+            return null;
+        }
+
+        Type memberType = Nullable.GetUnderlyingType(convertedMember.Type) ?? convertedMember.Type;
+        Type conversionType = Nullable.GetUnderlyingType(conversion.Type) ?? conversion.Type;
+
+        return memberType.IsEnum && IsIntegralType(conversionType)
+            ? convertedMember
+            : null;
+    }
+
+    private static bool IsIntegralType(Type type)
+    {
+        return Type.GetTypeCode(type) is
+            TypeCode.SByte or TypeCode.Byte or
+            TypeCode.Int16 or TypeCode.UInt16 or
+            TypeCode.Int32 or TypeCode.UInt32 or
+            TypeCode.Int64 or TypeCode.UInt64;
     }
 
     private static ConstantExpression ToConst(Expression expr)
