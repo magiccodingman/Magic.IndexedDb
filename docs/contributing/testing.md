@@ -49,6 +49,8 @@ Every pull request runs:
 
 Pushes to `master` run the same workflows again. A push to `release` starts `publish-nuget.yml`, which calls both validation workflows and does not build or publish the NuGet package until every validation job succeeds. This makes the release run a final independent gate even when the same commit passed on `master`.
 
+The publishing job declares the GitHub Actions environment `release`. NuGet's trusted-publishing policy must use the same environment value so the job's OIDC identity matches the policy. The protected `release` branch controls when the workflow runs; it is separate from the Actions environment claim used during the NuGet token exchange.
+
 Core validation packages the library before the unit-test build so the package check starts without cached build manifests. Validation and release publishing use the same `.github/scripts/pack-nuget.sh` entry point.
 
 Release versions are based on the checked-in stable version line and the versions already present on NuGet. The workflow publishes one patch above whichever matching version is newer. Failed or retried workflow runs therefore do not consume or skip package versions. Version calculation fails safely if NuGet's version index cannot be read or validated.
