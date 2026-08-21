@@ -47,4 +47,25 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
         var result = await this.RunTestPageMethodAsync(p => p.YieldAll);
         Assert.AreEqual("OK", result);
     }
+
+    [TestMethod]
+    public async Task DictionaryPropertyRoundTripTest()
+    {
+        var result = await this.RunTestPageMethodAsync(p => p.DictionaryPropertyRoundTrip);
+        Assert.AreEqual("OK", result);
+    }
+
+    [TestMethod]
+    public async Task NumericEnumWhereTest()
+    {
+        var result = await this.RunTestPageMethodAsync(p => p.NumericEnumWhere);
+        Assert.AreEqual("OK", result);
+    }
+
+    [TestMethod]
+    public async Task NamedEnumWhereTest()
+    {
+        var result = await this.RunTestPageMethodAsync(p => p.NamedEnumWhere);
+        Assert.AreEqual("OK", result);
+    }
 }

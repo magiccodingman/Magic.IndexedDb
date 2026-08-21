@@ -82,4 +82,63 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
 
         return yielded.Count == 3 ? "OK" : "Incorrect";
     }
+
+    public async Task<string> DictionaryPropertyRoundTrip()
+    {
+        var db = await magic.Query<ContractRecord>();
+        await db.AddAsync(new ContractRecord
+        {
+            Name = "Dictionary",
+            Metadata = new Dictionary<string, object?>
+            {
+                ["count"] = 2,
+                ["enabled"] = false,
+                ["label"] = "value"
+            }
+        });
+
+        var record = (await db.ToListAsync()).Single();
+        return record.Metadata.Count == 3 &&
+               ((JsonElement)record.Metadata["count"]!).GetInt32() == 2 &&
+               !((JsonElement)record.Metadata["enabled"]!).GetBoolean() &&
+               ((JsonElement)record.Metadata["label"]!).GetString() == "value"
+            ? "OK"
+            : "Incorrect";
+    }
+
+    public async Task<string> NumericEnumWhere()
+    {
+        var db = await magic.Query<ContractRecord>();
+        await db.AddRangeAsync([
+            new ContractRecord { Name = "Readable", NumericAccess = ContractRecord.NumericStatus.Read },
+            new ContractRecord { Name = "Writable", NumericAccess = ContractRecord.NumericStatus.Write }
+        ]);
+
+        var matches = await db
+            .Where(record => record.NumericAccess == ContractRecord.NumericStatus.Write)
+            .ToListAsync();
+
+        return matches.Count == 1 && matches[0].Name == "Writable"
+            ? "OK"
+            : "Incorrect";
+    }
+
+    public async Task<string> NamedEnumWhere()
+    {
+        var db = await magic.Query<ContractRecord>();
+        await db.AddRangeAsync([
+            new ContractRecord { Name = "Inactive", NamedAccess = ContractRecord.NamedStatus.Inactive },
+            new ContractRecord { Name = "Active", NamedAccess = ContractRecord.NamedStatus.Active }
+        ]);
+
+        var matches = await db
+            .Where(record => record.NamedAccess == ContractRecord.NamedStatus.Active)
+            .ToListAsync();
+
+        return matches.Count == 1 &&
+               matches[0].Name == "Active" &&
+               matches[0].NamedAccess == ContractRecord.NamedStatus.Active
+            ? "OK"
+            : "Incorrect";
+    }
 }

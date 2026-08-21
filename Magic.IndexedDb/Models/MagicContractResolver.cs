@@ -211,22 +211,26 @@ internal class MagicContractResolver<T> : JsonConverter<T>
     /// </summary>
     private object? ReadPropertyValue(ref Utf8JsonReader reader, MagicPropertyEntry mpe, JsonSerializerOptions options)
     {
+        return ReadValue(ref reader, mpe.Property.PropertyType, options);
+    }
+
+    private object? ReadValue(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+    {
         if (reader.TokenType == JsonTokenType.Null)
             return null;
 
-        Type propertyType = mpe.Property.PropertyType;
+        // A dictionary is both a JSON object and an IEnumerable. Its object shape
+        // must win before the collection path at every nesting level.
+        if (IsDictionaryType(type))
+            return DeserializePassthrough(ref reader, type, options);
 
-        if (typeof(IEnumerable).IsAssignableFrom(propertyType) && propertyType != typeof(string))
-        {
-            return ReadIEnumerable(ref reader, propertyType, options);
-        }
+        if (typeof(IEnumerable).IsAssignableFrom(type) && type != typeof(string))
+            return ReadIEnumerable(ref reader, type, options);
 
-        if (mpe.IsComplexType)
-        {
-            return ReadComplexObject(ref reader, propertyType, options);
-        }
+        if (PropertyMappingCache.IsComplexType(type))
+            return ReadComplexObject(ref reader, type, options);
 
-        return ReadSimpleType(ref reader, propertyType, options);
+        return ReadSimpleType(ref reader, type, options);
     }
 
     /// <summary>
@@ -264,23 +268,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             if (reader.TokenType == JsonTokenType.EndArray)
                 break;
 
-            object? item;
-
-            if (typeof(IEnumerable).IsAssignableFrom(itemType) && itemType != typeof(string))
-            {
-                item = ReadIEnumerable(ref reader, itemType, options);
-            }
-            // 🔥 If it's a complex type, we need to deserialize it recursively
-            else if (PropertyMappingCache.IsComplexType(itemType))
-            {
-                item = ReadComplexObject(ref reader, itemType, options);
-            }
-            else
-            {
-                item = ReadSimpleType(ref reader, itemType, options);
-            }
-
-            list.Add(item);
+            list.Add(ReadValue(ref reader, itemType, options));
         }
 
         // Convert to array if original type was an array
@@ -516,9 +504,19 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
     private static bool IsDictionaryType(Type type)
     {
+        if (typeof(IDictionary).IsAssignableFrom(type))
+            return true;
+
         return type.GetInterfaces()
             .Prepend(type)
-            .Any(candidate => candidate.IsGenericType &&
-                candidate.GetGenericTypeDefinition() == typeof(IDictionary<,>));
+            .Any(candidate =>
+            {
+                if (!candidate.IsGenericType)
+                    return false;
+
+                Type definition = candidate.GetGenericTypeDefinition();
+                return definition == typeof(IDictionary<,>) ||
+                       definition == typeof(IReadOnlyDictionary<,>);
+            });
     }
 }

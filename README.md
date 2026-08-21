@@ -46,7 +46,7 @@ This provides a LINQ-oriented programming model without pretending IndexedDB is 
 
 ## Requirements
 
-Magic IndexedDB remains on its version 2 release line. The current codebase targets .NET 10; applications that must remain on .NET 8 should use an earlier compatible package release.
+The current codebase targets .NET 10.
 
 The current package supports Blazor WebAssembly and Blazor applications using JavaScript interop over SignalR. Browser storage behavior and quota remain controlled by the user's browser.
 

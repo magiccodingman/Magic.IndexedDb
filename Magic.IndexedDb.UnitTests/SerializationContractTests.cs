@@ -89,6 +89,73 @@ public sealed class SerializationContractTests
     }
 
     [TestMethod]
+    public void DictionaryProperties_RoundTripInsideEntityCollections()
+    {
+        DictionaryContainer[] expected =
+        [
+            new()
+            {
+                Id = 7,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["count"] = 2,
+                    ["enabled"] = false,
+                    ["label"] = "value",
+                    ["missing"] = null
+                }
+            }
+        ];
+
+        var json = MagicSerializationHelper.SerializeObject<IEnumerable<DictionaryContainer>>(expected);
+        var actual = MagicSerializationHelper
+            .DeserializeObject<IEnumerable<DictionaryContainer>>(json)?
+            .Single();
+
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(7, actual.Id);
+        Assert.AreEqual(4, actual.Metadata.Count);
+        Assert.AreEqual(2, ((JsonElement)actual.Metadata["count"]!).GetInt32());
+        Assert.IsFalse(((JsonElement)actual.Metadata["enabled"]!).GetBoolean());
+        Assert.AreEqual("value", ((JsonElement)actual.Metadata["label"]!).GetString());
+        Assert.IsNull(actual.Metadata["missing"]);
+    }
+
+    [TestMethod]
+    public void Dictionaries_RoundTripInsideNestedCollections()
+    {
+        var expected = new DictionaryCollections
+        {
+            Values =
+            [
+                new Dictionary<string, int> { ["one"] = 1 },
+                new Dictionary<string, int> { ["two"] = 2 }
+            ]
+        };
+
+        var json = MagicSerializationHelper.SerializeObject(expected);
+        var actual = MagicSerializationHelper.DeserializeObject<DictionaryCollections>(json);
+
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(1, actual.Values[0]["one"]);
+        Assert.AreEqual(2, actual.Values[1]["two"]);
+    }
+
+    [TestMethod]
+    public void ReadOnlyDictionaryProperties_RoundTripAsJsonObjects()
+    {
+        var expected = new ReadOnlyDictionaryContainer
+        {
+            Values = new Dictionary<string, int> { ["answer"] = 42 }
+        };
+
+        var json = MagicSerializationHelper.SerializeObject(expected);
+        var actual = MagicSerializationHelper.DeserializeObject<ReadOnlyDictionaryContainer>(json);
+
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(42, actual.Values["answer"]);
+    }
+
+    [TestMethod]
     public void ConfiguredEnumConverter_IsHonoredInBothDirections()
     {
         var settings = new MagicJsonSerializationSettings();
@@ -147,6 +214,23 @@ public sealed class SerializationContractTests
     private sealed class EnumValue
     {
         public LargeStatus Status { get; set; }
+    }
+
+    private sealed class DictionaryContainer
+    {
+        public int Id { get; set; }
+        public Dictionary<string, object?> Metadata { get; set; } = [];
+    }
+
+    private sealed class DictionaryCollections
+    {
+        public List<Dictionary<string, int>> Values { get; set; } = [];
+    }
+
+    private sealed class ReadOnlyDictionaryContainer
+    {
+        public IReadOnlyDictionary<string, int> Values { get; set; } =
+            new Dictionary<string, int>();
     }
 
     private sealed class DateValue

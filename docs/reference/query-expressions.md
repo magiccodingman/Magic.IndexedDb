@@ -78,7 +78,25 @@ await people.Where(person =>
     (long)person.Access >= (long)Permissions.CanRead).ToListAsync();
 ```
 
-The current release recognizes explicit enum conversions used in comparisons. JSON enum converters configured through Magic's serialization settings are also honored during serialization.
+Enums are stored and queried as their numeric values by default. The translator recognizes the compiler conversions used by ordinary enum equality and explicit integral casts without treating unrelated property casts as equivalent queries.
+
+To persist names instead, place a `System.Text.Json` string-enum converter on the enum type:
+
+```csharp
+using System.Text.Json.Serialization;
+
+[JsonConverter(typeof(JsonStringEnumConverter<Permissions>))]
+public enum Permissions
+{
+    None,
+    CanRead,
+    CanWrite
+}
+```
+
+Magic then uses the same string representation for stored records and translated equality filters. String-backed enum queries support equality and inequality; numeric range casts are rejected because their ordering does not describe the persisted strings.
+
+Changing an existing property from numeric enum storage to named storage changes its persisted representation. Existing numeric records are not automatically rewritten, so plan a migration or rebuild disposable data before switching.
 
 ## Logical composition
 
