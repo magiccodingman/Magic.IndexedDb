@@ -1,5 +1,8 @@
 # Magic IndexedDB
 
+[![NuGet version](https://img.shields.io/nuget/v/Magic.IndexedDb.svg?logo=nuget&label=NuGet)](https://www.nuget.org/packages/Magic.IndexedDb/)
+[![NuGet downloads](https://img.shields.io/nuget/dt/Magic.IndexedDb.svg?logo=nuget&label=downloads)](https://www.nuget.org/packages/Magic.IndexedDb/)
+
 Magic IndexedDB is a C#-first LINQ-to-IndexedDB query engine and typed browser database library for Blazor. It lets .NET applications query IndexedDB with C# expression trees while preserving the performance characteristics of a browser-native database.
 
 Instead of treating LINQ as an in-memory filter over an already-loaded collection, Magic IndexedDB translates supported predicates into an IndexedDB-aware query plan. It uses single-field and compound indexes where possible, partitions complex AND/OR expressions, and uses an optimized cursor engine for operations that IndexedDB cannot execute through an index.
