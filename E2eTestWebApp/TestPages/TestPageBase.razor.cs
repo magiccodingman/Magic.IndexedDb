@@ -41,8 +41,10 @@ partial class TestPageBase
     }
     
     public TestResponse RunTest<T>(string testName,
-        IEnumerable<T> indexDbResults, IEnumerable<T> correctResults) where T : class
+        IEnumerable<T> indexDbResults,
+        IEnumerable<T> correctResults,
+        bool ordered = false) where T : class
     {
-        return TestValidator.ValidateLists(correctResults, indexDbResults);
+        return TestValidator.ValidateLists(correctResults, indexDbResults, ordered);
     }
 }

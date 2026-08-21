@@ -185,6 +185,49 @@ public sealed class SerializationContractTests
         Assert.AreEqual(FixedDateConverter.Value, actual.Date);
     }
 
+    [TestMethod]
+    public void BrowserRelevantScalarTypes_RoundTripWithoutPrecisionOrIdentityLoss()
+    {
+        var expected = new ScalarValues
+        {
+            Identifier = Guid.NewGuid(),
+            Signed = long.MinValue + 17,
+            Unsigned = ulong.MaxValue - 17,
+            Money = 7922816251426433759354395.0335m,
+            Moment = new DateTimeOffset(2040, 2, 29, 12, 34, 56, TimeSpan.FromHours(-5))
+        };
+
+        var actual = MagicSerializationHelper.DeserializeObject<ScalarValues>(
+            MagicSerializationHelper.SerializeObject(expected));
+
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(expected.Identifier, actual.Identifier);
+        Assert.AreEqual(expected.Signed, actual.Signed);
+        Assert.AreEqual(expected.Unsigned, actual.Unsigned);
+        Assert.AreEqual(expected.Money, actual.Money);
+        Assert.AreEqual(expected.Moment, actual.Moment);
+    }
+
+    [TestMethod]
+    public void NullAndEmptyCollectionShapes_RemainDistinct()
+    {
+        var expected = new NullableShapes
+        {
+            Missing = null,
+            Empty = [],
+            Values = [null, "", "value"]
+        };
+
+        var actual = MagicSerializationHelper.DeserializeObject<NullableShapes>(
+            MagicSerializationHelper.SerializeObject(expected));
+
+        Assert.IsNotNull(actual);
+        Assert.IsNull(actual.Missing);
+        Assert.IsNotNull(actual.Empty);
+        Assert.AreEqual(0, actual.Empty.Count);
+        CollectionAssert.AreEqual(expected.Values, actual.Values);
+    }
+
     private sealed class EscapedValue
     {
         public string Text { get; set; } = string.Empty;
@@ -236,6 +279,22 @@ public sealed class SerializationContractTests
     private sealed class DateValue
     {
         public DateTime Date { get; set; }
+    }
+
+    private sealed class ScalarValues
+    {
+        public Guid Identifier { get; set; }
+        public long Signed { get; set; }
+        public ulong Unsigned { get; set; }
+        public decimal Money { get; set; }
+        public DateTimeOffset Moment { get; set; }
+    }
+
+    private sealed class NullableShapes
+    {
+        public List<string>? Missing { get; set; }
+        public List<string> Empty { get; set; } = [];
+        public List<string?> Values { get; set; } = [];
     }
 
     private sealed class FixedDateConverter : JsonConverter<DateTime>
