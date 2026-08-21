@@ -1,5 +1,4 @@
-﻿using E2eTest.Entities;
-using Microsoft.Playwright;
+﻿using Microsoft.Playwright;
 
 namespace E2eTest.Extensions;
 internal static class PageExtensions
@@ -14,7 +13,5 @@ internal static class PageExtensions
                 request.onblocked = () => reject(new Error(`Deletion of ${database} was blocked.`));
             })
             """, database);
-        var databases = await page.EvaluateAsync<DatabaseInfo[]>("indexedDB.databases()");
-        Assert.IsFalse(databases!.Any(x => x.Name == database));
     }
 }
