@@ -30,7 +30,7 @@ public static class SchemaHelper
     {
         var assemblies = AppDomain.CurrentDomain.GetAssemblies();
         return assemblies
-            .SelectMany(a => a.GetTypes())
+            .SelectMany(GetLoadableTypes)
             .Where(t => t.IsClass && !t.IsAbstract && SchemaHelper.ImplementsIMagicTable(t))
             .ToList();
     }
@@ -39,9 +39,21 @@ public static class SchemaHelper
     {
         var assemblies = AppDomain.CurrentDomain.GetAssemblies();
         return assemblies
-            .SelectMany(a => a.GetTypes())
+            .SelectMany(GetLoadableTypes)
             .Where(t => t.IsClass && !t.IsAbstract && ImplementsIMagicRepository(t))
             .ToList();
+    }
+
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException exception)
+        {
+            return exception.Types.OfType<Type>();
+        }
     }
 
     public static List<IndexedDbSet> GetAllIndexedDbSets()

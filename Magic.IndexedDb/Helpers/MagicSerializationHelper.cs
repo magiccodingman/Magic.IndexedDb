@@ -16,6 +16,13 @@ public static class MagicSerializationHelper
         return objs.Select(arg => arg.SerializeToJsonElement(settings)).Cast<object>().ToArray();
     }
 
+    internal static JsonElement[] SerializeArguments(
+        ITypedArgument[] arguments,
+        MagicJsonSerializationSettings? settings = null)
+    {
+        return arguments.Select(argument => argument.SerializeToJsonElement(settings)).ToArray();
+    }
+
     public static string[] SerializeObjectsToString(ITypedArgument[] objs, MagicJsonSerializationSettings? settings = null)
     {
         return objs.Select(arg => arg.SerializeToJsonString(settings)).ToArray();
@@ -26,19 +33,29 @@ public static class MagicSerializationHelper
         if (settings == null)
             settings = new MagicJsonSerializationSettings();
 
-        if (value == null)
-            throw new ArgumentNullException(nameof(value), "Object cannot be null");
-
         var options = settings.GetOptionsWithResolver<T>(); // Ensure the correct resolver is applied
-        string jsonString = JsonSerializer.Serialize(value, options); // Serialize using your settings
-
-        // Convert the string to a JsonElement so that Blazor treats it as a structured object
-        using JsonDocument doc = JsonDocument.Parse(jsonString);
-        return doc.RootElement.Clone(); // Clone to prevent disposal issues
+        return JsonSerializer.SerializeToElement(value, options);
     }
 
     public static async Task SerializeObjectToStreamAsync<T>(StreamWriter writer, T value, MagicJsonSerializationSettings? settings = null)
     {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        settings ??= new MagicJsonSerializationSettings();
+        if (value == null)
+            throw new ArgumentNullException(nameof(value), "Object cannot be null");
+
+        // Preserve the public TextWriter overload's encoding behavior. Internal
+        // interop uses the Stream overload below to avoid this intermediate string.
+        var options = settings.GetOptionsWithResolver<T>();
+        await writer.WriteAsync(JsonSerializer.Serialize(value, options));
+        await writer.FlushAsync();
+    }
+
+    public static async Task SerializeObjectToStreamAsync<T>(Stream stream, T value, MagicJsonSerializationSettings? settings = null)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
         if (settings == null)
             settings = new MagicJsonSerializationSettings();
 
@@ -46,10 +63,24 @@ public static class MagicSerializationHelper
             throw new ArgumentNullException(nameof(value), "Object cannot be null");
 
         var options = settings.GetOptionsWithResolver<T>();
-        string jsonString = JsonSerializer.Serialize(value, options); // Use your serializer
+        await JsonSerializer.SerializeAsync(stream, value, options);
+        await stream.FlushAsync();
+    }
 
-        await writer.WriteAsync(jsonString);
-        await writer.FlushAsync();
+    internal static async Task SerializeJsPackageToStreamAsync(
+        Stream stream,
+        MagicJsPackage package,
+        MagicJsonSerializationSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(package);
+
+        // The envelope is infrastructure JSON. Its JsonElement parameters have already
+        // been serialized with Magic's contracts and must be written as raw JSON values.
+        var options = new JsonSerializerOptions(settings.Options);
+        await JsonSerializer.SerializeAsync(stream, package, options, cancellationToken);
+        await stream.FlushAsync(cancellationToken);
     }
 
     public static string SerializeObject<T>(T? value, MagicJsonSerializationSettings? settings = null)

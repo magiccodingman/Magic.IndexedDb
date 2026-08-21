@@ -15,12 +15,16 @@ internal class MagicDbFactory : IMagicIndexedDb, IAsyncDisposable
     private readonly long _jsMessageSizeBytes;
     public long JsMessageSizeBytes => _jsMessageSizeBytes;
 
-    public MagicDbFactory(IJSRuntime jSRuntime, long jsMessageSizeBytes)
+    public MagicDbFactory(IJSRuntime jSRuntime, long jsMessageSizeBytes, bool isDebug)
     {
         _jsMessageSizeBytes = jsMessageSizeBytes;
-        this._jsModule = new(() => jSRuntime.InvokeAsync<IJSObjectReference>(
-                "import",
-                "./_content/Magic.IndexedDb/magicDbMethods.js").AsTask(),
+        this._jsModule = new(async () =>
+            {
+                var module = await jSRuntime.InvokeAsync<IJSObjectReference>(
+                    "import", "./_content/Magic.IndexedDb/magicDbMethods.js");
+                await module.InvokeVoidAsync("configureDebug", isDebug);
+                return module;
+            },
             isThreadSafe: true);
 
         this._magicJsManager = new(async () =>
@@ -76,7 +80,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IAsyncDisposable
 
         try
         {
-            var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await module.InvokeVoidAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token);
         }
         catch

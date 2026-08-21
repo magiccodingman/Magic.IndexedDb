@@ -31,7 +31,7 @@ public static class ServiceCollectionExtensions
         long jsMessageSizeBytes, bool isDebug)
     {
         services.AddScoped<IMagicIndexedDb>(sp =>
-            new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes));
+            new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes, isDebug));
 
         if (isDebug)
         {

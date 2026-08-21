@@ -260,10 +260,13 @@ public class UniversalExpressionBuilder<T>
             return specialNode;
         }
 
-        if (IsParameterMember(bin.Left) && !IsParameterMember(bin.Right))
+        var leftExpression = UnwrapConvert(bin.Left);
+        var rightExpression = UnwrapConvert(bin.Right);
+
+        if (IsParameterMember(leftExpression) && !IsParameterMember(rightExpression))
         {
-            var left = bin.Left as MemberExpression;
-            var right = ToConst(bin.Right);
+            var left = leftExpression as MemberExpression;
+            var right = ToConst(rightExpression);
             var cond = BuildConditionFromMemberAndConstant(left, right, operation);
 
             return new FilterNode
@@ -272,11 +275,11 @@ public class UniversalExpressionBuilder<T>
                 Condition = cond
             };
         }
-        else if (!IsParameterMember(bin.Left) && IsParameterMember(bin.Right))
+        else if (!IsParameterMember(leftExpression) && IsParameterMember(rightExpression))
         {
             operation = InvertBinary(operation);
-            var left = bin.Right as MemberExpression;
-            var right = ToConst(bin.Left);
+            var left = rightExpression as MemberExpression;
+            var right = ToConst(leftExpression);
             var cond = BuildConditionFromMemberAndConstant(left, right, operation);
 
             return new FilterNode

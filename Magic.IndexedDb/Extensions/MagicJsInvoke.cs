@@ -97,42 +97,29 @@ internal class MagicJsInvoke
             YieldResults = false,
             ModulePath = modulePath,
             MethodName = functionName,
-            Parameters = MagicSerializationHelper.SerializeObjectsToString(args, settings),
+            Parameters = MagicSerializationHelper.SerializeArguments(args, settings),
             IsVoid = isVoid
         };
 
         string instanceId = Guid.NewGuid().ToString();
 
-#if DEBUG
-        package.IsDebug = true;
-#else
-            package.IsDebug = false;
-#endif
-
         using var stream = new MemoryStream();
-        await using (var writer = new StreamWriter(stream, leaveOpen: true))
-        {
-            await MagicSerializationHelper.SerializeObjectToStreamAsync(writer, package, settings);
-        }
-
-        // ✅ Immediately release reference to `package`
-        package = null;
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
+        await MagicSerializationHelper.SerializeJsPackageToStreamAsync(stream, package, settings, token);
 
         stream.Position = 0;
 
-        var streamRef = new DotNetStreamReference(stream);
+        using var streamRef = new DotNetStreamReference(stream);
+        using var dotNetHelper = DotNetObjectReference.Create(this);
 
         // Send to JS
-        var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler", 
-            streamRef, instanceId, DotNetObjectReference.Create(this), _jsMessageSizeBytes);
+        await using var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler",
+            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes);
 
         // 🚀 Convert the stream reference back to JSON in C#
         await using var responseStream = await responseStreamRef.OpenReadStreamAsync(long.MaxValue, token);
         using var reader = new StreamReader(responseStream);
 
-        string jsonResponse = await reader.ReadToEndAsync();
+        string jsonResponse = await reader.ReadToEndAsync(token);
         return MagicSerializationHelper.DeserializeObject<T>(jsonResponse, settings);
     }
 
@@ -147,7 +134,7 @@ internal class MagicJsInvoke
         {
             ModulePath = modulePath,
             MethodName = functionName,
-            Parameters = MagicSerializationHelper.SerializeObjectsToString(args, settings),
+            Parameters = MagicSerializationHelper.SerializeArguments(args, settings),
             IsVoid = false,
             YieldResults = true
         };
@@ -155,18 +142,19 @@ internal class MagicJsInvoke
         string instanceId = Guid.NewGuid().ToString();
 
         using var stream = new MemoryStream();
-        await using (var writer = new StreamWriter(stream, leaveOpen: true))
-        {
-            await MagicSerializationHelper.SerializeObjectToStreamAsync(writer, package, settings);
-        }
+        await MagicSerializationHelper.SerializeJsPackageToStreamAsync(stream, package, settings, token);
 
         stream.Position = 0;
-        var streamRef = new DotNetStreamReference(stream);
+        using var streamRef = new DotNetStreamReference(stream);
+        using var dotNetHelper = DotNetObjectReference.Create(this);
+        using var producerCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
 
-        // Call JS with our instanceId
-        await _jsModule.InvokeVoidAsync("streamedJsHandler", token, streamRef, instanceId, DotNetObjectReference.Create(this));
-
+        // Register before starting JavaScript so an immediate first chunk cannot race registration.
         MagicJsChunkProcessor.RegisterInstance(instanceId);
+        var producerTask = _jsModule.InvokeVoidAsync(
+            "streamedJsHandler", producerCancellation.Token,
+            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes)
+            .AsTask();
 
         bool isCompleted = false;
 
@@ -189,6 +177,7 @@ internal class MagicJsInvoke
                 {
                     if (completedItem == "STREAM_COMPLETE")
                     {
+                        await producerTask;
                         isCompleted = true;
                         break;
                     }
@@ -208,13 +197,32 @@ internal class MagicJsInvoke
                 }
                 else
                 {
+                    if (producerTask.IsCompleted)
+                    {
+                        await producerTask;
+                        throw new InvalidOperationException(
+                            $"JavaScript stream {instanceId} completed without a completion marker.");
+                    }
+
                     await Task.Delay(15, token);
                 }
             }
         }
         finally
         {
-            // Ensure cleanup happens even if an error occurs
+            producerCancellation.Cancel();
+            if (!producerTask.IsCompleted)
+            {
+                try
+                {
+                    await producerTask;
+                }
+                catch (OperationCanceledException) when (producerCancellation.IsCancellationRequested)
+                {
+                    // Expected when enumeration is canceled or disposed before completion.
+                }
+            }
+
             MagicJsChunkProcessor.RemoveInstance(instanceId);
         }
     }

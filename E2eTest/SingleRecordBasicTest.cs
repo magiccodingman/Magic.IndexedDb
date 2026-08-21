@@ -33,4 +33,18 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
         var result = await this.RunTestPageMethodAsync(p => p.GetAll);
         Assert.AreEqual("OK", result);
     }
+
+    [TestMethod]
+    public async Task EmptyCountTest()
+    {
+        var result = await this.RunTestPageMethodAsync(p => p.EmptyCount);
+        Assert.AreEqual("OK", result);
+    }
+
+    [TestMethod]
+    public async Task YieldAllTest()
+    {
+        var result = await this.RunTestPageMethodAsync(p => p.YieldAll);
+        Assert.AreEqual("OK", result);
+    }
 }

@@ -1,9 +1,11 @@
 # True LINQ to IndexedDB - Magic IndexedDb
-For those who have not yet upgraded to the new `v2.0.0` the old legacy documentation is archived here:
+Magic IndexedDB 3 targets .NET 10. Applications that must remain on .NET 8 can continue using the 2.x NuGet packages. See the [version 3 upgrade guide](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Version-3.0-Upgrade.md) for compatibility details.
+
+For users of version 1, the legacy documentation is archived here:
 
 [click here to go to the legacy documentation for `v1.0.12`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/MagicIndexDbWiki/Version-1.0-Legacy.md).
 
-Note the migration system is under construction. Stability of the query engine and implementation of the migration system is when v2.0 will be considered fully complete.
+The migration system remains under construction. Schema migrations are not automatic in version 3; plan and test IndexedDB version changes explicitly.
 
 # **Introduction to LINQ to IndexedDB – The Revolution Begins**
 
@@ -50,7 +52,7 @@ One of the biggest challenges in IndexedDB is its **lack of native support for c
 For queries that cannot be fully indexed, **we do something unprecedented**:
 1. **Meta-Data Pass** – Instead of loading full objects into memory, we first retrieve **only necessary metadata**.
 2. **Intelligent Sorting & Filtering** – The metadata is structured **as if it were still in IndexedDB**.
-3. **Final Data Retrieval** – Only **after** filtering and sorting, do we fetch the actual objects—**in the exact order required**.
+3. **Final Data Retrieval** – Only **after** filtering and sorting do we fetch the actual objects needed by the materialized query.
 
 This means even **non-indexed queries are optimized** to prevent unnecessary data loading. **Skip, take, ordering, and nested conditions are handled seamlessly**.
 
@@ -58,7 +60,7 @@ This means even **non-indexed queries are optimized** to prevent unnecessary dat
 With **Magic IndexedDB**, working with IndexedDB is no longer a headache:
 - **Your queries feel like LINQ to SQL**—no need to think about IndexedDB’s limitations.
 - **Your logic stays seamless**—you don’t need to write separate code for indexed vs. non-indexed queries.
-- **Your migrations are automated**—upgrading schema versions will be effortless.
+- **Your schema lifecycle remains explicit**—the automated migration protocol is still under construction.
 - **You get full power and flexibility**—without worrying about performance bottlenecks.
 
 
@@ -68,10 +70,12 @@ Additionally this library has self validation which guides you the best it can t
 However, just as **LINQ to SQL is not identical to in-memory LINQ**, **LINQ to IndexedDB also has nuances**. It’s important to understand how your queries are translated and where indexes vs. cursors will be used. Understanding how LINQ to IndexedDB works is important to building optimized queries. Just like in LINQ to SQL where you can build queries accidentally that are not performant, the same idea stands true here!
 
 It's important that you read the LINQ to IndexedDB documentation to truly understand what's going on so you can use IndexedDB like a pro:
-## [Click Here to Get Started - Magic IndexedDB Documentation](https://sayou.biz/Magic-IndexedDB-Index)
+## [Click Here to Get Started - Magic IndexedDB Documentation](https://sayou.biz/Magic-IndexedDB/Index)
 
 ## Blazor
 And for us Blazor users. Not only is this powerful, but we obviously get something truly amazing! Built in true yield based AsAsyncEnumerator operations, built in streamed responses for uncapped message limits, and so much more!
+
+`ToListAsync()` applies the requested query ordering before materialization. `AsAsyncEnumerable()` is designed for progressive delivery; consumers that require a deterministic final order should order the yielded results after materialization.
 
 # **Welcome to the Future**
 **IndexedDB is no longer a painful, complex system**. With **Magic IndexedDB**, your intent is effortlessly transformed into optimized queries. 

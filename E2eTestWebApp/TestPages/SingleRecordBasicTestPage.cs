@@ -13,10 +13,21 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
     public async Task<string> Add()
     {
         var db = await magic.Query<Person>();
-        await db.AddAsync(new Person { _Age = 20, Name = "John" });
+        const string escaped = "slash\\ newline\n tab\t snowman ☃";
+        await db.AddAsync(new Person
+        {
+            _Age = 20,
+            Name = "John",
+            Secret = escaped,
+            Nested = new Nested { Value = escaped }
+        });
         var results = await db.ToListAsync();
 
-        return results.Count == 1 ? "OK" : "Incorrect";
+        var person = results.SingleOrDefault();
+        return person?.Secret == escaped &&
+               person.Nested.Value == escaped
+            ? "OK"
+            : "Incorrect";
     }
 
     public async Task<string> Delete()
@@ -48,5 +59,27 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         var results = await db.ToListAsync();
 
         return results.Count == 3 ? "OK" : "Incorrect";
+    }
+
+    public async Task<string> EmptyCount()
+    {
+        var db = await magic.Query<Person>();
+        return await db.CountAsync() == 0 ? "OK" : "Incorrect";
+    }
+
+    public async Task<string> YieldAll()
+    {
+        var db = await magic.Query<Person>();
+        await db.AddRangeAsync([
+            new Person { Name = "One" },
+            new Person { Name = "Two" },
+            new Person { Name = "Three" }
+        ]);
+
+        var yielded = new List<Person>();
+        await foreach (var person in db.AsAsyncEnumerable())
+            yielded.Add(person);
+
+        return yielded.Count == 3 ? "OK" : "Incorrect";
     }
 }
