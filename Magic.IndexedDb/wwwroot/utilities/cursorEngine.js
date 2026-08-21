@@ -20,7 +20,15 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
     debugLog("Running Cursor Query with Conditions", { structuredPredicateTree, queryAdditions });
 
     const requiresMetaProcessing = queryAdditions.some(a =>
-        [QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.FIRST, QUERY_ADDITIONS.LAST, QUERY_ADDITIONS.TAKE_LAST].includes(a.additionFunction)
+        [
+            QUERY_ADDITIONS.ORDER_BY,
+            QUERY_ADDITIONS.ORDER_BY_DESCENDING,
+            QUERY_ADDITIONS.TAKE,
+            QUERY_ADDITIONS.SKIP,
+            QUERY_ADDITIONS.FIRST,
+            QUERY_ADDITIONS.LAST,
+            QUERY_ADDITIONS.TAKE_LAST
+        ].includes(a.additionFunction)
     );
 
     if (requiresMetaProcessing) {
@@ -196,7 +204,7 @@ function optimizeSingleCondition(condition) {
     const optimized = { ...condition };
 
     // Lowercase normalization for string values if not case-sensitive
-    if (!condition.caseSensitive && typeof condition.value === "string") {
+    if (condition.isString && !condition.caseSensitive && typeof condition.value === "string") {
         optimized.value = condition.value.toLowerCase();
     }
 
@@ -248,7 +256,7 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     let magicOrder = 0;
 
     if (conditions?.nodeType === "logical" && !conditions.children) {
-        // No conditions — grab everything
+        // No conditions -- grab everything
         debugLog("Detected no-op predicate. All records will be evaluated.");
     } else {
         collectPropertiesFromTree(conditions, requiredProperties);
@@ -306,6 +314,20 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     return primaryKeyList.slice(0, resultIndex);
 }
 
+function normalizeDate(value) {
+    if (value === null || value === undefined) {
+        return new Date(Number.NaN);
+    }
+
+    // IndexedDB values can cross a browser-realm boundary. Firefox does not
+    // consistently recognize those Date objects with the local instanceof.
+    if (Object.prototype.toString.call(value) === "[object Date]") {
+        return new Date(value.getTime());
+    }
+
+    return new Date(value);
+}
+
 function getComparisonFunction(operation) {
     const operations = {
         [QUERY_OPERATIONS.EQUAL]: (recordValue, queryValue) => recordValue === queryValue,
@@ -353,63 +375,63 @@ function getComparisonFunction(operation) {
 
         // ------ MONTH OPERATIONS ------
         [QUERY_OPERATIONS.MONTH_EQUAL]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && (recordValue.getMonth() + 1) === queryValue;
         },
 
         [QUERY_OPERATIONS.NOT_MONTH_EQUAL]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && (recordValue.getMonth() + 1) !== queryValue;
         },
 
         [QUERY_OPERATIONS.MONTH_GREATER_THAN]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && (recordValue.getMonth() + 1) > queryValue;
         },
 
         [QUERY_OPERATIONS.MONTH_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && (recordValue.getMonth() + 1) >= queryValue;
         },
 
         [QUERY_OPERATIONS.MONTH_LESS_THAN]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && (recordValue.getMonth() + 1) < queryValue;
         },
 
         [QUERY_OPERATIONS.MONTH_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && (recordValue.getMonth() + 1) <= queryValue;
         },
 
         // ------ DAY OPERATIONS ------
         [QUERY_OPERATIONS.DAY_EQUAL]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDate() === queryValue;
         },
 
         [QUERY_OPERATIONS.NOT_DAY_EQUAL]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDate() !== queryValue;
         },
 
         [QUERY_OPERATIONS.DAY_GREATER_THAN]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDate() > queryValue;
         },
 
         [QUERY_OPERATIONS.DAY_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDate() >= queryValue;
         },
 
         [QUERY_OPERATIONS.DAY_LESS_THAN]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDate() < queryValue;
         },
 
         [QUERY_OPERATIONS.DAY_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDate() <= queryValue;
         },
 
@@ -417,37 +439,37 @@ function getComparisonFunction(operation) {
         // ------ DAY OF WEEK OPERATIONS ------
         [QUERY_OPERATIONS.DAY_OF_WEEK_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDay() === queryValue;
         },
 
         [QUERY_OPERATIONS.NOT_DAY_OF_WEEK_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDay() !== queryValue;
         },
 
         [QUERY_OPERATIONS.DAY_OF_WEEK_GREATER_THAN]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDay() > queryValue;
         },
 
         [QUERY_OPERATIONS.DAY_OF_WEEK_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDay() >= queryValue;
         },
 
         [QUERY_OPERATIONS.DAY_OF_WEEK_LESS_THAN]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDay() < queryValue;
         },
 
         [QUERY_OPERATIONS.DAY_OF_WEEK_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDay() <= queryValue;
         },
 
@@ -455,44 +477,44 @@ function getComparisonFunction(operation) {
         // ------ YEAR OPERATIONS ------
         [QUERY_OPERATIONS.YEAR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getFullYear() === queryValue;
         },
 
         [QUERY_OPERATIONS.NOT_YEAR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getFullYear() !== queryValue;
         },
 
         [QUERY_OPERATIONS.YEAR_GREATER_THAN]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getFullYear() > queryValue;
         },
 
         [QUERY_OPERATIONS.YEAR_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getFullYear() >= queryValue;
         },
 
         [QUERY_OPERATIONS.YEAR_LESS_THAN]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getFullYear() < queryValue;
         },
 
         [QUERY_OPERATIONS.YEAR_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getFullYear() <= queryValue;
         },
 
         // ------ DAY OF YEAR OPERATIONS ------
         [QUERY_OPERATIONS.DAY_OF_YEAR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             if (isNaN(recordValue)) return false;
             const start = new Date(recordValue.getFullYear(), 0, 0);
             const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
@@ -502,7 +524,7 @@ function getComparisonFunction(operation) {
 
         [QUERY_OPERATIONS.NOT_DAY_OF_YEAR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             if (isNaN(recordValue)) return false;
             const start = new Date(recordValue.getFullYear(), 0, 0);
             const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
@@ -512,7 +534,7 @@ function getComparisonFunction(operation) {
 
         [QUERY_OPERATIONS.DAY_OF_YEAR_GREATER_THAN]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             if (isNaN(recordValue)) return false;
             const start = new Date(recordValue.getFullYear(), 0, 0);
             const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
@@ -522,7 +544,7 @@ function getComparisonFunction(operation) {
 
         [QUERY_OPERATIONS.DAY_OF_YEAR_GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             if (isNaN(recordValue)) return false;
             const start = new Date(recordValue.getFullYear(), 0, 0);
             const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
@@ -532,7 +554,7 @@ function getComparisonFunction(operation) {
 
         [QUERY_OPERATIONS.DAY_OF_YEAR_LESS_THAN]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             if (isNaN(recordValue)) return false;
             const start = new Date(recordValue.getFullYear(), 0, 0);
             const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
@@ -542,7 +564,7 @@ function getComparisonFunction(operation) {
 
         [QUERY_OPERATIONS.DAY_OF_YEAR_LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
-            if (!(recordValue instanceof Date)) recordValue = new Date(recordValue);
+            recordValue = normalizeDate(recordValue);
             if (isNaN(recordValue)) return false;
             const start = new Date(recordValue.getFullYear(), 0, 0);
             const diff = recordValue - start + ((start.getTimezoneOffset() - recordValue.getTimezoneOffset()) * 60000);
@@ -615,7 +637,7 @@ function getComparisonFunction(operation) {
 function applyCondition(record, condition) {
     let recordValue = record[condition.property];
 
-    if (!condition.caseSensitive && typeof recordValue === "string") {
+    if (condition.isString && !condition.caseSensitive && typeof recordValue === "string") {
         recordValue = recordValue.toLowerCase();
     }
 
@@ -654,14 +676,28 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
             : batch.map(pk => Array.isArray(pk) ? pk[0] : pk);
     };
 
+    const keyForRecord = record => isCompoundKey
+        ? compoundKeys.map(key => record[key])
+        : record[compoundKeys[0]];
+
+    const requestedOrder = new Map(
+        normalizeBatch(primaryKeys).map((key, index) => [JSON.stringify(key), index])
+    );
+
+    const restoreRequestedOrder = records => records.sort((left, right) =>
+        requestedOrder.get(JSON.stringify(keyForRecord(left))) -
+        requestedOrder.get(JSON.stringify(keyForRecord(right)))
+    );
+
     // **Tier 1: Small datasets (< 1500)  Single Fetch**
     if (primaryKeys.length < 1500) {
-        return await db.transaction('r', table, async () => {
+        const records = await db.transaction('r', table, async () => {
             let formattedBatch = normalizeBatch(primaryKeys);
             return table.where(isCompoundKey ? compoundKeys : compoundKeys[0])
                 .anyOf(formattedBatch)
                 .toArray();
         });
+        return restoreRequestedOrder(records);
     }
 
     // **Tier 2: Medium Datasets (< Large Threshold)  Fire All Batches In Parallel**
@@ -679,11 +715,11 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
             }
         });
         let batchResults = await Promise.all(batchPromises);
-        return batchResults.flat();
+        return restoreRequestedOrder(batchResults.flat());
     }
 
     // **Tier 3: Massive Datasets - Controlled Concurrency, Shrinking `anyOf()` for faster lookups**
-    return await db.transaction('r', table, async () => {
+    const records = await db.transaction('r', table, async () => {
         let remainingKeys = [...primaryKeys];
         let foundKeys = new Set();
         let results = [];
@@ -748,6 +784,7 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
         await Promise.all(activePromises);
         return results;
     });
+    return restoreRequestedOrder(records);
 }
 
 
@@ -770,8 +807,6 @@ function applyCursorQueryAdditions(
     });
 
     let additions = [...queryAdditions]; // Avoid modifying original
-    let needsReverse = false;
-
     // Step 0: Always apply detectedIndexOrderProperties first
     if (detectedIndexOrderProperties?.length > 0) {
         primaryKeyList.sort((a, b) => {
@@ -829,7 +864,6 @@ function applyCursorQueryAdditions(
                 break;
 
             case QUERY_ADDITIONS.TAKE_LAST:
-                needsReverse = true;
                 primaryKeyList = primaryKeyList.slice(-addition.intValue);
                 break;
 
@@ -847,10 +881,6 @@ function applyCursorQueryAdditions(
             default:
                 throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
         }
-    }
-
-    if (needsReverse) {
-        primaryKeyList.reverse();
     }
 
     debugLog("Final Ordered Primary Key List", primaryKeyList);

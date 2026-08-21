@@ -266,7 +266,7 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
                 throw new Error(`Unsupported indexed query operation: ${firstCondition.operation}`);
         }
     } else {
-        throw new Error("Invalid indexed condition—missing `properties` or `property`.");
+        throw new Error("Invalid indexed condition--missing `properties` or `property`.");
     }
 
     // === Apply Query Additions (take, skip, first, etc.) ===
@@ -284,7 +284,8 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
                     query = query.limit(addition.intValue);
                     break;
                 case QUERY_ADDITIONS.TAKE_LAST:
-                    query = query.reverse().limit(addition.intValue);
+                    // Read the tail efficiently, then restore the caller's requested order.
+                    query = query.reverse().limit(addition.intValue).reverse();
                     break;
                 case QUERY_ADDITIONS.FIRST:
                     return query.first();
@@ -340,7 +341,7 @@ function optimizeIndexedQueries(indexedQueries, compoundIndexQueries) {
     optimizedSingleIndexes.push(...fallbackSingleIndexes);
 
     if (optimizedSingleIndexes.length === 0 && optimizedCompoundIndexes.length === 0) {
-        throw new Error("OptimizeIndexedQueries failed—No indexed queries were produced! Investigate input conditions.");
+        throw new Error("OptimizeIndexedQueries failed--No indexed queries were produced! Investigate input conditions.");
     }
 
     debugLog("Final Optimized Queries", { optimizedSingleIndexes, optimizedCompoundIndexes });
@@ -453,5 +454,4 @@ function optimizeCompoundIndexedOnlyQueries(compoundIndexQueries) {
 
     return { optimizedCompoundIndexes, fallbackSingleIndexes };
 }
-
 

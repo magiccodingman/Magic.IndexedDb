@@ -50,14 +50,14 @@ public class CursorTestPage(IMagicIndexedDb magic) : TestPageBase
     public async Task<string> TestWhere54() {
         var result = RunTest("Take & With Index Test", await (await SetupData()).Cursor(x => x.Name.StartsWith("J"))
         .OrderBy(x => x.Name).Take(2).ToListAsync(),
-                    PersonData.persons.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2));
+                    PersonData.persons.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2), ordered: true);
                 return result.Success ? "OK" : result.Message;
     }
 
     public async Task<string> TestWhere55() {
         var result = RunTest("TakeLast & With Index Test", await (await SetupData()).Cursor(x => x.Name.StartsWith("J"))
         .OrderBy(x => x.Name).TakeLast(2).ToListAsync(),
-                    PersonData.persons.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2));
+                    PersonData.persons.Where(x => x.Name.StartsWith("J")).OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2), ordered: true);
                 return result.Success ? "OK" : result.Message;
     }
 
@@ -81,7 +81,7 @@ public class CursorTestPage(IMagicIndexedDb magic) : TestPageBase
                             .Take(3)
                             .Skip(2)
                             .ToListAsync(),
-        PersonData.persons.Where(x => x._Age > 30).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(2).Take(3));
+        PersonData.persons.Where(x => x._Age > 30).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(2).Take(3), ordered: true);
     return result.Success ? "OK" : result.Message;
     }
 
@@ -114,7 +114,7 @@ public class CursorTestPage(IMagicIndexedDb magic) : TestPageBase
                         .Take(3)
                         .Skip(2)
                         .ToListAsync(),
-    PersonData.persons.Where(x => x.Name.StartsWith("J")).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(2).Take(3));
+    PersonData.persons.Where(x => x.Name.StartsWith("J")).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(2).Take(3), ordered: true);
 return result.Success ? "OK" : result.Message;
     }
 
@@ -125,7 +125,7 @@ return result.Success ? "OK" : result.Message;
                         .Take(3)
                         .Skip(2)
                         .ToListAsync(),
-    PersonData.persons.Where(x => x.Name.StartsWith("J")).OrderByDescending(x => x._Id).ThenByDescending(x => x._Id).Skip(2).Take(3));
+    PersonData.persons.Where(x => x.Name.StartsWith("J")).OrderByDescending(x => x._Id).ThenByDescending(x => x._Id).Skip(2).Take(3), ordered: true);
 return result.Success ? "OK" : result.Message;
     }
 
@@ -135,7 +135,7 @@ return result.Success ? "OK" : result.Message;
                                 .OrderByDescending(x => x._Age)
                             .TakeLast(2)
                             .ToListAsync(),
-        PersonData.persons.Where(x => x._Age < 60).OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(2));
+        PersonData.persons.Where(x => x._Age < 60).OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(2), ordered: true);
     return result.Success ? "OK" : result.Message;
 
         //await Task.Delay(10000);
@@ -154,7 +154,7 @@ return result.Success ? "OK" : result.Message;
                                 .OrderBy(x => x._Id)
                             .TakeLast(2)
                             .ToListAsync(),
-        PersonData.persons.Where(x => x.TestInt > 2).OrderBy(x => x._Id).ThenBy(x => x._Id).TakeLast(2));
+        PersonData.persons.Where(x => x.TestInt > 2).OrderBy(x => x._Id).ThenBy(x => x._Id).TakeLast(2), ordered: true);
     return result.Success ? "OK" : result.Message;
     }
 
@@ -165,7 +165,7 @@ return result.Success ? "OK" : result.Message;
                         .Take(3)
                         .Skip(1)
                         .ToListAsync(),
-    PersonData.persons.Where(x => x.TestInt > 2 && x.TestInt == 9).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(1).Take(3));
+    PersonData.persons.Where(x => x.TestInt > 2 && x.TestInt == 9).OrderBy(x => x._Id).ThenBy(x => x._Id).Skip(1).Take(3), ordered: true);
 return result.Success ? "OK" : result.Message;
 
 
@@ -178,7 +178,7 @@ return result.Success ? "OK" : result.Message;
                             .Take(3)
                             .Skip(1)
                             .ToListAsync(),
-        PersonData.persons.Where(x => x._Age > 30 && x.TestInt == 9).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(1).Take(3));
+        PersonData.persons.Where(x => x._Age > 30 && x.TestInt == 9).OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(1).Take(3), ordered: true);
     return result.Success ? "OK" : result.Message;
     }
 }

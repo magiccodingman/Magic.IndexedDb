@@ -435,15 +435,18 @@ export async function bulkUpdateItem(items) {
 
 async function getKeyArrayForDelete(dbName, storeName, keyData) {
     const keyInfo = await getPrimaryKey(dbName, storeName);
+    const getName = key => key.jsName ?? key.JsName;
+    const getValue = key => key.value ?? key.Value;
 
     if (!keyInfo.isCompound) {
-        return keyData.find(k => k.JsName === keyInfo.keys[0])?.Value;
+        const key = keyData.find(candidate => getName(candidate) === keyInfo.keys[0]);
+        return key === undefined ? undefined : getValue(key);
     }
 
     return keyInfo.keys.map(pk => {
-        const part = keyData.find(k => k.JsName === pk);
+        const part = keyData.find(candidate => getName(candidate) === pk);
         if (!part) throw new Error(`Missing key part: ${pk}`);
-        return part.Value;
+        return getValue(part);
     });
 }
 
@@ -493,8 +496,12 @@ export async function toArray(dbName, storeName) {
     const table = await getTable(dbName, storeName);
     return await table.toArray();
 }
-export function getStorageEstimate() {
-    return navigator.storage.estimate();
+export async function getStorageEstimate() {
+    if (navigator.storage?.estimate) {
+        return await navigator.storage.estimate();
+    }
+
+    return { quota: 0, usage: 0 };
 }
 
 async function getTable(dbName, storeName) {

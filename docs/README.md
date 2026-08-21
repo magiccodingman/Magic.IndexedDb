@@ -41,6 +41,10 @@ Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ord
 - [How the query engine works](architecture/query-engine.md)
 - [Universal predicate language](architecture/universal-predicate-language.md)
 
+## Contributing
+
+- [Testing and continuous integration](contributing/testing.md)
+
 ## Upgrading and legacy versions
 
 - [.NET 10 upgrade notes](upgrading/dotnet-10.md)

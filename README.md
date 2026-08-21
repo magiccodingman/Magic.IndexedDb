@@ -160,6 +160,8 @@ See [schema evolution and migrations](https://github.com/magiccodingman/Magic.In
 
 Issues and pull requests are welcome. Changes to expression translation, serialization, schema handling, or the JavaScript query engine should include focused unit tests and browser end-to-end coverage where applicable.
 
+See [testing and continuous integration](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/contributing/testing.md) for local commands, coverage expectations, and required CI checks.
+
 ## 🏆 Contributors Hall of Fame 🏆
 
 Thank you to all contributors, whether large or small! This section is for the people who have put significant work, care, and energy into the project.

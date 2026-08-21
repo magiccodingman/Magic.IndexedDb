@@ -17,8 +17,21 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
+  core-validation:
+    uses: ./.github/workflows/validate-dotnet.yml
+    permissions:
+      contents: read
+
+  browser-validation:
+    uses: ./.github/workflows/validate-browsers.yml
+    permissions:
+      contents: read
+
   publish:
     name: Build and publish package
+    needs:
+      - core-validation
+      - browser-validation
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -56,11 +69,8 @@ jobs:
           echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
           echo "Publishing Magic.IndexedDb ${package_version} from ${GITHUB_SHA}."
 
-      - name: Restore
-        run: dotnet restore Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj
-
-      - name: Run unit tests
-        run: dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj --configuration Release --no-restore
+      - name: Restore package project
+        run: dotnet restore Magic.IndexedDb/Magic.IndexedDb.csproj
 
       - name: Pack
         run: >-

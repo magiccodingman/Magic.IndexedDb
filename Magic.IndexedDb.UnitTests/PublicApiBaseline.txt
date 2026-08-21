@@ -1,0 +1,308 @@
+enum Magic.IndexedDb.BlazorInteropMode : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int64 value__
+  field static Magic.IndexedDb.BlazorInteropMode SignalR = 31744
+  field static Magic.IndexedDb.BlazorInteropMode WASM = 15728640
+class Magic.IndexedDb.DbMigration
+  ctor Magic.IndexedDb.DbMigration()
+  property System.Collections.Generic.List<Magic.IndexedDb.DbMigrationInstruction> Instructions { get; set; }
+  property System.String FromVersion { get; set; }
+  property System.String ToVersion { get; set; }
+class Magic.IndexedDb.DbMigrationInstruction
+  ctor Magic.IndexedDb.DbMigrationInstruction()
+  property System.String Action { get; set; }
+  property System.String Details { get; set; }
+  property System.String StoreName { get; set; }
+class Magic.IndexedDb.DbStore
+  ctor Magic.IndexedDb.DbStore()
+  property System.Collections.Generic.List<Magic.IndexedDb.DbMigration> DbMigrations { get; set; }
+  property System.Collections.Generic.List<Magic.IndexedDb.StoreSchema> StoreSchemas { get; set; }
+  property System.Int32 Version { get; set; }
+  property System.String Name { get; set; }
+static class Magic.IndexedDb.Extensions.MagicJsChunkProcessor
+  method static System.String GetCompletedItem(System.String instanceId)
+  method static System.Void AddChunk(System.String instanceId, System.String chunkInstanceId, System.Int32 yieldOrderIndex, System.String chunk, System.Int32 chunkIndex, System.Int32 totalChunks)
+  method static System.Void RegisterInstance(System.String instanceId)
+  method static System.Void RemoveInstance(System.String instanceId)
+static class Magic.IndexedDb.Helpers.AttributeHelpers
+  method static System.Collections.Generic.List<Magic.IndexedDb.Helpers.PrimaryKeys> GetPrimaryKeys<T>(T item)
+  method static System.Type[] GetPrimaryKeyTypes<T>()
+  method static System.Void ValidatePrimaryKey<T>(System.Object[] keys)
+static class Magic.IndexedDb.Helpers.ExpandoToTypeConverter<T>
+static class Magic.IndexedDb.Helpers.ExpressionFlattener
+  method static System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> FlattenAndOptimize<T>(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> expr)
+static class Magic.IndexedDb.Helpers.MagicSerializationHelper
+  method static System.Object[] SerializeObjects(Magic.IndexedDb.Interfaces.ITypedArgument[] objs, Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  method static System.String SerializeObject<T>(T value, Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  method static System.String[] SerializeObjectsToString(Magic.IndexedDb.Interfaces.ITypedArgument[] objs, Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  method static System.Text.Json.JsonElement SerializeObjectToJsonElement<T>(T value, Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  method static System.Threading.Tasks.Task SerializeObjectToStreamAsync<T>(System.IO.Stream stream, T value, Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  method static System.Threading.Tasks.Task SerializeObjectToStreamAsync<T>(System.IO.StreamWriter writer, T value, Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  method static System.Void PopulateObject<T>(T source, T target)
+  method static T DeserializeObject<T>(System.String json, Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+static class Magic.IndexedDb.Helpers.MagicValidator
+  method static System.Void ValidateTables(System.Collections.Generic.List<System.Type> magicTableClasses = null)
+class Magic.IndexedDb.Helpers.PrimaryKeys
+  ctor Magic.IndexedDb.Helpers.PrimaryKeys()
+  property System.Object Value { get; set; }
+  property System.String JsName { get; set; }
+static class Magic.IndexedDb.Helpers.PropertyMappingCache
+  method static Magic.IndexedDb.Helpers.SearchPropEntry GetTypeOfTProperties(System.Type type)
+  method static Magic.IndexedDb.Models.MagicPropertyEntry GetPropertyByCsharpName(Magic.IndexedDb.Helpers.SearchPropEntry propCachee, System.String csharpName)
+  method static Magic.IndexedDb.Models.MagicPropertyEntry GetPropertyEntry(System.Reflection.PropertyInfo property, System.Type type)
+  method static Magic.IndexedDb.Models.MagicPropertyEntry GetPropertyEntry(System.String propertyName, System.Type type)
+  method static Magic.IndexedDb.Models.MagicPropertyEntry GetPropertyEntry<T>(System.Reflection.PropertyInfo property)
+  method static Magic.IndexedDb.Models.MagicPropertyEntry GetPropertyEntry<T>(System.String propertyName)
+  method static System.Boolean IsComplexType(System.Type type)
+  method static System.Boolean IsSimpleType(System.Type type)
+  method static System.Collections.Generic.IEnumerable<System.Type> GetAllNestedComplexTypes(System.Collections.Generic.IEnumerable<System.Reflection.PropertyInfo> properties)
+  method static System.Collections.Generic.List<Magic.IndexedDb.Models.MagicPropertyEntry> GetPrimaryKeysOfType(System.Type type)
+  method static System.String GetCsharpPropertyName(Magic.IndexedDb.Helpers.SearchPropEntry propCachee, System.String jsPropertyName)
+  method static System.String GetCsharpPropertyName(System.String jsPropertyName, System.Type type)
+  method static System.String GetCsharpPropertyName<T>(System.String jsPropertyName)
+  method static System.String GetJsPropertyName(System.Reflection.PropertyInfo prop, System.Type type)
+  method static System.String GetJsPropertyName(System.String csharpPropertyName, System.Type type)
+  method static System.String GetJsPropertyName<T>(System.Reflection.PropertyInfo prop)
+  method static System.String GetJsPropertyName<T>(System.String csharpPropertyName)
+static class Magic.IndexedDb.Helpers.SchemaHelper
+  method static Magic.IndexedDb.StoreSchema GetStoreSchema(System.Type type)
+  method static System.Boolean HasMagicTableInterface(System.Type type)
+  method static System.Boolean ImplementsIMagicRepository(System.Type type)
+  method static System.Boolean ImplementsIMagicTable(System.Type type)
+  method static System.Collections.Generic.List<Magic.IndexedDb.IndexedDbSet> GetAllIndexedDbSets()
+  method static System.Collections.Generic.List<Magic.IndexedDb.StoreSchema> GetAllSchemas(System.String databaseName = null)
+  method static System.Collections.Generic.List<System.Type> GetAllMagicRepositories()
+  method static System.Collections.Generic.List<System.Type> GetAllMagicTables()
+  method static System.String GetDefaultDatabaseName<T>()
+  method static System.String GetTableName<T>()
+struct Magic.IndexedDb.Helpers.SearchPropEntry
+  ctor Magic.IndexedDb.Helpers.SearchPropEntry(System.Type type, System.Collections.Generic.Dictionary<System.String, Magic.IndexedDb.Models.MagicPropertyEntry> _propertyEntries, System.Reflection.ConstructorInfo[] constructors)
+  property System.Boolean EnforcePascalCase { get; }
+  property System.Boolean HasConstructorParameters { get; }
+  property System.Collections.Generic.Dictionary<System.String, Magic.IndexedDb.Models.MagicPropertyEntry> propertyEntries { get; }
+  property System.Collections.Generic.Dictionary<System.String, System.Int32> ConstructorParameterMappings { get; }
+  property System.Collections.Generic.Dictionary<System.String, System.String> jsNameToCsName { get; }
+  property System.Func<System.Object[], System.Object> InstanceCreator { get; }
+  property System.Reflection.ConstructorInfo Constructor { get; }
+  property System.String EffectiveTableName { get; }
+interface Magic.IndexedDb.IMagicCompoundIndex
+  property System.Reflection.PropertyInfo[] PropertyInfos { get; }
+  property System.String[] ColumnNamesInCompoundIndex { get; }
+interface Magic.IndexedDb.IMagicCompoundKey
+  property System.Boolean AutoIncrement { get; }
+  property System.Reflection.PropertyInfo[] PropertyInfos { get; }
+  property System.String[] ColumnNamesInCompoundKey { get; }
+interface Magic.IndexedDb.IMagicCursor<T> : Magic.IndexedDb.IMagicExecute<T>
+  method Magic.IndexedDb.IMagicCursor<T> Cursor(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  method Magic.IndexedDb.IMagicCursorPaginationTake<T> Take(System.Int32 amount)
+  method Magic.IndexedDb.IMagicCursorPaginationTake<T> TakeLast(System.Int32 amount)
+  method Magic.IndexedDb.IMagicCursorSkip<T> Skip(System.Int32 amount)
+  method Magic.IndexedDb.IMagicCursorStage<T> OrderBy(System.Linq.Expressions.Expression<System.Func<T, System.Object>> predicate)
+  method Magic.IndexedDb.IMagicCursorStage<T> OrderByDescending(System.Linq.Expressions.Expression<System.Func<T, System.Object>> predicate)
+  method Magic.IndexedDb.IMagicCursorStage<T> StableOrdering()
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync()
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync()
+interface Magic.IndexedDb.IMagicCursorFinal<T> : Magic.IndexedDb.IMagicExecute<T>
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync()
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync()
+interface Magic.IndexedDb.IMagicCursorPaginationTake<T> : Magic.IndexedDb.IMagicExecute<T>
+  method Magic.IndexedDb.IMagicCursorSkip<T> Skip(System.Int32 amount)
+interface Magic.IndexedDb.IMagicCursorSkip<T> : Magic.IndexedDb.IMagicExecute<T>
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync()
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync()
+interface Magic.IndexedDb.IMagicCursorStage<T> : Magic.IndexedDb.IMagicExecute<T>
+  method Magic.IndexedDb.IMagicCursorPaginationTake<T> Take(System.Int32 amount)
+  method Magic.IndexedDb.IMagicCursorPaginationTake<T> TakeLast(System.Int32 amount)
+  method Magic.IndexedDb.IMagicCursorSkip<T> Skip(System.Int32 amount)
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync()
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync()
+interface Magic.IndexedDb.IMagicExecute<T>
+  method System.Collections.Generic.IAsyncEnumerable<T> AsAsyncEnumerable(System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<System.Collections.Generic.List<T>> ToListAsync()
+interface Magic.IndexedDb.IMagicIndexedDb
+  method System.Threading.Tasks.Task<Magic.IndexedDb.Models.QuotaUsage> GetStorageEstimateAsync(System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.ValueTask<Magic.IndexedDb.IMagicQuery<T>> Query<T>()
+  method System.Threading.Tasks.ValueTask<Magic.IndexedDb.IMagicQuery<T>> Query<T>(System.Func<T, Magic.IndexedDb.IndexedDbSet> dbSetSelector)
+  method System.Threading.Tasks.ValueTask<Magic.IndexedDb.LinqTranslation.Interfaces.IMagicDatabaseScoped> Database(Magic.IndexedDb.IndexedDbSet indexedDbSet)
+interface Magic.IndexedDb.IMagicQuery<T> : Magic.IndexedDb.IMagicExecute<T>
+  method Magic.IndexedDb.IMagicCursor<T> Cursor(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  method Magic.IndexedDb.IMagicQueryFinal<T> Skip(System.Int32 amount)
+  method Magic.IndexedDb.IMagicQueryFinal<T> TakeLast(System.Int32 amount)
+  method Magic.IndexedDb.IMagicQueryOrderableTable<T> OrderBy(System.Linq.Expressions.Expression<System.Func<T, System.Object>> predicate)
+  method Magic.IndexedDb.IMagicQueryOrderableTable<T> OrderByDescending(System.Linq.Expressions.Expression<System.Func<T, System.Object>> predicate)
+  method Magic.IndexedDb.IMagicQueryPaginationTake<T> Take(System.Int32 amount)
+  method Magic.IndexedDb.IMagicQueryStaging<T> Where(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  method System.Threading.Tasks.Task AddAsync(T record, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task AddRangeAsync(System.Collections.Generic.IEnumerable<T> records, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task ClearTable()
+  method System.Threading.Tasks.Task DeleteAsync(T item, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<System.Int32> CountAsync()
+  method System.Threading.Tasks.Task<System.Int32> DeleteRangeAsync(System.Collections.Generic.IEnumerable<T> items, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<System.Int32> UpdateAsync(T item, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<System.Int32> UpdateRangeAsync(System.Collections.Generic.IEnumerable<T> items, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync()
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync()
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  property System.String DatabaseName { get; }
+  property System.String SchemaName { get; }
+interface Magic.IndexedDb.IMagicQueryFinal<T> : Magic.IndexedDb.IMagicExecute<T>
+  method System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<T>> WhereAsync(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+interface Magic.IndexedDb.IMagicQueryOrderable<T> : Magic.IndexedDb.IMagicExecute<T>
+  method Magic.IndexedDb.IMagicQueryFinal<T> Skip(System.Int32 amount)
+  method Magic.IndexedDb.IMagicQueryFinal<T> TakeLast(System.Int32 amount)
+  method Magic.IndexedDb.IMagicQueryPaginationTake<T> Take(System.Int32 amount)
+  method System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<T>> WhereAsync(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync()
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync()
+interface Magic.IndexedDb.IMagicQueryOrderableTable<T> : Magic.IndexedDb.IMagicExecute<T>, Magic.IndexedDb.IMagicQueryOrderable<T>
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+interface Magic.IndexedDb.IMagicQueryPaginationTake<T> : Magic.IndexedDb.IMagicExecute<T>
+  method Magic.IndexedDb.IMagicQueryFinal<T> Skip(System.Int32 amount)
+  method System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<T>> WhereAsync(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+interface Magic.IndexedDb.IMagicQueryStaging<T> : Magic.IndexedDb.IMagicExecute<T>
+  method Magic.IndexedDb.IMagicQueryFinal<T> Skip(System.Int32 amount)
+  method Magic.IndexedDb.IMagicQueryFinal<T> TakeLast(System.Int32 amount)
+  method Magic.IndexedDb.IMagicQueryPaginationTake<T> Take(System.Int32 amount)
+  method Magic.IndexedDb.IMagicQueryStaging<T> Where(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  method System.Threading.Tasks.Task<T> FirstOrDefaultAsync()
+  method System.Threading.Tasks.Task<T> LastOrDefaultAsync()
+interface Magic.IndexedDb.IMagicTable<TDbSets> : Magic.IndexedDb.Interfaces.IMagicTableBase
+  property TDbSets Databases { get; }
+interface Magic.IndexedDb.IMagicUtilities
+class Magic.IndexedDb.IndexedDbSet
+  ctor Magic.IndexedDb.IndexedDbSet(System.String databaseName)
+  property System.String DatabaseName { get; }
+interface Magic.IndexedDb.Interfaces.IColumnNamed
+  property System.String ColumnName { get; }
+interface Magic.IndexedDb.Interfaces.IMagicRepository
+interface Magic.IndexedDb.Interfaces.IMagicTableBase
+  method Magic.IndexedDb.IMagicCompoundKey GetKeys()
+  method Magic.IndexedDb.IndexedDbSet GetDefaultDatabase()
+  method System.Collections.Generic.List<Magic.IndexedDb.IMagicCompoundIndex> GetCompoundIndexes()
+  method System.String GetTableName()
+interface Magic.IndexedDb.Interfaces.ITypedArgument
+  method System.String Serialize()
+  method System.String SerializeToJsonString(Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  method System.Text.Json.JsonElement SerializeToJsonElement(Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+class Magic.IndexedDb.LinqTranslation.Extensions.UniversalExpressionBuilder<T>
+  ctor Magic.IndexedDb.LinqTranslation.Extensions.UniversalExpressionBuilder<T>(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
+  method Magic.IndexedDb.LinqTranslation.Models.FilterNode Build()
+interface Magic.IndexedDb.LinqTranslation.Interfaces.IMagicDatabaseScoped
+  method System.Threading.Tasks.Task CloseAsync()
+  method System.Threading.Tasks.Task DeleteAsync()
+  method System.Threading.Tasks.Task OpenAsync()
+  method System.Threading.Tasks.Task<System.Boolean> DoesExistAsync()
+  method System.Threading.Tasks.Task<System.Boolean> IsOpenAsync()
+enum Magic.IndexedDb.LinqTranslation.Models.FilterLogicalOperator : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int32 value__
+  field static Magic.IndexedDb.LinqTranslation.Models.FilterLogicalOperator And = 0
+  field static Magic.IndexedDb.LinqTranslation.Models.FilterLogicalOperator Or = 1
+class Magic.IndexedDb.LinqTranslation.Models.FilterNode
+  ctor Magic.IndexedDb.LinqTranslation.Models.FilterNode()
+  property Magic.IndexedDb.LinqTranslation.Models.FilterLogicalOperator Operator { get; set; }
+  property Magic.IndexedDb.LinqTranslation.Models.FilterNodeType NodeType { get; set; }
+  property System.Collections.Generic.List<Magic.IndexedDb.LinqTranslation.Models.FilterNode> Children { get; set; }
+  property System.Nullable<Magic.IndexedDb.Models.UniversalOperations.FilterCondition> Condition { get; set; }
+enum Magic.IndexedDb.LinqTranslation.Models.FilterNodeType : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int32 value__
+  field static Magic.IndexedDb.LinqTranslation.Models.FilterNodeType Condition = 1
+  field static Magic.IndexedDb.LinqTranslation.Models.FilterNodeType Logical = 0
+class Magic.IndexedDb.MagicTableTool<T>
+  ctor Magic.IndexedDb.MagicTableTool<T>()
+class Magic.IndexedDb.MagicUniqueIndexAttribute : Magic.IndexedDb.Interfaces.IColumnNamed, System.Attribute
+  ctor Magic.IndexedDb.MagicUniqueIndexAttribute(System.String columnName = null)
+  property System.String ColumnName { get; }
+class Magic.IndexedDb.Models.IndexFilterValue
+  ctor Magic.IndexedDb.Models.IndexFilterValue(System.String indexName, System.Object filterValue)
+  property System.Object FilterValue { get; set; }
+  property System.String IndexName { get; set; }
+class Magic.IndexedDb.Models.MagicConstructorException : System.InvalidOperationException, System.Runtime.Serialization.ISerializable
+  ctor Magic.IndexedDb.Models.MagicConstructorException(System.String message)
+class Magic.IndexedDb.Models.MagicException : System.Exception, System.Runtime.Serialization.ISerializable
+  ctor Magic.IndexedDb.Models.MagicException(System.String message, System.Exception inner = null)
+class Magic.IndexedDb.Models.MagicJsonSerializationSettings
+  ctor Magic.IndexedDb.Models.MagicJsonSerializationSettings()
+  method System.Text.Json.JsonSerializerOptions GetOptionsWithResolver<T>()
+  property System.Boolean UseCamelCase { get; set; }
+  property System.Text.Json.JsonSerializerOptions Options { get; set; }
+struct Magic.IndexedDb.Models.MagicPropertyEntry
+  ctor Magic.IndexedDb.Models.MagicPropertyEntry(System.Reflection.PropertyInfo property, Magic.IndexedDb.Interfaces.IColumnNamed columnNamedAttribute, System.Boolean indexed, System.Boolean uniqueIndex, System.Boolean primaryKey, System.Boolean notMapped, System.Boolean overrideNeverCamel = false)
+  property System.Action<System.Object, System.Object> Setter { get; }
+  property System.Boolean Indexed { get; set; }
+  property System.Boolean IsComplexType { get; }
+  property System.Boolean NeverCamelCase { get; }
+  property System.Boolean NotMapped { get; set; }
+  property System.Boolean OverrideNeverCamel { get; }
+  property System.Boolean PrimaryKey { get; set; }
+  property System.Boolean UniqueIndex { get; set; }
+  property System.Func<System.Object, System.Object> Getter { get; }
+  property System.Object DefaultValue { get; }
+  property System.Reflection.PropertyInfo Property { get; set; }
+  property System.String CsharpPropertyName { get; }
+  property System.String JsPropertyName { get; }
+class Magic.IndexedDb.Models.PredicateVisitor<T> : System.Linq.Expressions.ExpressionVisitor
+  ctor Magic.IndexedDb.Models.PredicateVisitor<T>()
+class Magic.IndexedDb.Models.QuotaUsage : System.IEquatable<Magic.IndexedDb.Models.QuotaUsage>
+  ctor Magic.IndexedDb.Models.QuotaUsage(System.Int64 Quota, System.Int64 Usage)
+  method Magic.IndexedDb.Models.QuotaUsage <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.Models.QuotaUsage other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(out System.Int64 Quota, out System.Int64 Usage)
+  property System.Double QuotaInMegabytes { get; }
+  property System.Double UsageInMegabytes { get; }
+  property System.Int64 Quota { get; set; }
+  property System.Int64 Usage { get; set; }
+  property System.ValueTuple<System.Double, System.Double> InMegabytes { get; }
+class Magic.IndexedDb.Models.StoredMagicQuery
+  ctor Magic.IndexedDb.Models.StoredMagicQuery()
+  property System.Int32 intValue { get; set; }
+  property System.String additionFunction { get; set; }
+  property System.String property { get; set; }
+class Magic.IndexedDb.Models.TypedArgument<T> : Magic.IndexedDb.Interfaces.ITypedArgument
+  ctor Magic.IndexedDb.Models.TypedArgument<T>(T value)
+  method System.String Serialize()
+  method System.String SerializeToJsonString(Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  method System.Text.Json.JsonElement SerializeToJsonElement(Magic.IndexedDb.Models.MagicJsonSerializationSettings settings = null)
+  property T Value { get; }
+struct Magic.IndexedDb.Models.UniversalOperations.FilterCondition
+  ctor Magic.IndexedDb.Models.UniversalOperations.FilterCondition(System.String _property, System.String _operation, System.Object _value, System.Boolean _isString = false, System.Boolean _caseSensitive = false)
+  property System.Boolean caseSensitive { get; set; }
+  property System.Boolean isString { get; set; }
+  property System.Object value { get; set; }
+  property System.String operation { get; set; }
+  property System.String property { get; set; }
+class Magic.IndexedDb.SchemaAnnotations.MagicConstructorAttribute : System.Attribute
+  ctor Magic.IndexedDb.SchemaAnnotations.MagicConstructorAttribute()
+class Magic.IndexedDb.SchemaAnnotations.MagicIndexAttribute : Magic.IndexedDb.Interfaces.IColumnNamed, System.Attribute
+  ctor Magic.IndexedDb.SchemaAnnotations.MagicIndexAttribute(System.String columnName = null)
+  property System.String ColumnName { get; }
+class Magic.IndexedDb.SchemaAnnotations.MagicNameAttribute : Magic.IndexedDb.Interfaces.IColumnNamed, System.Attribute
+  ctor Magic.IndexedDb.SchemaAnnotations.MagicNameAttribute(System.String columnName)
+  property System.String ColumnName { get; }
+class Magic.IndexedDb.SchemaAnnotations.MagicNotMappedAttribute : System.Attribute
+  ctor Magic.IndexedDb.SchemaAnnotations.MagicNotMappedAttribute()
+static class Magic.IndexedDb.ServiceCollectionExtensions
+  method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Magic.IndexedDb.BlazorInteropMode interoptMode, System.Boolean isDebug)
+  method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Int64 jsMessageSizeBytes, System.Boolean isDebug)
+class Magic.IndexedDb.StoreRecord<T>
+  ctor Magic.IndexedDb.StoreRecord<T>()
+  property System.String DbName { get; set; }
+  property System.String StoreName { get; set; }
+  property T Record { get; set; }
+class Magic.IndexedDb.StoreSchema
+  ctor Magic.IndexedDb.StoreSchema()
+  property System.Boolean PrimaryKeyAuto { get; set; }
+  property System.Collections.Generic.List<System.Collections.Generic.List<System.String>> ColumnNamesInCompoundIndex { get; set; }
+  property System.Collections.Generic.List<System.String> ColumnNamesInCompoundKey { get; set; }
+  property System.Collections.Generic.List<System.String> Indexes { get; set; }
+  property System.Collections.Generic.List<System.String> UniqueIndexes { get; set; }
+  property System.Int32 Version { get; set; }
+  property System.String TableName { get; set; }
+class Magic.IndexedDb.UpdateRecord<T> : Magic.IndexedDb.StoreRecord<T>
+  ctor Magic.IndexedDb.UpdateRecord<T>()
+  property System.Collections.Generic.List<Magic.IndexedDb.Helpers.PrimaryKeys> Key { get; set; }
+class Magic.IndexedDb._Imports
+  ctor Magic.IndexedDb._Imports()
