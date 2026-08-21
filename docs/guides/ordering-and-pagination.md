@@ -1,0 +1,102 @@
+# Ordering and pagination
+
+Ordering is part of the query plan, but IndexedDB is not an in-memory LINQ provider. The available index paths, cursor fallback, de-duplication, and progressive delivery all affect how ordering can be executed.
+
+## Ordering a materialized query
+
+```csharp
+List<Person> ordered = await people
+    .OrderBy(person => person.LastName)
+    .Take(20)
+    .ToListAsync();
+```
+
+`ToListAsync()` applies the requested query ordering before materialization. An indexed ordering has the best chance of staying on an IndexedDB-native path. Ordering by a non-indexed property requires cursor processing.
+
+`OrderByDescending` follows the same rules:
+
+```csharp
+List<Person> newest = await people
+    .OrderByDescending(person => person.CreatedAt)
+    .Take(20)
+    .ToListAsync();
+```
+
+The current fluent API exposes one explicit `OrderBy` or `OrderByDescending`; it is not the full `IOrderedQueryable<T>` surface and does not expose `ThenBy`.
+
+## Progressive results
+
+`AsAsyncEnumerable()` prioritizes yielding records progressively. It does not promise that arrival order is the final requested order when work is split across execution paths.
+
+If final order is part of the application contract, either use `ToListAsync()` or explicitly materialize and sort the streamed values:
+
+```csharp
+List<Person> buffered = [];
+
+await foreach (Person person in people
+    .Where(person => person.IsActive)
+    .AsAsyncEnumerable(cancellationToken))
+{
+    buffered.Add(person);
+}
+
+List<Person> ordered = buffered
+    .OrderBy(person => person.LastName)
+    .ThenBy(person => person.Id)
+    .ToList();
+```
+
+## `Take` and `Skip`
+
+Magic IndexedDB's fluent contract requires `Take` before `Skip`:
+
+```csharp
+List<Person> page = await people
+    .OrderBy(person => person.Id)
+    .Take(pageSize)
+    .Skip(offset)
+    .ToListAsync();
+```
+
+In application terms, this represents the familiar pagination intent: skip `offset` rows and return `pageSize` rows. The method order is intentionally reversed because of the way the IndexedDB/Dexie path composes its limit and offset operations. The staged interfaces prevent calling `Take` after `Skip`.
+
+For page-number pagination:
+
+```csharp
+int offset = (pageNumber - 1) * pageSize;
+
+List<Person> page = await people
+    .OrderBy(person => person.Id)
+    .Take(pageSize)
+    .Skip(offset)
+    .ToListAsync();
+```
+
+Always supply a deterministic ordering for repeatable pages. Without a useful explicit order, changes to data or the chosen execution path can change page membership.
+
+## `TakeLast`
+
+```csharp
+List<Person> lastFive = await people
+    .OrderBy(person => person.CreatedAt)
+    .TakeLast(5)
+    .ToListAsync();
+```
+
+Magic may transform `TakeLast` using reverse traversal and a limit when the order/index path allows it. Otherwise, the cursor engine applies the requested semantics.
+
+## Stable cursor ordering
+
+The cursor engine normally considers explicit ordering, useful indexed predicate fields, and row insertion order when it builds a deterministic fallback order. Optimizer rewrites can change which indexed fields participate.
+
+Use `StableOrdering()` when a forced-cursor query must ignore inferred indexed predicate-field ordering and retain the cursor's stable scan order:
+
+```csharp
+List<Person> page = await people
+    .Cursor(person => person.Age > 30 || person.Name == "Ada")
+    .StableOrdering()
+    .Take(20)
+    .ToListAsync();
+```
+
+`StableOrdering()` forces cursor execution. In the current staged API, it returns `IMagicCursorStage<T>` and cannot be combined with a subsequent `OrderBy`; it stabilizes fallback cursor order rather than acting as a general explicit-sort modifier. It is not needed merely to make `ToListAsync()` respect an ordinary `OrderBy`.
