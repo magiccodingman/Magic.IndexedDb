@@ -49,6 +49,16 @@ Every pull request runs:
 
 Pushes to `master` run the same workflows again. A push to `release` starts `publish-nuget.yml`, which calls both validation workflows and does not build or publish the NuGet package until every validation job succeeds. This makes the release run a final independent gate even when the same commit passed on `master`.
 
+Core validation packages the library before the unit-test build so the package check starts without cached build manifests. Validation and release publishing use the same `.github/scripts/pack-nuget.sh` entry point.
+
+Release versions are based on the checked-in stable version line and the versions already present on NuGet. The workflow publishes one patch above whichever matching version is newer. Failed or retried workflow runs therefore do not consume or skip package versions. Version calculation fails safely if NuGet's version index cannot be read or validated.
+
+The version-selection regression tests can be run locally:
+
+```bash
+bash .github/scripts/test-calculate-package-version.sh
+```
+
 The macOS WebKit job is valuable coverage for Apple's browser engine, but Playwright's WebKit build is not the branded Safari application and is not an iPhone or iPad device. Real Safari and iOS device coverage requires a separate device service or owned Apple test hardware; it should be added when credentials and a stable device-testing provider are available.
 
 ## Test design rules

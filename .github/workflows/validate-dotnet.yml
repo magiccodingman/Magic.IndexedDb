@@ -39,22 +39,11 @@ jobs:
       - name: Restore unit tests
         run: dotnet restore Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj
 
-      - name: Run unit and contract tests
-        run: >-
-          dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj
-          --configuration Release
-          --no-restore
-          --logger "trx;LogFileName=core-validation.trx"
-          --results-directory artifacts/test-results
+      - name: Test package version calculation
+        run: bash .github/scripts/test-calculate-package-version.sh
 
-      - name: Pack the NuGet artifact
-        run: >-
-          dotnet pack Magic.IndexedDb/Magic.IndexedDb.csproj
-          --configuration Release
-          --no-restore
-          --output artifacts/package
-          -p:ContinuousIntegrationBuild=true
-          -p:GeneratePackageOnBuild=false
+      - name: Pack the NuGet artifact from a clean build state
+        run: bash .github/scripts/pack-nuget.sh artifacts/package
 
       - name: Verify package contents
         shell: bash
@@ -65,6 +54,14 @@ jobs:
           unzip -Z1 "${package}" | grep -Fx LICENSE.txt
           unzip -Z1 "${package}" | grep -Fx wizardHatIcon.png
           unzip -Z1 "${package}" | grep -F 'staticwebassets/'
+
+      - name: Run unit and contract tests
+        run: >-
+          dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj
+          --configuration Release
+          --no-restore
+          --logger "trx;LogFileName=core-validation.trx"
+          --results-directory artifacts/test-results
 
       - name: Upload test results and package
         if: ${{ always() }}
