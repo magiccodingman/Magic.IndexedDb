@@ -4,7 +4,7 @@ Magic IndexedDB is a LINQ-to-IndexedDB query engine and typed browser database l
 
 Instead of treating LINQ as an in-memory filter over an already-loaded collection, Magic IndexedDB translates supported predicates into an IndexedDB-aware query plan. It uses single-field and compound indexes where possible, partitions complex AND/OR expressions, and uses an optimized cursor engine for operations that IndexedDB cannot execute through an index.
 
-[Documentation](docs/README.md) · [NuGet](https://www.nuget.org/packages/Magic.IndexedDb/) · [Version 3 upgrade guide](docs/upgrading/version-3.md) · [Issues](https://github.com/magiccodingman/Magic.IndexedDb/issues)
+[Documentation](docs/README.md) · [NuGet](https://www.nuget.org/packages/Magic.IndexedDb/) · [.NET 10 upgrade notes](docs/upgrading/dotnet-10.md) · [Issues](https://github.com/magiccodingman/Magic.IndexedDb/issues)
 
 ## Why use Magic IndexedDB?
 
@@ -14,7 +14,7 @@ Instead of treating LINQ as an in-memory filter over an already-loaded collectio
 - **Choose the execution strategy deliberately.** `Where(...)` preserves opportunities for index optimization; `Cursor(...)` explicitly selects cursor evaluation when a scan is appropriate.
 - **Process large results progressively.** `AsAsyncEnumerable()` streams interop results so applications can begin processing before materializing the full returned collection.
 - **Define schemas in C#.** Tables describe their primary keys, indexes, compound indexes, persisted names, and valid databases through typed contracts.
-- **Store practical object models.** Version 3 supports nested objects and collections, custom JSON converters, Unicode and escaped text, and explicit constructor materialization.
+- **Store practical object models.** The current release supports nested objects and collections, custom JSON converters, Unicode and escaped text, and explicit constructor materialization.
 
 Magic IndexedDB is a strong fit for offline-first Blazor applications, progressive web apps, local browser caches, disconnected workflows, and client-side datasets that need more than simple key/value access.
 
@@ -31,7 +31,7 @@ This provides a LINQ-oriented programming model without pretending IndexedDB is 
 
 ## Requirements
 
-Magic IndexedDB 3 targets .NET 10. Applications that must remain on .NET 8 should continue using the 2.x NuGet line.
+Magic IndexedDB remains on its version 2 release line. The current codebase targets .NET 10; applications that must remain on .NET 8 should use an earlier compatible package release.
 
 The current package supports Blazor WebAssembly and Blazor applications using JavaScript interop over SignalR. Browser storage behavior and quota remain controlled by the user's browser.
 
@@ -134,7 +134,7 @@ Version 1 documentation remains available in the [legacy archive](MagicIndexDbWi
 
 ## Schema evolution
 
-The automated migration protocol is still under construction. Version 3 does not automatically migrate existing browser data when a C# model changes. Plan and test persisted-name, index, primary-key, and required-property changes against data produced by the previously released application.
+The automated migration protocol is still under construction. Magic IndexedDB does not automatically migrate existing browser data when a C# model changes. Plan and test persisted-name, index, primary-key, and required-property changes against data produced by the previously released application.
 
 See [schema evolution and migrations](docs/guides/schema-evolution.md) before changing a deployed schema.
 

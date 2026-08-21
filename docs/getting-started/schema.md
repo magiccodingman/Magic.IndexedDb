@@ -124,7 +124,7 @@ Compound indexes let the optimizer satisfy compatible multi-field predicates wit
 
 ## Nested data and collections
 
-Stored models may contain nested objects, arrays, lists, sets, dictionaries, and nested collections. Version 3 preserves configured JSON converters, escaped strings, Unicode text, `MagicName` mappings inside nested objects, and supported concrete collection shapes when values are materialized.
+Stored models may contain nested objects, arrays, lists, sets, dictionaries, and nested collections. The current release preserves configured JSON converters, escaped strings, Unicode text, `MagicName` mappings inside nested objects, and supported concrete collection shapes when values are materialized.
 
 Indexes and primary keys still need to describe values IndexedDB can use as keys. Do not assume an arbitrary nested object is indexable merely because it can be serialized.
 
@@ -134,4 +134,4 @@ Most mutable table models should keep a public parameterless constructor. Immuta
 
 ## Schema changes
 
-Defining the C# schema does not provide an automatic migration protocol in version 3. Before changing table names, key paths, indexes, or persisted property names, read [schema evolution](../guides/schema-evolution.md).
+Defining the C# schema does not provide an automatic migration protocol. Before changing table names, key paths, indexes, or persisted property names, read [schema evolution](../guides/schema-evolution.md).

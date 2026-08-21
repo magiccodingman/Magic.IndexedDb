@@ -1,6 +1,6 @@
 # Schema evolution and migrations
 
-Automated schema migrations are still under construction in Magic IndexedDB 3. Do not rely on the library to generate or run a migration simply because a C# model changed.
+Automated schema migrations are still under construction in Magic IndexedDB. Do not rely on the library to generate or run a migration simply because a C# model changed.
 
 ## What creates the initial schema
 

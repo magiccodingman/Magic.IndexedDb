@@ -28,7 +28,7 @@ await foreach (Person person in table
 }
 ```
 
-Version 3's streaming transport drains chunks while JavaScript is producing them, measures chunk limits in UTF-8 bytes, avoids splitting Unicode code points, and disposes interop stream resources. JavaScript failures and incomplete streams propagate to .NET instead of silently producing a partial success.
+The current streaming transport drains chunks while JavaScript is producing them, measures chunk limits in UTF-8 bytes, avoids splitting Unicode code points, and disposes interop stream resources. JavaScript failures and incomplete streams propagate to .NET instead of silently producing a partial success.
 
 Streaming reduces the need to hold the complete returned collection at once, but it is not a promise of constant memory for every query. The browser engine may still need metadata, keys, de-duplication state, ordered subsets, or batches to evaluate the plan.
 

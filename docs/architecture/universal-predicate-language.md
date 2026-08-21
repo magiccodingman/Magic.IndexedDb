@@ -4,7 +4,7 @@ Magic IndexedDB separates language-specific expressions from its browser query p
 
 ## Stability notice
 
-The supported public integration surface in version 3 is the C# `IMagicIndexedDb` API. The JavaScript modules, transport envelope, and direct query functions are package implementation details and may evolve. Treat this page as contributor architecture documentation, not as a promise that external JavaScript can call an unversioned public SDK.
+The supported public integration surface is the C# `IMagicIndexedDb` API. The JavaScript modules, transport envelope, and direct query functions are package implementation details and may evolve. Treat this page as contributor architecture documentation, not as a promise that external JavaScript can call an unversioned public SDK.
 
 ## Node model
 
@@ -166,7 +166,7 @@ The current camel-case shape is:
 | `version` | Database version passed to the store definition |
 | `storeSchemas` | Object-store definitions |
 | `tableName` | IndexedDB object-store name |
-| table `version` | Reserved table-schema version field; generated version 3 schemas currently leave it at `0` |
+| table `version` | Reserved table-schema version field; generated schemas currently leave it at `0` |
 | `primaryKeyAuto` | Whether the single primary key auto-increments |
 | `uniqueIndexes` | Unique index property names |
 | `indexes` | Ordinary index property names |

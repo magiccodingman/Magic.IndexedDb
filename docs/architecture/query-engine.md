@@ -63,7 +63,7 @@ Rows missing a property required by the cursor predicate are skipped because the
 
 `AsAsyncEnumerable()` uses the streamed interop path. The .NET consumer drains chunks while JavaScript produces them, and duplicate primary keys are filtered by the engine. Progressive delivery does not promise final arrival order across query paths.
 
-The internal interop envelope is versioned. Version 3 sends arguments as raw JSON elements rather than JSON strings nested inside JSON, preserving falsey values and avoiding extra parsing. The JavaScript reader retains support for the earlier envelope.
+The internal interop envelope is versioned. The current transport sends arguments as raw JSON elements rather than JSON strings nested inside JSON, preserving falsey values and avoiding extra parsing. The JavaScript reader retains support for the earlier envelope.
 
 ## Performance implications
 

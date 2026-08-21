@@ -1,6 +1,6 @@
 # Public API reference
 
-This page summarizes the supported version 3 application surface. It is a guide to the interfaces and return contracts, not generated API documentation.
+This page summarizes the supported application surface. It is a guide to the interfaces and return contracts, not generated API documentation.
 
 ## Registration
 
@@ -122,7 +122,7 @@ Task<bool> IsOpenAsync();
 Task<bool> DoesExistAsync();
 ```
 
-The API manages one explicit database scope at a time. There are no public version 3 multi-database or all-database overloads.
+The API manages one explicit database scope at a time. There are no public multi-database or all-database overloads.
 
 ## Storage estimate
 

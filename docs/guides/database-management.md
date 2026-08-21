@@ -43,7 +43,7 @@ await database.DeleteAsync();
 
 `DeleteAsync()` removes the browser database and all of its object stores and records. A future query may create a new empty database from the current schema.
 
-Version 3 does not expose a public multi-database overload, parameterless `Database()`, `CloseAll`, or `DeleteAll`. Call the single-database API for each explicit database your application owns if such coordination is required.
+The current API does not expose a public multi-database overload, parameterless `Database()`, `CloseAll`, or `DeleteAll`. Call the single-database API for each explicit database your application owns if such coordination is required.
 
 ## Clear one table instead
 

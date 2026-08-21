@@ -78,7 +78,7 @@ await people.Where(person =>
     (long)person.Access >= (long)Permissions.CanRead).ToListAsync();
 ```
 
-Version 3 recognizes explicit enum conversions used in comparisons. JSON enum converters configured through Magic's serialization settings are also honored during serialization.
+The current release recognizes explicit enum conversions used in comparisons. JSON enum converters configured through Magic's serialization settings are also honored during serialization.
 
 ## Logical composition
 
@@ -110,4 +110,4 @@ See [ordering and pagination](../guides/ordering-and-pagination.md) for the vali
 
 ## Treat the list as versioned
 
-This reference describes version 3, not every method LINQ exposes. A method being legal inside a C# expression tree does not make it translatable. Verify new expression shapes with tests against realistic IndexedDB data before depending on them in production.
+This reference describes the current supported expression surface, not every method LINQ exposes. A method being legal inside a C# expression tree does not make it translatable. Verify new expression shapes with tests against realistic IndexedDB data before depending on them in production.

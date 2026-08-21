@@ -2,7 +2,7 @@
 
 Magic IndexedDB brings a LINQ-style query provider to IndexedDB for Blazor. It translates C# expression trees into an IndexedDB-aware query plan, uses indexes and compound indexes when it can, and falls back to its cursor engine when the requested operation cannot be expressed as an indexed lookup.
 
-Version 3 targets .NET 10. Applications that must remain on .NET 8 should use the 2.x NuGet line.
+Magic IndexedDB remains on its version 2 release line. The current codebase targets .NET 10; applications that must remain on .NET 8 should use an earlier compatible package release.
 
 ## Why it exists
 
@@ -43,10 +43,10 @@ Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ord
 
 ## Upgrading and legacy versions
 
-- [Upgrade to version 3](upgrading/version-3.md)
+- [.NET 10 upgrade notes](upgrading/dotnet-10.md)
 - [Version 1 documentation](../MagicIndexDbWiki/Version-1.0-Legacy.md)
 
-## Important version 3 status
+## Important current-release status
 
 - Automated schema migrations are still under construction. Treat schema changes as explicit application work and test them against existing browser data.
 - `ToListAsync()` returns a materialized result with the requested query ordering applied.
