@@ -340,13 +340,13 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
 
     public async Task<string> TestWhere50() {
         var result = RunTest("Ordering Test", await (await SetupData()).OrderBy(x => x._Age).ToListAsync(),
-            PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id));
+            PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id), ordered: true);
         return result.Success ? "OK" : result.Message;
     }
 
     public async Task<string> TestWhere51() {
         var result = RunTest("Order Descending Test", await (await SetupData()).OrderByDescending(x => x._Age).ToListAsync(),
-            PersonData.persons.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id));
+            PersonData.persons.OrderByDescending(x => x._Age).ThenBy(x => x._Id), ordered: true);
         return result.Success ? "OK" : result.Message;
 
         var asdfsdfdsfsdf = await (await SetupData()).OrderBy(x => x._Age).Skip(3).ToListAsync();
@@ -354,13 +354,13 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
 
     public async Task<string> TestWhere52() {
         var result = RunTest("Skip Test", await (await SetupData()).OrderBy(x => x._Age).Skip(3).ToListAsync(),
-            PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3));
+            PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3), ordered: true);
         return result.Success ? "OK" : result.Message;
     }
 
     public async Task<string> TestWhere53() {
         var result = RunTest("Take Test", await (await SetupData()).OrderBy(x => x._Age).Take(2).ToListAsync(),
-            PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id).Take(2));
+            PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id).Take(2), ordered: true);
         return result.Success ? "OK" : result.Message;
     }
 
@@ -371,7 +371,7 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
                 * Take last is special operation that changes order,
                 * but this altered version replicates the LINQ to SQL desired result
                 */
-                PersonData.persons.OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2));
+                PersonData.persons.OrderBy(x => x.Name).ThenBy(x => x._Id).Take(2), ordered: true);
             return result.Success ? "OK" : result.Message;
     }
 
@@ -382,7 +382,7 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
                 * Take last is special operation that changes order,
                 * but this altered version replicates the LINQ to SQL desired result
                 */
-                PersonData.persons.OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2));
+                PersonData.persons.OrderBy(x => x.Name).ThenBy(x => x._Id).TakeLast(2), ordered: true);
             return result.Success ? "OK" : result.Message;
 
         var totalPersons = await (await SetupData()).CountAsync();
@@ -430,7 +430,7 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
     
     public async Task<string> TestWhere66() {
         var result = RunTest("TakeLast Cursor Test", await (await SetupData()).OrderBy(x => x._Age).TakeLast(2).ToListAsync(),
-                PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id).TakeLast(2));
+                PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id).TakeLast(2), ordered: true);
             return result.Success ? "OK" : result.Message;
 
     }
@@ -538,7 +538,7 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
                                 .Take(5)
                             .Skip(3)
                             .ToListAsync(),
-        PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3).Take(5));
+        PersonData.persons.OrderBy(x => x._Age).ThenBy(x => x._Id).Skip(3).Take(5), ordered: true);
     return result.Success ? "OK" : result.Message;
     }
 
@@ -547,7 +547,7 @@ public class WhereTestPage(IMagicIndexedDb magic) : TestPageBase
             await (await SetupData()).OrderByDescending(x => x._Age)
                                 .TakeLast(5)
                             .ToListAsync(),
-        PersonData.persons.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(5));
+        PersonData.persons.OrderByDescending(x => x._Age).ThenByDescending(x => x._Id).TakeLast(5), ordered: true);
     return result.Success ? "OK" : result.Message;
 
     }

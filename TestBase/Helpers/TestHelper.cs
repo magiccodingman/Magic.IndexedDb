@@ -9,7 +9,10 @@ namespace TestBase.Helpers;
 
 public static class TestValidator
 {
-    public static TestResponse ValidateLists<T>(IEnumerable<T> correctResults, IEnumerable<T> testResults)
+    public static TestResponse ValidateLists<T>(
+        IEnumerable<T> correctResults,
+        IEnumerable<T> testResults,
+        bool ordered = false) where T : class
     {
         if (correctResults == null || testResults == null)
             return new TestResponse { Success = false, Message = "Error: One or both input lists are null." };
@@ -32,41 +35,44 @@ public static class TestValidator
         if (!primaryKeys.Any())
             return new TestResponse { Success = false, Message = "Error: No primary keys found for type." };
 
+        var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(prop => !Attribute.IsDefined(prop, typeof(MagicNotMappedAttribute)))
+            .ToArray();
         var failureDetails = new List<string>();
 
-        // 🔍 Convert correct results into a dictionary for fast lookup by **property name**
-        var correctDictionary = correctList.ToDictionary(
-            item => primaryKeys.ToDictionary(
-                pk => pk.Property.DeclaringType.FullName + "." + pk.Property.Name,  // **Use fully qualified property name**
-                pk => pk.Property.GetValue(item)
-            ),
-            item => item
-        );
-
-        foreach (var actualItem in testList)
+        for (var index = 0; index < testList.Count; index++)
         {
+            var actualItem = testList[index];
             // Extract key properties from the actual item
             var actualKeyValues = primaryKeys
                 .Select(pk => (Property: pk.Property.Name, Value: pk.Property.GetValue(actualItem)))
                 .ToList();
 
-            // Find matching item in correctList using key properties
-            var expectedItem = correctList.FirstOrDefault(correctItem =>
-                primaryKeys.All(pk =>
-                    Equals(pk.Property.GetValue(correctItem), pk.Property.GetValue(actualItem))
-                )
-            );
+            var expectedItem = ordered
+                ? correctList[index]
+                : correctList.FirstOrDefault(correctItem =>
+                    primaryKeys.All(pk =>
+                        Equals(pk.Property.GetValue(correctItem), pk.Property.GetValue(actualItem))
+                    ));
 
-            if (expectedItem == null)
+            if (expectedItem is null)
             {
                 failureDetails.Add($"❌ No matching item found for Primary Key [{FormatKey(actualKeyValues)}].");
                 continue;
             }
 
-            // **Deeply compare object properties**
-            var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(prop => !Attribute.IsDefined(prop, typeof(MagicNotMappedAttribute)))
-                .ToArray();
+            if (!primaryKeys.All(pk =>
+                    Equals(pk.Property.GetValue(expectedItem), pk.Property.GetValue(actualItem))))
+            {
+                var expectedKeyValues = primaryKeys
+                    .Select(pk => (Property: pk.Property.Name, Value: pk.Property.GetValue(expectedItem)))
+                    .ToList();
+                var prefix = ordered ? $"Position {index}: " : string.Empty;
+                failureDetails.Add(
+                    $"❌ {prefix}Expected Primary Key [{FormatKey(expectedKeyValues)}], " +
+                    $"but received [{FormatKey(actualKeyValues)}].");
+                continue;
+            }
 
             var propertyDifferences = CompareObjects(expectedItem, actualItem, properties, $"Item[{FormatKey(actualKeyValues)}]");
 
@@ -81,7 +87,7 @@ public static class TestValidator
             : new TestResponse { Success = true };
     }
 
-    private static string FormatKey(List<(string Property, object Value)> keyValues)
+    private static string FormatKey(List<(string Property, object? Value)> keyValues)
     {
         if (keyValues == null || keyValues.Count == 0)
             return "NULL";

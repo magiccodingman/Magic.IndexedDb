@@ -1,0 +1,109 @@
+name: Publish NuGet
+
+on:
+  push:
+    branches:
+      - release
+
+concurrency:
+  group: publish-nuget-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  core-validation:
+    uses: ./.github/workflows/validate-dotnet.yml
+    permissions:
+      contents: read
+
+  browser-validation:
+    uses: ./.github/workflows/validate-browsers.yml
+    permissions:
+      contents: read
+
+  publish:
+    name: Build and publish package
+    needs:
+      - core-validation
+      - browser-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Calculate package version
+        id: version
+        shell: bash
+        run: |
+          current_version="$(sed -nE 's:.*<Version>([^<]+)</Version>.*:\1:p' Magic.IndexedDb/Magic.IndexedDb.csproj)"
+
+          if [[ ! "${current_version}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Expected a stable major.minor.patch Version in Magic.IndexedDb.csproj, found '${current_version}'." >&2
+            exit 1
+          fi
+
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          next_patch="$((10#${patch} + GITHUB_RUN_NUMBER))"
+          package_version="${major}.${minor}.${next_patch}"
+
+          echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
+          echo "Publishing Magic.IndexedDb ${package_version} from ${GITHUB_SHA}."
+
+      - name: Restore package project
+        run: dotnet restore Magic.IndexedDb/Magic.IndexedDb.csproj
+
+      - name: Pack
+        run: >-
+          dotnet pack Magic.IndexedDb/Magic.IndexedDb.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts
+          -p:Version=${{ steps.version.outputs.package_version }}
+          -p:PackageVersion=${{ steps.version.outputs.package_version }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: Magic.IndexedDb-${{ steps.version.outputs.package_version }}
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Request temporary NuGet API key
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish to NuGet.org
+        run: >-
+          dotnet nuget push artifacts/*.nupkg
+          --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Write release summary
+        run: |
+          echo "## Published Magic.IndexedDb ${{ steps.version.outputs.package_version }}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Source commit: \`${GITHUB_SHA}\`" >> "${GITHUB_STEP_SUMMARY}"

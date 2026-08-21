@@ -89,6 +89,73 @@ public sealed class SerializationContractTests
     }
 
     [TestMethod]
+    public void DictionaryProperties_RoundTripInsideEntityCollections()
+    {
+        DictionaryContainer[] expected =
+        [
+            new()
+            {
+                Id = 7,
+                Metadata = new Dictionary<string, object?>
+                {
+                    ["count"] = 2,
+                    ["enabled"] = false,
+                    ["label"] = "value",
+                    ["missing"] = null
+                }
+            }
+        ];
+
+        var json = MagicSerializationHelper.SerializeObject<IEnumerable<DictionaryContainer>>(expected);
+        var actual = MagicSerializationHelper
+            .DeserializeObject<IEnumerable<DictionaryContainer>>(json)?
+            .Single();
+
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(7, actual.Id);
+        Assert.AreEqual(4, actual.Metadata.Count);
+        Assert.AreEqual(2, ((JsonElement)actual.Metadata["count"]!).GetInt32());
+        Assert.IsFalse(((JsonElement)actual.Metadata["enabled"]!).GetBoolean());
+        Assert.AreEqual("value", ((JsonElement)actual.Metadata["label"]!).GetString());
+        Assert.IsNull(actual.Metadata["missing"]);
+    }
+
+    [TestMethod]
+    public void Dictionaries_RoundTripInsideNestedCollections()
+    {
+        var expected = new DictionaryCollections
+        {
+            Values =
+            [
+                new Dictionary<string, int> { ["one"] = 1 },
+                new Dictionary<string, int> { ["two"] = 2 }
+            ]
+        };
+
+        var json = MagicSerializationHelper.SerializeObject(expected);
+        var actual = MagicSerializationHelper.DeserializeObject<DictionaryCollections>(json);
+
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(1, actual.Values[0]["one"]);
+        Assert.AreEqual(2, actual.Values[1]["two"]);
+    }
+
+    [TestMethod]
+    public void ReadOnlyDictionaryProperties_RoundTripAsJsonObjects()
+    {
+        var expected = new ReadOnlyDictionaryContainer
+        {
+            Values = new Dictionary<string, int> { ["answer"] = 42 }
+        };
+
+        var json = MagicSerializationHelper.SerializeObject(expected);
+        var actual = MagicSerializationHelper.DeserializeObject<ReadOnlyDictionaryContainer>(json);
+
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(42, actual.Values["answer"]);
+    }
+
+    [TestMethod]
     public void ConfiguredEnumConverter_IsHonoredInBothDirections()
     {
         var settings = new MagicJsonSerializationSettings();
@@ -116,6 +183,49 @@ public sealed class SerializationContractTests
         StringAssert.Contains(json, "fixed-date");
         Assert.IsNotNull(actual);
         Assert.AreEqual(FixedDateConverter.Value, actual.Date);
+    }
+
+    [TestMethod]
+    public void BrowserRelevantScalarTypes_RoundTripWithoutPrecisionOrIdentityLoss()
+    {
+        var expected = new ScalarValues
+        {
+            Identifier = Guid.NewGuid(),
+            Signed = long.MinValue + 17,
+            Unsigned = ulong.MaxValue - 17,
+            Money = 7922816251426433759354395.0335m,
+            Moment = new DateTimeOffset(2040, 2, 29, 12, 34, 56, TimeSpan.FromHours(-5))
+        };
+
+        var actual = MagicSerializationHelper.DeserializeObject<ScalarValues>(
+            MagicSerializationHelper.SerializeObject(expected));
+
+        Assert.IsNotNull(actual);
+        Assert.AreEqual(expected.Identifier, actual.Identifier);
+        Assert.AreEqual(expected.Signed, actual.Signed);
+        Assert.AreEqual(expected.Unsigned, actual.Unsigned);
+        Assert.AreEqual(expected.Money, actual.Money);
+        Assert.AreEqual(expected.Moment, actual.Moment);
+    }
+
+    [TestMethod]
+    public void NullAndEmptyCollectionShapes_RemainDistinct()
+    {
+        var expected = new NullableShapes
+        {
+            Missing = null,
+            Empty = [],
+            Values = [null, "", "value"]
+        };
+
+        var actual = MagicSerializationHelper.DeserializeObject<NullableShapes>(
+            MagicSerializationHelper.SerializeObject(expected));
+
+        Assert.IsNotNull(actual);
+        Assert.IsNull(actual.Missing);
+        Assert.IsNotNull(actual.Empty);
+        Assert.AreEqual(0, actual.Empty.Count);
+        CollectionAssert.AreEqual(expected.Values, actual.Values);
     }
 
     private sealed class EscapedValue
@@ -149,9 +259,42 @@ public sealed class SerializationContractTests
         public LargeStatus Status { get; set; }
     }
 
+    private sealed class DictionaryContainer
+    {
+        public int Id { get; set; }
+        public Dictionary<string, object?> Metadata { get; set; } = [];
+    }
+
+    private sealed class DictionaryCollections
+    {
+        public List<Dictionary<string, int>> Values { get; set; } = [];
+    }
+
+    private sealed class ReadOnlyDictionaryContainer
+    {
+        public IReadOnlyDictionary<string, int> Values { get; set; } =
+            new Dictionary<string, int>();
+    }
+
     private sealed class DateValue
     {
         public DateTime Date { get; set; }
+    }
+
+    private sealed class ScalarValues
+    {
+        public Guid Identifier { get; set; }
+        public long Signed { get; set; }
+        public ulong Unsigned { get; set; }
+        public decimal Money { get; set; }
+        public DateTimeOffset Moment { get; set; }
+    }
+
+    private sealed class NullableShapes
+    {
+        public List<string>? Missing { get; set; }
+        public List<string> Empty { get; set; } = [];
+        public List<string?> Values { get; set; } = [];
     }
 
     private sealed class FixedDateConverter : JsonConverter<DateTime>

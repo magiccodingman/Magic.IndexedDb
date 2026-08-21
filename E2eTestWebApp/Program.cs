@@ -16,7 +16,8 @@ public class Program
 
         var builder = WebApplication.CreateBuilder(args);
         _ = builder.Services.AddRazorComponents().AddInteractiveServerComponents();
-        _ = builder.Services.AddMagicBlazorDB(BlazorInteropMode.WASM, true);
+        // Deliberately tiny in tests so every streamed entity exercises multi-chunk transport.
+        _ = builder.Services.AddMagicBlazorDB(64, true);
         _ = builder.Services.AddSingleton(new DbStore()
         {
             Name = "OpenTest.RegisteredOpen2",

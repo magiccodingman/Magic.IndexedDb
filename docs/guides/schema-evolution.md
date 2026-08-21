@@ -14,10 +14,13 @@ Treat these as persisted-data changes:
 - Adding or removing an index or compound index
 - Changing a primary key or its auto-increment behavior
 - Changing the serialized type or meaning of a property
+- Changing an enum between numeric and named-string storage
 - Adding required data that older records do not contain
 - Changing constructor requirements for materialization
 
 Test every such change against a copy of realistic data created by the previously released application.
+
+String-backed enum names avoid ordinal changes when members are reordered, but enabling a string-enum converter does not rewrite existing numeric records. A database containing both `1` and `"Active"` requires an explicit migration strategy; a filter for one representation does not automatically query both.
 
 ## Keep persisted names stable
 
