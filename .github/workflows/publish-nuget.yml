@@ -29,6 +29,7 @@ jobs:
 
   publish:
     name: Build and publish package
+    environment: release
     needs:
       - core-validation
       - browser-validation
