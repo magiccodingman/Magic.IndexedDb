@@ -1,6 +1,12 @@
 "use strict";
 
+import { setDebugMode } from "./utilities/utilityHelpers.js";
+
 const moduleCache = new Map(); // Cache for dynamically imported modules
+
+export function configureDebug(enabled) {
+    setDebugMode(enabled);
+}
 
 async function getModule(modulePath) {
     if (moduleCache.has(modulePath)) {
@@ -45,8 +51,7 @@ export async function JsHandler(isVoid, modulePath, methodName, parameters) {
 
 export async function streamedJsHandler(streamRef, instanceId, dotNetHelper, maxChunkBytes) {
     if (!streamRef || typeof streamRef.arrayBuffer !== "function") {
-        console.error("Invalid stream reference received.");
-        return new Uint8Array();
+        throw new TypeError("Invalid stream reference received.");
     }
 
     try {
@@ -59,22 +64,24 @@ export async function streamedJsHandler(streamRef, instanceId, dotNetHelper, max
         let parsedData = JSON.parse(jsonText);
         jsonText = null; // Free memory
 
-        let { modulePath, methodName, isVoid, yieldResults, parameters = [], isDebug } = parsedData;
+        let { protocolVersion = 1, modulePath, methodName, isVoid, yieldResults, parameters = [] } = parsedData;
 
         // Validate modulePath
         if (!modulePath || typeof modulePath !== "string") {
-            console.error("Invalid module path received.");
-            return new Uint8Array(new TextEncoder().encode(JSON.stringify({ error: "Invalid module path." })));
+            throw new TypeError("Invalid module path received.");
         }
 
         // Dynamically import the module
         const targetModule = await getModule(modulePath);
         if (typeof targetModule[methodName] !== "function") {
-            console.error(`Method '${methodName}' not found in ${modulePath}.`);
-            return new Uint8Array(new TextEncoder().encode(JSON.stringify({ error: `Method '${methodName}' not found.` })));
+            throw new Error(`Method '${methodName}' not found in ${modulePath}.`);
         }
 
-        let safeParameters = parameters.map(param => JSON.parse(param));
+        // Protocol v1 encoded every argument as a JSON string. Version 2 carries
+        // actual JSON values and avoids the extra parse/copy for every invocation.
+        let safeParameters = protocolVersion >= 2
+            ? parameters
+            : parameters.map(param => JSON.parse(param));
 
         // If yielding results, stream asynchronously
         if (yieldResults) {
@@ -108,6 +115,7 @@ export async function streamedJsHandler(streamRef, instanceId, dotNetHelper, max
                     await dotNetHelper.invokeMethodAsync("ProcessJsChunk", instanceId, "STREAM_COMPLETE", -1, "", 0, 1);
                 } catch (error) {
                     console.error("Streaming error:", error);
+                    throw error;
                 }
             }
             return;
@@ -123,21 +131,37 @@ export async function streamedJsHandler(streamRef, instanceId, dotNetHelper, max
         }
 
         // Ensure result is a valid JSON response
-        let responseJson = JSON.stringify(result || {});
+        let responseJson = JSON.stringify(result === undefined ? null : result);
         let encodedResponse = new TextEncoder().encode(responseJson);
         return new Uint8Array(encodedResponse);
     } catch (error) {
         console.error("Error handling streamed JS:", error);
-        return new Uint8Array(new TextEncoder().encode(JSON.stringify({ error: "Unexpected error in JS." })));
+        throw error;
     }
 }
 
 
-// Utility function to split large JSON strings into 31KB chunks
+// Split on Unicode code-point boundaries while measuring the actual UTF-8 bytes
+// sent over interop. JavaScript string length counts UTF-16 code units instead.
 function chunkString(str, size) {
+    const maxBytes = Number.isFinite(size) && size > 0 ? size : 31 * 1024;
+    const encoder = new TextEncoder();
     const chunks = [];
-    for (let i = 0; i < str.length; i += size) {
-        chunks.push(str.substring(i, i + size));
+    let currentChunk = "";
+    let currentBytes = 0;
+
+    for (const codePoint of str) {
+        const codePointBytes = encoder.encode(codePoint).byteLength;
+        if (currentChunk && currentBytes + codePointBytes > maxBytes) {
+            chunks.push(currentChunk);
+            currentChunk = "";
+            currentBytes = 0;
+        }
+
+        currentChunk += codePoint;
+        currentBytes += codePointBytes;
     }
+
+    if (currentChunk || str.length === 0) chunks.push(currentChunk);
     return chunks;
 }

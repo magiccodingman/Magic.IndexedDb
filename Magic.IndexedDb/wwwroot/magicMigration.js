@@ -1,10 +1,12 @@
+import { debugLog } from "./utilities/utilityHelpers.js";
+
 export class MagicMigration {
     constructor(db) {
         this.db = db;
     }
 
     Initialize() {
-        console.log("Using Dexie from MagicDB:", this.db);
+        debugLog("Using Dexie from MagicDB:", this.db);
         // You can now do any Dexie operations here
     }
 }

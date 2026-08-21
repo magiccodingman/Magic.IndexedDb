@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestServer.Client", "TestSe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestBase", "TestBase\TestBase.csproj", "{6F5DD4C3-CCC8-4E79-8FA1-D334DED6A5A3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Magic.IndexedDb.UnitTests", "Magic.IndexedDb.UnitTests\Magic.IndexedDb.UnitTests.csproj", "{C48F43AF-3A75-4B56-9E59-4B6722BC1858}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,6 +53,10 @@ Global
 		{6F5DD4C3-CCC8-4E79-8FA1-D334DED6A5A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6F5DD4C3-CCC8-4E79-8FA1-D334DED6A5A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6F5DD4C3-CCC8-4E79-8FA1-D334DED6A5A3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C48F43AF-3A75-4B56-9E59-4B6722BC1858}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C48F43AF-3A75-4B56-9E59-4B6722BC1858}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C48F43AF-3A75-4B56-9E59-4B6722BC1858}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C48F43AF-3A75-4B56-9E59-4B6722BC1858}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

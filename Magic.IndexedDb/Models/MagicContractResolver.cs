@@ -19,8 +19,13 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         // ✅ Handle primitive types before assuming it's complex
         if (PropertyMappingCache.IsSimpleType(typeToConvert))
         {
-            return (T?)ReadSimpleType(ref reader, typeToConvert);
+            return (T?)ReadSimpleType(ref reader, typeToConvert, options);
         }
+
+        // Dictionaries are JSON objects, even though they also implement IEnumerable.
+        // Let System.Text.Json handle its supported key contracts and object values.
+        if (IsDictionaryType(typeToConvert))
+            return (T?)DeserializePassthrough(ref reader, typeToConvert, options);
 
         // ✅ Explicitly check if the type is `JsonElement`
         if (typeToConvert == typeof(JsonElement))
@@ -62,25 +67,40 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
     private object CreateObjectFromDictionary(Type type, Dictionary<string, object?> propertyValues, SearchPropEntry search)
     {
-        // 🚀 If there's a constructor with parameters, use it
-        if (search.ConstructorParameterMappings.Count > 0)
+        object obj;
+        if (search.Constructor is { } constructor && search.HasConstructorParameters)
         {
-            var constructorArgs = new object?[search.ConstructorParameterMappings.Count];
-            foreach (var (paramName, index) in search.ConstructorParameterMappings)
+            var parameters = constructor.GetParameters();
+            var constructorArgs = new object?[parameters.Length];
+            for (var index = 0; index < parameters.Length; index++)
             {
-                if (propertyValues.TryGetValue(paramName, out var value))
+                var parameter = parameters[index];
+                if (parameter.Name != null && propertyValues.TryGetValue(parameter.Name, out var value))
+                {
                     constructorArgs[index] = value;
+                    propertyValues.Remove(parameter.Name);
+                }
+                else if (parameter.HasDefaultValue)
+                {
+                    constructorArgs[index] = parameter.DefaultValue;
+                }
                 else
-                    constructorArgs[index] = GetDefaultValue(type.GetProperty(paramName)?.PropertyType ?? typeof(object));
+                {
+                    constructorArgs[index] = GetDefaultValue(parameter.ParameterType);
+                }
             }
 
-            return search.InstanceCreator(constructorArgs) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
+            obj = search.InstanceCreator(constructorArgs)
+                ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
+        }
+        else
+        {
+            obj = search.InstanceCreator(Array.Empty<object?>())
+                ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
         }
 
-        // 🚀 Use parameterless constructor
-        var obj = search.InstanceCreator(Array.Empty<object?>()) ?? throw new InvalidOperationException($"Failed to create instance of type {type.Name}.");
-
-        // 🚀 Assign property values
+        // Constructor-bound values and mutable properties are intentionally handled
+        // together so immutable and hybrid models both materialize completely.
         foreach (var (propName, value) in propertyValues)
         {
             if (search.propertyEntries.TryGetValue(propName, out var propEntry))
@@ -115,7 +135,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             throw new JsonException($"Expected StartObject token for type {type.Name}.");
 
         // 🔥 Step 1: Create a dictionary to store extracted values
-        var propertyValues = new Dictionary<string, object?>();
+        var propertyValues = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
         var properties = PropertyMappingCache.GetTypeOfTProperties(type);
         while (reader.Read())
@@ -147,8 +167,12 @@ internal class MagicContractResolver<T> : JsonConverter<T>
                     continue;
                 }
 
-                // Skip interface-based properties that should never be assigned
-                if (mpe.Property.DeclaringType?.IsInterface == true || !mpe.Property.CanWrite)
+                // Read-only properties are still valid when they bind to the selected
+                // constructor. Only skip them when there is no constructor parameter.
+                var isConstructorBound = properties.ConstructorParameterMappings
+                    .ContainsKey(csharpPropertyName);
+                if (mpe.Property.DeclaringType?.IsInterface == true ||
+                    (!mpe.Property.CanWrite && !isConstructorBound))
                 {
                     reader.Skip();
                     continue;
@@ -156,13 +180,14 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
                 try
                 {
-                    // Extract values and store them in the dictionary
                     object? value = ReadPropertyValue(ref reader, mpe, options);
                     propertyValues[csharpPropertyName] = value;
                 }
-                catch
+                catch (Exception ex) when (ex is not JsonException)
                 {
-                    // do nothing
+                    throw new JsonException(
+                        $"Could not read JSON property '{jsonPropertyName}' as {mpe.Property.PropertyType.FullName} on {type.FullName}.",
+                        ex);
                 }
             }
             else
@@ -201,18 +226,18 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             return ReadComplexObject(ref reader, propertyType, options);
         }
 
-        return ReadSimpleType(ref reader, propertyType);
+        return ReadSimpleType(ref reader, propertyType, options);
     }
 
     /// <summary>
     /// Reads primitive and simple types efficiently.
     /// </summary>
-    private object? ReadSimpleType(ref Utf8JsonReader reader, Type type)
+    private object? ReadSimpleType(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null)
             return null;
 
-        return JsonSerializer.Deserialize(ref reader, type);
+        return DeserializePassthrough(ref reader, type, options);
     }
 
     /// <summary>
@@ -241,14 +266,18 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
             object? item;
 
+            if (typeof(IEnumerable).IsAssignableFrom(itemType) && itemType != typeof(string))
+            {
+                item = ReadIEnumerable(ref reader, itemType, options);
+            }
             // 🔥 If it's a complex type, we need to deserialize it recursively
-            if (PropertyMappingCache.IsComplexType(itemType))
+            else if (PropertyMappingCache.IsComplexType(itemType))
             {
                 item = ReadComplexObject(ref reader, itemType, options);
             }
             else
             {
-                item = ReadSimpleType(ref reader, itemType);
+                item = ReadSimpleType(ref reader, itemType, options);
             }
 
             list.Add(item);
@@ -262,7 +291,20 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             return array;
         }
 
-        return list;
+        if (collectionType.IsAssignableFrom(listType))
+            return list;
+
+        var enumerableType = typeof(IEnumerable<>).MakeGenericType(itemType);
+        var enumerableConstructor = collectionType.GetConstructor([enumerableType]);
+        if (enumerableConstructor != null)
+            return enumerableConstructor.Invoke([list]);
+
+        var hashSetType = typeof(HashSet<>).MakeGenericType(itemType);
+        if (collectionType.IsAssignableFrom(hashSetType))
+            return Activator.CreateInstance(hashSetType, list);
+
+        throw new JsonException(
+            $"Collection type {collectionType.FullName} cannot be restored from a JSON array.");
     }
 
     public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
@@ -281,7 +323,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             return;
         }
 
-        if (SerializeSimple(writer, value))
+        if (SerializeSimple(writer, value, options))
         {
             return;
         }
@@ -299,7 +341,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
     /// <summary>
     /// 🔥 Serializes primitive & simple types
     /// </summary>
-    private bool SerializeSimple(Utf8JsonWriter writer, object value)
+    private bool SerializeSimple(Utf8JsonWriter writer, object? value, JsonSerializerOptions options)
     {
         if (value == null)
         {
@@ -312,7 +354,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         // Handle simple or primitive types directly
         if (type == typeof(string) || PropertyMappingCache.IsSimpleType(type))
         {
-            WriteSimpleType(writer, value);
+            WriteSimpleType(writer, value, options);
             return true;
         }
 
@@ -332,13 +374,25 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
         var type = value.GetType();
 
+        if (IsDictionaryType(type))
+        {
+            JsonSerializer.Serialize(writer, value, type, GetPassthroughOptions(type, options));
+            return true;
+        }
+
         if (value is IEnumerable enumerable && type != typeof(string))
         {
             writer.WriteStartArray();
             foreach (var item in enumerable)
             {
-                if (SerializeSimple(writer, item))
+                if (SerializeSimple(writer, item, options))
                 {
+                    continue;
+                }
+
+                if (item is IEnumerable nestedEnumerable && item is not string)
+                {
+                    SerializeIEnumerable(writer, nestedEnumerable, options);
                     continue;
                 }
 
@@ -354,7 +408,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
                     }
                     else
                     {
-                        WriteSimpleType(writer, item);
+                        WriteSimpleType(writer, item, options);
                     }
                 }
                 else
@@ -369,38 +423,10 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         return false;
     }
 
-    private void WriteSimpleType(Utf8JsonWriter writer, object value)
+    private void WriteSimpleType(Utf8JsonWriter writer, object value, JsonSerializerOptions options)
     {
-        switch (value)
-        {
-            case string str:
-                writer.WriteStringValue(str);
-                break;
-            case bool b:
-                writer.WriteBooleanValue(b);
-                break;
-            case int i:
-                writer.WriteNumberValue(i);
-                break;
-            case long l:
-                writer.WriteNumberValue(l);
-                break;
-            case double d:
-                writer.WriteNumberValue(d);
-                break;
-            case decimal dec:
-                writer.WriteNumberValue(dec);
-                break;
-            case DateTime dt:
-                writer.WriteStringValue(dt.ToString("o")); // ISO format
-                break;
-            case Guid guid:
-                writer.WriteStringValue(guid.ToString());
-                break;
-            default:
-                JsonSerializer.Serialize(writer, value);
-                break;
-        }
+        var type = value.GetType();
+        JsonSerializer.Serialize(writer, value, type, GetPassthroughOptions(type, options));
     }
 
     /// <summary>
@@ -443,7 +469,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             writer.WritePropertyName(finalPropertyName);
 
             // Handle primitives/collections
-            if (SerializeIEnumerable(writer, propValue, options) || SerializeSimple(writer, propValue))
+            if (SerializeIEnumerable(writer, propValue, options) || SerializeSimple(writer, propValue, options))
                 continue;
 
             // Handle complex types
@@ -463,5 +489,36 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             return true;
 
         return value.Equals(mpe.DefaultValue); // ✅ Use precomputed default value
+    }
+
+    private object? DeserializePassthrough(
+        ref Utf8JsonReader reader,
+        Type type,
+        JsonSerializerOptions options)
+    {
+        return JsonSerializer.Deserialize(ref reader, type, GetPassthroughOptions(type, options));
+    }
+
+    private JsonSerializerOptions GetPassthroughOptions(Type type, JsonSerializerOptions options)
+    {
+        if (type != typeof(T))
+            return options;
+
+        var passthroughOptions = new JsonSerializerOptions(options);
+        for (var index = passthroughOptions.Converters.Count - 1; index >= 0; index--)
+        {
+            if (passthroughOptions.Converters[index] is MagicContractResolver<T>)
+                passthroughOptions.Converters.RemoveAt(index);
+        }
+
+        return passthroughOptions;
+    }
+
+    private static bool IsDictionaryType(Type type)
+    {
+        return type.GetInterfaces()
+            .Prepend(type)
+            .Any(candidate => candidate.IsGenericType &&
+                candidate.GetGenericTypeDefinition() == typeof(IDictionary<,>));
     }
 }

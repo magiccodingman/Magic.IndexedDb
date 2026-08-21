@@ -15,6 +15,8 @@ public struct SearchPropEntry
         propertyEntries = _propertyEntries;
         jsNameToCsName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         ConstructorParameterMappings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        EffectiveTableName = type.Name;
+        EnforcePascalCase = false;
 
         foreach (var entry in propertyEntries)
         {
@@ -31,24 +33,13 @@ public struct SearchPropEntry
                 EnforcePascalCase = true; // Prevent camel casing
             }
         }
-        else
-        {
-            EffectiveTableName = type.Name; // Default to class name
-            EnforcePascalCase = false;
-        }
-
-        // 🔥 Pick the best constructor: Prefer JsonConstructor, then fall back to a parameterized one, else fallback to parameterless
-        var jsonConstructor = constructors.FirstOrDefault(c => c.GetCustomAttribute<JsonConstructorAttribute>() != null);
-        if (jsonConstructor == null)
-        {
-            Constructor = constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
-        }
+        Constructor = SelectConstructor(type, constructors);
         HasConstructorParameters = Constructor != null && Constructor.GetParameters().Length > 0;
 
         // 🔥 Cache constructor parameter mappings
         if (HasConstructorParameters)
         {
-            var parameters = Constructor.GetParameters();
+            var parameters = Constructor!.GetParameters();
             for (int i = 0; i < parameters.Length; i++)
             {
                 ConstructorParameterMappings[parameters[i].Name!] = i;
@@ -97,6 +88,47 @@ public struct SearchPropEntry
     public Dictionary<string, MagicPropertyEntry> propertyEntries { get; }
     public Dictionary<string, string> jsNameToCsName { get; }
     public Dictionary<string, int> ConstructorParameterMappings { get; } // ✅ Stores constructor parameter indexes
+
+    private static ConstructorInfo? SelectConstructor(Type type, ConstructorInfo[] constructors)
+    {
+        var magicConstructors = constructors
+            .Where(c => c.IsDefined(typeof(MagicConstructorAttribute), inherit: false))
+            .ToArray();
+        if (magicConstructors.Length > 1)
+        {
+            throw new MagicConstructorException(
+                $"Type '{type.FullName}' has multiple constructors marked with {nameof(MagicConstructorAttribute)}. Mark exactly one constructor.");
+        }
+
+        if (magicConstructors.Length == 1)
+            return magicConstructors[0];
+
+        var jsonConstructors = constructors
+            .Where(c => c.IsDefined(typeof(JsonConstructorAttribute), inherit: false))
+            .ToArray();
+        if (jsonConstructors.Length > 1)
+        {
+            throw new MagicConstructorException(
+                $"Type '{type.FullName}' has multiple constructors marked with {nameof(JsonConstructorAttribute)}. Mark exactly one constructor.");
+        }
+
+        if (jsonConstructors.Length == 1)
+            return jsonConstructors[0];
+
+        var parameterlessConstructor = constructors.FirstOrDefault(c => c.GetParameters().Length == 0);
+        if (parameterlessConstructor != null)
+            return parameterlessConstructor;
+
+        if (constructors.Length == 1)
+            return constructors[0];
+
+        // Preserve the legacy most-parameters convention when an existing model has
+        // multiple unannotated constructors. MetadataToken makes ties deterministic.
+        return constructors
+            .OrderByDescending(c => c.GetParameters().Length)
+            .ThenBy(c => c.MetadataToken)
+            .FirstOrDefault();
+    }
 
     /// <summary>
     /// Determines whether a type can be instantiated.
@@ -442,7 +474,9 @@ public static class PropertyMappingCache
 
         bool isMagicTable = SchemaHelper.HasMagicTableInterface(type);
 
-        var instance = Activator.CreateInstance(type) as IMagicTableBase;
+        var instance = isMagicTable
+            ? Activator.CreateInstance(type) as IMagicTableBase
+            : null;
 
         IMagicCompoundKey compoundKey;
         List<IMagicCompoundIndex>? compoundIndexes = new List<IMagicCompoundIndex>();

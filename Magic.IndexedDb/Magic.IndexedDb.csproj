@@ -8,16 +8,16 @@
 		<Authors>Magic Man</Authors>
 		<Copyright>MIT</Copyright>
 		<Description>Open source library provides an IndexedDb wrapper for C# and Blazor WebAssembly applications. It simplifies working with IndexedDb and makes it similar to using LINQ to SQL.</Description>
-		<PackageProjectUrl>https://sayou.biz/Magic-IndexedDB-Index</PackageProjectUrl>
+		<PackageProjectUrl>https://sayou.biz/Magic-IndexedDB/Index</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/magiccodingman/Magic.IndexedDb</RepositoryUrl>
 		<PackageTags>IndexedDb, Blazor IndexedDb, c# IndexedDb, local database, blazor</PackageTags>
 		<PackageIcon>wizardHatIcon.png</PackageIcon>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<AssemblyVersion>1.0.1</AssemblyVersion>
+		<AssemblyVersion>3.0.0.0</AssemblyVersion>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-		<FileVersion>1.01</FileVersion>
-		<Version>2.0.2</Version>
+		<FileVersion>3.0.0.0</FileVersion>
+		<Version>3.0.0</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -39,6 +39,7 @@
 
 	<ItemGroup>
 		<SupportedPlatform Include="browser" />
+		<InternalsVisibleTo Include="Magic.IndexedDb.UnitTests" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -1,9 +1,13 @@
 "use strict";
 
-const DEBUG_MODE = false; // Set to false before release
+let debugMode = false;
+
+export function setDebugMode(enabled) {
+    debugMode = enabled === true;
+}
 
 export function debugLog(...args) {
-    if (DEBUG_MODE) {
+    if (debugMode) {
         console.log("[DEBUG]", ...args);
     }
 }

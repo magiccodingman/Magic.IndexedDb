@@ -3,6 +3,7 @@
 /// <reference types="./dexie/dexie.d.ts" />
 import Dexie from "./dexie/dexie.js";
 import { magicQueryAsync, magicQueryYield } from "./magicLinqToIndexedDb.js";
+import { debugLog } from "./utilities/utilityHelpers.js";
 /**
  * @typedef {Object} DatabasesItem
  * @property {string} name
@@ -77,7 +78,7 @@ export function listOpenDatabases() {
 
 
 export function createDb(dbStore) {
-    console.log("Debug: Received dbStore in createDb", dbStore);
+    debugLog("Received dbStore in createDb", dbStore);
 
     if (!dbStore || !dbStore.name) {
         console.error("Blazor.IndexedDB.Framework - Invalid dbStore provided");
@@ -144,7 +145,7 @@ export function createDb(dbStore) {
         stores[schema.tableName] = def;
     }
 
-    console.log("Dexie Store Definition:", stores);
+    debugLog("Dexie Store Definition:", stores);
 
     db.version(dbStore.version).stores(stores);
 
@@ -162,7 +163,7 @@ export function createDb(dbStore) {
  * @param {Array.<{ name: string, storeSchemas: StoreSchema[] }>} dbStores - List of database configurations.
  */
 export function createDatabases(dbStores) {
-    dbStores.forEach(dbStore => createDb(dbStore.name, dbStore.storeSchemas));
+    dbStores.forEach(dbStore => createDb(dbStore));
 }
 
 
@@ -175,10 +176,9 @@ export async function countTable(dbName, storeName) {
  * Closes all open databases.
  */
 export function closeAll() {
-    databases.forEach((entry, dbName) => {
-        entry.db.close();
-        entry.isOpen = false;
-        console.log(`Database ${dbName} closed.`);
+    databases.forEach((db, dbName) => {
+        if (db.isOpen?.()) db.close();
+        debugLog(`Database ${dbName} closed.`);
     });
 }
 
@@ -205,7 +205,7 @@ export async function deleteDb(dbName) {
         }
 
         await Dexie.delete(dbName);
-        console.log(`Database '${dbName}' deleted.`);
+        debugLog(`Database '${dbName}' deleted.`);
     } catch (deleteErr) {
         console.error(`deleteDb: Failed to delete DB '${dbName}'`, deleteErr);
     }
@@ -297,7 +297,7 @@ export async function deleteAllDatabases() {
     for (const dbName of databases.keys()) {
         await deleteDb(dbName);
     }
-    console.log("All databases deleted.");
+    debugLog("All databases deleted.");
 }
 
 
@@ -457,7 +457,7 @@ export async function bulkDelete(dbName, storeName, items) {
             items.map(item => getKeyArrayForDelete(dbName, storeName, item))
         );
 
-        console.log('Keys to delete:', formattedKeys);
+        debugLog('Keys to delete:', formattedKeys);
         await table.bulkDelete(formattedKeys);
         return items.length;
     } catch (e) {
