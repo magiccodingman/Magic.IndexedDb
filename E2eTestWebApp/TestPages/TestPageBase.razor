@@ -1,6 +1,6 @@
 ﻿<!-- works with TestBase in E2eTest -->
 
-<input data-testid="method" type="text" @bind-value="@method" />
+<input data-testid="method" type="text" @bind-value="@method" @bind-value:event="oninput" />
 <input data-testid="run" type="button" @onclick="@RunAsync" />
 
 <textarea data-testid="output">@output</textarea>
