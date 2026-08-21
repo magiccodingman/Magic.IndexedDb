@@ -586,7 +586,7 @@ public class UniversalExpressionBuilder<T>
         // Case 1: Static-style => myArray.Contains(x.SomeProp)
         if (call.Object == null && call.Arguments.Count == 2)
         {
-            var maybeCollection = call.Arguments[0];
+            var maybeCollection = UnwrapCollectionConversion(call.Arguments[0]);
             var maybeProp = call.Arguments[1];
 
             if ((maybeCollection is MemberExpression || maybeCollection is ConstantExpression) &&
@@ -640,6 +640,22 @@ public class UniversalExpressionBuilder<T>
         }
 
         return false;
+    }
+
+    private static Expression UnwrapCollectionConversion(Expression expression)
+    {
+        expression = StripConvert(expression);
+
+        while (expression is MethodCallExpression
+               {
+                   Method.Name: "op_Implicit",
+                   Arguments.Count: 1
+               } implicitConversion)
+        {
+            expression = StripConvert(implicitConversion.Arguments[0]);
+        }
+
+        return expression;
     }
 
     // ------------------------------

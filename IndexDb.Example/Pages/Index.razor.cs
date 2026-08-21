@@ -12,40 +12,35 @@ public partial class Index
         {
             try
             {
-                var manager = await _MagicDb.GetDbManagerAsync(DbNames.Client);
+                var personQuery = await _MagicDb.Query<Person>();
 
-                await manager.ClearTableAsync<Person>();
+                await personQuery.ClearTable();
 
-                if (!(await manager.GetAllAsync<Person>()).Any())
+                if (!(await personQuery.ToListAsync()).Any())
                 {
                     Person[] persons = new Person[] {
-                        new Person { Name = "Zack", TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), Secret = "I buried treasure behind my house", Access=Person.Permissions.CanRead},
-                        new Person { Name = "Luna", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), Secret = "Jerry is my husband and I had an affair with Bob.", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
-                        new Person { Name = "Jerry", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), Secret = "My wife is amazing", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
-                        new Person { Name = "Jon", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), Secret = "I black mail Luna for money because I know her secret", Access = Person.Permissions.CanRead},
-                        new Person { Name = "Jack", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), Secret = "I have a drug problem", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
-                        new Person { Name = "Cathy", TestInt = 9, _Age = 22, GUIY = Guid.NewGuid(), Secret = "I got away with reading Bobs diary.", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
-                        new Person { Name = "Bob", TestInt = 3 , _Age = 69, GUIY = Guid.NewGuid(), Secret = "I caught Cathy reading my diary, but I'm too shy to confront her.", Access = Person.Permissions.CanRead },
-                        new Person { Name = "Alex", TestInt = 3 , _Age = 80, GUIY = Guid.NewGuid(), Secret = "I'm naked! But nobody can know!" }
+                        new Person { Name = "Zack", TestInt = 9, _Age = 45, GUIY = Guid.NewGuid(), Notes = "Enjoys treasure hunts", Access=Person.Permissions.CanRead},
+                        new Person { Name = "Luna", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), Notes = "Writes mystery novels", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
+                        new Person { Name = "Jerry", TestInt = 9, _Age = 35, GUIY = Guid.NewGuid(), Notes = "Collects vinyl records", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite|Person.Permissions.CanCreate},
+                        new Person { Name = "Jon", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), Notes = "Runs a book club", Access = Person.Permissions.CanRead},
+                        new Person { Name = "Jack", TestInt = 9, _Age = 37, GUIY = Guid.NewGuid(), Notes = "Builds model airplanes", Access = Person.Permissions.CanRead|Person.Permissions.CanWrite},
+                        new Person { Name = "Cathy", TestInt = 9, _Age = 22, GUIY = Guid.NewGuid(), Notes = "Studies archaeology", Access = Person.Permissions.CanRead | Person.Permissions.CanWrite},
+                        new Person { Name = "Bob", TestInt = 3 , _Age = 69, GUIY = Guid.NewGuid(), Notes = "Maintains a community garden", Access = Person.Permissions.CanRead },
+                        new Person { Name = "Alex", TestInt = 3 , _Age = 80, GUIY = Guid.NewGuid(), Notes = "Paints landscapes" }
                     };
-                    await manager.AddRangeAsync(persons);
+                    await personQuery.AddRangeAsync(persons);
                 }
 
-                var storageInfo = await manager.GetStorageEstimateAsync();
+                var storageInfo = await _MagicDb.GetStorageEstimateAsync();
                 storageQuota = storageInfo.QuotaInMegabytes;
                 storageUsage = storageInfo.UsageInMegabytes;
                     
-                var allPeopleDecrypted = await manager.GetAllAsync<Person>();
-                foreach (Person person in allPeopleDecrypted)
-                {
-                    person.SecretDecrypted = await manager.DecryptAsync(person.Secret);
-                    allPeople.Add(person);
-                }
+                allPeople = await personQuery.ToListAsync();
 
-                WhereExample = await manager.Where<Person>(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
+                WhereExample = (await personQuery.Where(x => x.Name.StartsWith("c", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("l", StringComparison.OrdinalIgnoreCase)
                 || x.Name.StartsWith("j", StringComparison.OrdinalIgnoreCase) && x._Age > 35
-                ).OrderBy(x => x._Id).Skip(1).Execute();
+                ).Skip(1).ToListAsync()).OrderBy(x => x._Id);
 
                 /*
                  * Still working on allowing nested

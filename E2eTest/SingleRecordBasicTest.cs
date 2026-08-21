@@ -10,27 +10,27 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
     public async Task AddTest()
     {
         var result = await this.RunTestPageMethodAsync(p => p.Add);
-        Assert.AreEqual(result, "OK");
+        Assert.AreEqual("OK", result);
     }
 
     [TestMethod]
     public async Task DeleteTest()
     {
         var result = await this.RunTestPageMethodAsync(p => p.Delete);
-        Assert.AreEqual(result, "OK");
+        Assert.AreEqual("OK", result);
     }
 
     [TestMethod]
     public async Task UpdateTest()
     {
         var result = await this.RunTestPageMethodAsync(p => p.Update);
-        Assert.AreEqual(result, "OK");
+        Assert.AreEqual("OK", result);
     }
 
     [TestMethod]
     public async Task GetAllTest()
     {
         var result = await this.RunTestPageMethodAsync(p => p.GetAll);
-        Assert.AreEqual(result, "OK");
+        Assert.AreEqual("OK", result);
     }
 }
