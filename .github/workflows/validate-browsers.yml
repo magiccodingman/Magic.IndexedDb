@@ -69,6 +69,7 @@ jobs:
         run: E2eTest/bin/Release/net10.0/playwright.ps1 install ${{ matrix.browser }}
 
       - name: Run browser integration tests
+        if: ${{ runner.os == 'Linux' }}
         run: >-
           dotnet test E2eTest/E2eTest.csproj
           --configuration Release
@@ -78,6 +79,62 @@ jobs:
           --results-directory artifacts/test-results
           --
           Playwright.BrowserName=${{ matrix.browser }}
+          Playwright.LaunchOptions.Headless=true
+
+      - name: Run macOS WebKit open and registration tests
+        if: ${{ runner.os == 'macOS' }}
+        run: >-
+          dotnet test E2eTest/E2eTest.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --filter "FullyQualifiedName~E2eTest.OpenTest"
+          --logger "trx;LogFileName=webkit-macOS-open.trx"
+          --results-directory artifacts/test-results
+          --
+          Playwright.BrowserName=webkit
+          Playwright.LaunchOptions.Headless=true
+
+      - name: Run macOS WebKit CRUD and streaming tests
+        if: ${{ runner.os == 'macOS' }}
+        run: >-
+          dotnet test E2eTest/E2eTest.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --filter "FullyQualifiedName~E2eTest.SingleRecordBasicTest"
+          --logger "trx;LogFileName=webkit-macOS-crud-streaming.trx"
+          --results-directory artifacts/test-results
+          --
+          Playwright.BrowserName=webkit
+          Playwright.LaunchOptions.Headless=true
+
+      - name: Run macOS WebKit query tests
+        if: ${{ runner.os == 'macOS' }}
+        run: >-
+          dotnet test E2eTest/E2eTest.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --filter "FullyQualifiedName~E2eTest.WhereTest"
+          --logger "trx;LogFileName=webkit-macOS-query.trx"
+          --results-directory artifacts/test-results
+          --
+          Playwright.BrowserName=webkit
+          Playwright.LaunchOptions.Headless=true
+
+      - name: Run macOS WebKit cursor tests
+        if: ${{ runner.os == 'macOS' }}
+        run: >-
+          dotnet test E2eTest/E2eTest.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --filter "FullyQualifiedName~E2eTest.CursorTest"
+          --logger "trx;LogFileName=webkit-macOS-cursor.trx"
+          --results-directory artifacts/test-results
+          --
+          Playwright.BrowserName=webkit
           Playwright.LaunchOptions.Headless=true
 
       - name: Upload browser test results
