@@ -37,7 +37,7 @@ jobs:
             os: ubuntu-latest
             browser: webkit
           - name: macOS WebKit integration
-            os: macos-14
+            os: macos-15
             browser: webkit
     runs-on: ${{ matrix.os }}
 
