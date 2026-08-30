@@ -3,7 +3,7 @@
 // Import constants
 import { QUERY_ADDITIONS } from "./queryConstants.js";
 import { validateQueryAdditions, validateQueryCombinations, isSupportedIndexedOperation } from "./linqValidation.js";
-import { debugLog } from "./utilityHelpers.js";
+import { debugLog, traceQueryPlannerStage } from "./utilityHelpers.js";
 
 /**
  * Partitions query conditions into IndexedDB-optimized and cursor-based conditions.
@@ -20,6 +20,12 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
     let requiresCursor = validateQueryAdditions(queryAdditions, indexCache)
         || validateQueryCombinations(nestedOrFilter) || forceCursor;
 
+    traceQueryPlannerStage("partition-decision", {
+        requiresCursor,
+        forceCursor: forceCursor === true,
+        queryAdditions: (queryAdditions || []).map(addition => addition.additionFunction)
+    });
+
     debugLog("Determined if query requires cursor", { requiresCursor });
 
     debugLog("Partitioning query conditions", { nestedOrFilter, queryAdditions, requiresCursor });
@@ -34,9 +40,17 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
             for (const andGroup of orGroup.andGroups || []) {
                 if (andGroup.conditions && andGroup.conditions.length > 0) {
                     cursorConditions.push(andGroup.conditions);
+                    traceQueryPlannerStage("branch-classified", {
+                        strategy: "cursor",
+                        reason: "query-level-cursor-requirement",
+                        inputConditionCount: andGroup.conditions.length,
+                        operations: andGroup.conditions.map(condition => condition.operation),
+                        properties: andGroup.conditions.map(condition => condition.property)
+                    });
                 }
             }
         }
+        tracePartitionSummary(indexedQueries, compoundIndexQueries, cursorConditions);
         return { indexedQueries: [], compoundIndexQueries: [], cursorConditions };
     }
 
@@ -56,6 +70,21 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
             let compoundQuery = detectCompoundQuery(andGroup.conditions, indexCache);
 
             if (compoundQuery) {
+                const residualConditionCount = Math.max(
+                    0,
+                    andGroup.conditions.length - compoundQuery.conditions.length
+                );
+
+                traceQueryPlannerStage("branch-classified", {
+                    strategy: "compound-index",
+                    properties: compoundQuery.properties,
+                    inputConditionCount: andGroup.conditions.length,
+                    consumedConditionCount: compoundQuery.conditions.length,
+                    residualConditionCount,
+                    inputProperties: andGroup.conditions.map(condition => condition.property),
+                    consumedProperties: compoundQuery.conditions.map(condition => condition.property)
+                });
+
                 compoundIndexQueries.push(compoundQuery);
                 continue;
             }
@@ -85,8 +114,21 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
 
             if (needsCursor) {
                 cursorConditions.push(andGroup.conditions);
+                traceQueryPlannerStage("branch-classified", {
+                    strategy: "cursor",
+                    reason: "condition-not-index-compatible",
+                    inputConditionCount: andGroup.conditions.length,
+                    operations: andGroup.conditions.map(condition => condition.operation),
+                    properties: andGroup.conditions.map(condition => condition.property)
+                });
             } else {
                 indexedQueries.push(singleFieldConditions);
+                traceQueryPlannerStage("branch-classified", {
+                    strategy: "single-index",
+                    inputConditionCount: singleFieldConditions.length,
+                    operations: singleFieldConditions.map(condition => condition.operation),
+                    properties: singleFieldConditions.map(condition => condition.property)
+                });
             }
         }
     }
@@ -102,14 +144,41 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
 
     if (hasTakeOrSkipOrFirstOrLast && (indexedQueries.length + compoundIndexQueries.length) > 1) {
         debugLog("Multiple indexed/compound queries detected with TAKE/SKIP, forcing all to cursor.");
+
+        const regularIndexedEntryShape = indexedQueries.map(query => ({
+            isArray: Array.isArray(query),
+            hasConditionsProperty: Array.isArray(query?.conditions),
+            conditionCount: Array.isArray(query) ? query.length : null
+        }));
+
         cursorConditions = [...cursorConditions, ...indexedQueries.map(q => q.conditions), ...compoundIndexQueries.map(q => q.conditions)];
+
+        traceQueryPlannerStage("pagination-reconvergence", {
+            indexedQueryCountBefore: indexedQueries.length,
+            compoundIndexQueryCountBefore: compoundIndexQueries.length,
+            regularIndexedEntryShape,
+            cursorConditionCountAfter: cursorConditions.length,
+            undefinedCursorConditionCountAfter: cursorConditions.filter(condition => condition === undefined).length
+        });
+
         indexedQueries = [];
         compoundIndexQueries = [];
     }
 
     debugLog("Partitioned Queries", { indexedQueries, compoundIndexQueries, cursorConditions });
+    tracePartitionSummary(indexedQueries, compoundIndexQueries, cursorConditions);
 
     return { indexedQueries, compoundIndexQueries, cursorConditions };
+}
+
+function tracePartitionSummary(indexedQueries, compoundIndexQueries, cursorConditions) {
+    traceQueryPlannerStage("partition-summary", {
+        indexedQueryCount: indexedQueries.length,
+        indexedConditionsPerQuery: indexedQueries.map(query => Array.isArray(query) ? query.length : null),
+        compoundIndexQueryCount: compoundIndexQueries.length,
+        cursorConditionCount: cursorConditions.length,
+        undefinedCursorConditionCount: cursorConditions.filter(condition => condition === undefined).length
+    });
 }
 
 function detectCompoundQuery(andConditions, indexCache) {

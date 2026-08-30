@@ -1,11 +1,23 @@
 "use strict";
 
-import { setDebugMode } from "./utilities/utilityHelpers.js";
+import {
+    setDebugMode,
+    getLastQueryPlannerTrace as getPlannerTrace,
+    clearQueryPlannerTrace as clearPlannerTrace
+} from "./utilities/utilityHelpers.js";
 
 const moduleCache = new Map(); // Cache for dynamically imported modules
 
 export function configureDebug(enabled) {
     setDebugMode(enabled);
+}
+
+export function getLastQueryPlannerTrace() {
+    return getPlannerTrace();
+}
+
+export function clearQueryPlannerTrace() {
+    clearPlannerTrace();
 }
 
 async function getModule(modulePath) {

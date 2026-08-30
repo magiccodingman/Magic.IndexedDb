@@ -1,6 +1,8 @@
 "use strict";
 
 let debugMode = false;
+let plannerTraceCounter = 0;
+let lastQueryPlannerTrace = null;
 
 export function setDebugMode(enabled) {
     debugMode = enabled === true;
@@ -10,6 +12,48 @@ export function debugLog(...args) {
     if (debugMode) {
         console.log("[DEBUG]", ...args);
     }
+}
+
+/**
+ * Starts a structured query-planner trace when Magic IndexedDB debug mode is enabled.
+ * The trace is intentionally diagnostic-only and must never influence planning decisions.
+ */
+export function beginQueryPlannerTrace(details = {}) {
+    if (!debugMode) {
+        return null;
+    }
+
+    lastQueryPlannerTrace = {
+        version: 1,
+        traceId: ++plannerTraceCounter,
+        stages: []
+    };
+
+    traceQueryPlannerStage("query-start", details);
+    return lastQueryPlannerTrace;
+}
+
+/**
+ * Appends a JSON-serializable planner stage to the current debug trace.
+ */
+export function traceQueryPlannerStage(stage, details = {}) {
+    if (!debugMode || !lastQueryPlannerTrace) {
+        return;
+    }
+
+    lastQueryPlannerTrace.stages.push({
+        sequence: lastQueryPlannerTrace.stages.length,
+        stage,
+        details
+    });
+}
+
+export function getLastQueryPlannerTrace() {
+    return lastQueryPlannerTrace;
+}
+
+export function clearQueryPlannerTrace() {
+    lastQueryPlannerTrace = null;
 }
 
 /**

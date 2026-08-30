@@ -92,7 +92,7 @@ jobs:
           --logger "trx;LogFileName=webkit-macOS-open.trx"
           --results-directory artifacts/test-results
           --
-          Playwright.BrowserName=webkit
+          Playwright.BrowserName=${{ matrix.browser }}
           Playwright.LaunchOptions.Headless=true
 
       - name: Run macOS WebKit CRUD and streaming tests
@@ -106,7 +106,7 @@ jobs:
           --logger "trx;LogFileName=webkit-macOS-crud-streaming.trx"
           --results-directory artifacts/test-results
           --
-          Playwright.BrowserName=webkit
+          Playwright.BrowserName=${{ matrix.browser }}
           Playwright.LaunchOptions.Headless=true
 
       - name: Run macOS WebKit query tests
@@ -116,11 +116,11 @@ jobs:
           --configuration Release
           --no-build
           --no-restore
-          --filter "FullyQualifiedName~E2eTest.WhereTest"
+          --filter "FullyQualifiedName~E2eTest.WhereTest|FullyQualifiedName~E2eTest.QueryPlannerRegressionTest"
           --logger "trx;LogFileName=webkit-macOS-query.trx"
           --results-directory artifacts/test-results
           --
-          Playwright.BrowserName=webkit
+          Playwright.BrowserName=${{ matrix.browser }}
           Playwright.LaunchOptions.Headless=true
 
       - name: Run macOS WebKit cursor tests
@@ -134,7 +134,7 @@ jobs:
           --logger "trx;LogFileName=webkit-macOS-cursor.trx"
           --results-directory artifacts/test-results
           --
-          Playwright.BrowserName=webkit
+          Playwright.BrowserName=${{ matrix.browser }}
           Playwright.LaunchOptions.Headless=true
 
       - name: Upload browser test results

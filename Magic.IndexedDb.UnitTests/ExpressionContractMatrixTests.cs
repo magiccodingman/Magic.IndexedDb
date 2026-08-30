@@ -138,9 +138,10 @@ public sealed class ExpressionContractMatrixTests
             record => !(record.Age > 18 || record.Name == "admin")).Build();
 
         Assert.AreEqual(FilterLogicalOperator.And, node.Operator);
-        CollectionAssert.AreEqual(
-            new[] { "LessThanOrEqual", "NotEquals" },
-            node.Children!.Select(child => child.Condition!.Value.operation).ToArray());
+        Assert.AreEqual(2, node.Children!.Count);
+        Assert.AreEqual("LessThanOrEqual", node.Children[0].Condition!.Value.operation);
+        Assert.AreEqual("NotEqual", node.Children[1].Condition!.Value.operation,
+            "Negated equality must use the canonical NotEqual operation understood by JavaScript.");
     }
 
     [TestMethod]
