@@ -63,6 +63,10 @@ jobs:
           --logger "trx;LogFileName=core-validation.trx"
           --results-directory artifacts/test-results
 
+      - name: Verify tests were discovered and executed
+        shell: pwsh
+        run: ./.github/scripts/assert-trx-executed.ps1 -Path artifacts/test-results
+
       - name: Upload test results and package
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

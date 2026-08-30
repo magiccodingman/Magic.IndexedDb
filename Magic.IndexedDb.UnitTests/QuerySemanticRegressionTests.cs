@@ -104,6 +104,28 @@ public sealed class QuerySemanticRegressionTests
     }
 
     [TestMethod]
+    public void Nullable_date_member_not_equal_includes_null_values()
+    {
+        var target = new DateTime(2030, 4, 5);
+        var node = new UniversalExpressionBuilder<QueryRecord>(
+            record => record.NullableWhen.Value.Date != target).Build();
+
+        Assert.AreEqual(FilterNodeType.Logical, node.NodeType);
+        Assert.AreEqual(FilterLogicalOperator.Or, node.Operator);
+
+        var conditions = Conditions(node).ToList();
+        Assert.AreEqual(3, conditions.Count);
+        CollectionAssert.AreEquivalent(
+            new[] { "IsNull", "LessThan", "GreaterThanOrEqual" },
+            conditions.Select(condition => condition.operation).ToArray());
+
+        Assert.AreEqual(target,
+            conditions.Single(condition => condition.operation == "LessThan").value);
+        Assert.AreEqual(target.AddDays(1),
+            conditions.Single(condition => condition.operation == "GreaterThanOrEqual").value);
+    }
+
+    [TestMethod]
     public void Empty_Any_rewrites_to_logical_false_without_throwing()
     {
         int[] values = [];
@@ -181,5 +203,6 @@ public sealed class QuerySemanticRegressionTests
         public string Name { get; set; } = string.Empty;
         public List<int> Values { get; set; } = [];
         public DateTime When { get; set; }
+        public DateTime? NullableWhen { get; set; }
     }
 }

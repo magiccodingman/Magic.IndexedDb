@@ -9,17 +9,27 @@ public class PredicateVisitor<T> : ExpressionVisitor
     {
         if (node.Method.Name == "Any" && node.Arguments[0] is MemberExpression member)
         {
-            // Handle Any expressions
             var lambda = GetLambdaExpression(node.Arguments[1]);
-            var values = GetIEnumerableItems(member);
-            return values.Select(value => ReplaceParameter(lambda, value)).Aggregate<Expression>((left, right) => Expression.OrElse(left, right));
+            var rewritten = GetIEnumerableItems(member)
+                .Select(value => ReplaceParameter(lambda, value))
+                .ToList();
+
+            // Enumerable.Any over an empty sequence is false.
+            return rewritten.Count == 0
+                ? Expression.Constant(false)
+                : rewritten.Aggregate<Expression>((left, right) => Expression.OrElse(left, right));
         }
         else if (node.Method.Name == "All" && node.Arguments[0] is MemberExpression member3)
         {
-            // Handle All expressions
             var lambda = GetLambdaExpression(node.Arguments[1]);
-            var values = GetIEnumerableItems(member3);
-            return values.Select(value => ReplaceParameter(lambda, value)).Aggregate<Expression>((left, right) => Expression.AndAlso(left, right));
+            var rewritten = GetIEnumerableItems(member3)
+                .Select(value => ReplaceParameter(lambda, value))
+                .ToList();
+
+            // Enumerable.All over an empty sequence is vacuously true.
+            return rewritten.Count == 0
+                ? Expression.Constant(true)
+                : rewritten.Aggregate<Expression>((left, right) => Expression.AndAlso(left, right));
         }
         else
         {

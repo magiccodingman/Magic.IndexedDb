@@ -41,6 +41,41 @@ public sealed class QueryPlannerRegressionTestMetadata : TestBase<E2eTestWebApp.
     }
 
     [TestMethod]
+    public async Task Compound_primary_key_components_are_not_standalone_indexes()
+    {
+        await using var disposablePage = new DisposablePage(await NewPageAsync());
+        var resultJson = await disposablePage.Page.EvaluateAsync<string>(
+            """
+            async () => {
+                const module = await import('/_content/Magic.IndexedDb/utilities/utilityHelpers.js');
+                const table = {
+                    schema: {
+                        primKey: { keyPath: ['Tenant', 'Sequence'] },
+                        indexes: []
+                    }
+                };
+
+                const metadata = module.buildIndexMetadata(table);
+                return JSON.stringify({
+                    primaryKeyIsCompound: metadata.primaryKeyIsCompound,
+                    tenantStandalone: metadata.indexes.has('Tenant') || metadata.primaryKeyIndexes.has('Tenant'),
+                    sequenceStandalone: metadata.indexes.has('Sequence') || metadata.primaryKeyIndexes.has('Sequence'),
+                    compoundCount: metadata.compoundIndexes.size
+                });
+            }
+            """);
+
+        using var document = JsonDocument.Parse(resultJson);
+        var root = document.RootElement;
+        Assert.IsTrue(root.GetProperty("primaryKeyIsCompound").GetBoolean(), resultJson);
+        Assert.AreEqual(1, root.GetProperty("compoundCount").GetInt32(), resultJson);
+        Assert.IsFalse(root.GetProperty("tenantStandalone").GetBoolean(),
+            "A component of the [Tenant+Sequence] primary key is not a standalone IndexedDB index.\n" + resultJson);
+        Assert.IsFalse(root.GetProperty("sequenceStandalone").GetBoolean(),
+            "A component of the [Tenant+Sequence] primary key is not a standalone IndexedDB index.\n" + resultJson);
+    }
+
+    [TestMethod]
     public async Task Compound_key_normalization_is_collision_free_for_string_components()
     {
         await using var disposablePage = new DisposablePage(await NewPageAsync());

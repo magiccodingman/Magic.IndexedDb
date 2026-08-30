@@ -52,32 +52,28 @@ export function flattenUniversalPredicate(rootNode) {
         ]
     }));
 
-    const advancedOptimizerCanRun = !Array.isArray(orGroups) && Array.isArray(orGroups?.orGroups);
+    const optimizerInput = { orGroups };
     traceQueryPlannerStage("optimizer-dispatch", {
         optimizer: "advancedOptimizeNestedOrFilter",
-        inputShape: Array.isArray(orGroups) ? "or-group-array" : typeof orGroups,
+        inputShape: "object-with-orGroups-array",
         expectedShape: "object-with-orGroups-array",
-        invokedWithCompatibleShape: advancedOptimizerCanRun
+        invokedWithCompatibleShape: true
     });
 
-    const advancedResult = advancedOptimizeNestedOrFilter(orGroups);
+    const advancedResult = advancedOptimizeNestedOrFilter(optimizerInput);
 
     traceQueryPlannerStage("optimizer-result", {
         optimizer: "advancedOptimizeNestedOrFilter",
-        sameReferenceReturned: advancedResult === orGroups,
+        sameReferenceReturned: advancedResult === optimizerInput,
         branchCountBefore: orGroups.length,
-        branchCountAfter: Array.isArray(advancedResult)
-            ? advancedResult.length
-            : advancedResult?.orGroups?.length ?? null
+        branchCountAfter: advancedResult?.orGroups?.length ?? null
     });
 
     let orGroupsOptimized = optimizeOrGroupStructure(advancedResult);
 
     traceQueryPlannerStage("optimizer-result", {
         optimizer: "optimizeOrGroupStructure",
-        branchCountBefore: Array.isArray(advancedResult)
-            ? advancedResult.length
-            : advancedResult?.orGroups?.length ?? null,
+        branchCountBefore: advancedResult?.orGroups?.length ?? null,
         branchCountAfter: Array.isArray(orGroupsOptimized)
             ? orGroupsOptimized.length
             : orGroupsOptimized?.orGroups?.length ?? null
@@ -186,10 +182,8 @@ function normalizeCondition(condition) {
             ? QUERY_OPERATIONS.IS_NULL
             : QUERY_OPERATIONS.IS_NOT_NULL;
 
-        // Leave value in place to pass validation
         normalized.value = null;
     }
 
     return normalized;
 }
-

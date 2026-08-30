@@ -3,20 +3,17 @@
 public interface IMagicExecute<T> where T : class
 {
     /// <summary>
-    /// The order you apply does get applied correctly in the query, 
-    /// but the returned results will not be in the same order. 
-    /// If order matters, you must apply the order again on return. 
-    /// This is a fundemental limitation of IndexDB. 
+    /// Executes the query as a progressive async stream. Streaming and fully materialized
+    /// sequence semantics are separate contracts; callers that require the final ordered
+    /// materialized sequence should use <see cref="ToListAsync"/>.
     /// </summary>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
     IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// The order you apply does get applied correctly in the query, 
-    /// but the returned results will not be in the same order. 
-    /// If order matters, you must apply the order again on return. 
-    /// This is a fundemental limitation of IndexDB. 
+    /// Executes and materializes the query. When an ordering operator is applied, the
+    /// returned list preserves the resulting query order.
     /// </summary>
     /// <returns></returns>
     Task<List<T>> ToListAsync();

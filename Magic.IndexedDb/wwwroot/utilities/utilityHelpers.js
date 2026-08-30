@@ -57,12 +57,43 @@ export function clearQueryPlannerTrace() {
 }
 
 /**
- * Converts a compound key into a structured format.
- * Ensures keys are **always stored in the correct order**.
+ * Converts primary-key values into an unambiguous structured identity for de-duplication.
+ * Delimiter-joining is unsafe for compound string keys (for example ["a|b", "c"]
+ * and ["a", "b|c"]), so each key component is type-tagged before serialization.
  */
 export function normalizeCompoundKey(primaryKeys, record) {
-    let recordKey = primaryKeys.map(pk => String(record[pk])).join("|");
-    return recordKey;
+    return JSON.stringify(primaryKeys.map(pk => normalizeKeyPart(record[pk])));
+}
+
+function normalizeKeyPart(value) {
+    if (value === null) return ["null", null];
+    if (value === undefined) return ["undefined", null];
+
+    if (Object.prototype.toString.call(value) === "[object Date]") {
+        return ["date", value.getTime()];
+    }
+
+    if (value instanceof ArrayBuffer) {
+        return ["binary", Array.from(new Uint8Array(value))];
+    }
+
+    if (ArrayBuffer.isView(value)) {
+        return [
+            "binary",
+            Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))
+        ];
+    }
+
+    if (Array.isArray(value)) {
+        return ["array", value.map(normalizeKeyPart)];
+    }
+
+    if (typeof value === "number") {
+        // IndexedDB treats -0 and +0 as the same numeric key.
+        return ["number", Object.is(value, -0) ? 0 : value];
+    }
+
+    return [typeof value, value];
 }
 
 /**
@@ -94,29 +125,40 @@ export function buildIndexMetadata(table) {
     const schema = table.schema;
     const primaryKeyInfo = getPrimaryKeys(table);
 
-    let indexMetadata = {
+    const indexMetadata = {
         indexes: new Set(),
-        compoundKeys: new Set(primaryKeyInfo.keys), // Store all primary keys
+        // These are the fields needed to reconstruct the store's primary key. They are
+        // deliberately NOT evidence that each field is independently queryable.
+        compoundKeys: new Set(primaryKeyInfo.keys),
+        primaryKeyIsCompound: primaryKeyInfo.isCompound,
+        primaryKeyIndexes: new Set(primaryKeyInfo.isCompound ? [] : primaryKeyInfo.keys),
         uniqueKeys: new Set(),
         compoundIndexes: new Map(),
     };
 
+    // A compound primary key is queryable as the complete compound key, but none of
+    // its individual components becomes a standalone IndexedDB index.
+    if (primaryKeyInfo.isCompound) {
+        indexMetadata.compoundIndexes.set(
+            `__primary__:${primaryKeyInfo.keys.join(",")}`,
+            new Set(primaryKeyInfo.keys)
+        );
+    }
+
     for (const index of schema.indexes) {
         if (typeof index.keyPath === "string") {
             indexMetadata.indexes.add(index.keyPath);
-        }
-
-        if (index.unique) {
-            indexMetadata.uniqueKeys.add(index.keyPath);
+            if (index.unique) {
+                indexMetadata.uniqueKeys.add(index.keyPath);
+            }
+            continue;
         }
 
         if (Array.isArray(index.keyPath)) {
             const compoundKeySet = new Set(index.keyPath);
             indexMetadata.compoundIndexes.set(index.keyPath.join(","), compoundKeySet);
-
-            for (const field of index.keyPath) {
-                indexMetadata.indexes.add(field);
-            }
+            // Do not add compound-index components to indexes/uniqueKeys. IndexedDB
+            // exposes the compound key path, not imaginary per-component indexes.
         }
     }
 
