@@ -4,7 +4,7 @@ import { QUERY_OPERATIONS, QUERY_ADDITIONS } from "./utilities/queryConstants.js
 import { flattenUniversalPredicate } from "./utilities/FlattenFilterNode.js";
 import {
     buildIndexMetadata, normalizeCompoundKey,
-    hasYieldedKey, addYieldedKey, debugLog
+    hasYieldedKey, addYieldedKey, debugLog, traceQueryPlannerStage
 } from "./utilities/utilityHelpers.js";
 
 import { initiateNestedOrFilter } from "./utilities/nestedOrFilterUtilities.js";
@@ -15,7 +15,7 @@ export async function magicQueryAsync(db, table, universalSerializedPredicate,
     QueryAdditions, forceCursor = false) {
     debugLog("whereJson called");
 
-    let results = []; // Collect results here
+    let results = [];
 
     for await (let record of magicQueryYield(db, table, universalSerializedPredicate,
         QueryAdditions, forceCursor)) {
@@ -23,8 +23,7 @@ export async function magicQueryAsync(db, table, universalSerializedPredicate,
     }
 
     debugLog("whereJson returning results", { count: results.length, results });
-
-    return results; // Return all results at once
+    return results;
 }
 
 export async function* magicQueryYield(db, table, universalSerializedPredicate,
@@ -56,20 +55,19 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
     let indexCache = buildIndexMetadata(table);
     let primaryKeys = [...indexCache.compoundKeys];
 
-    let yieldedPrimaryKeys = new Set(); // **Structured compound key tracking**
+    let yieldedPrimaryKeys = new Set();
 
     debugLog("Validated schema & cached indexes", { primaryKeys, indexes: indexCache.indexes });
 
     let { isFilterEmpty, nestedOrFilter } =
         initiateNestedOrFilter(nestedOrFilterUnclean, queryAdditions, primaryKeys, isUniversalTrue);
 
-    // No need for processing anything, we can just immediately return results.
     if (isFilterEmpty) {
         debugLog("No filtering or query additions. Fetching entire table.");
         let allRecords = await table.toArray();
 
         while (allRecords.length > 0) {
-            let record = allRecords.shift(); // Remove from memory before processing
+            let record = allRecords.shift();
             yield record;
         }
         return;
@@ -83,53 +81,86 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
 
     debugLog("Final Indexed Queries vs. Compound Queries vs. Cursor Queries", { indexedQueries, compoundIndexQueries, cursorConditions });
 
-    /*
-    run indexed queries first. Running the cursor in parallel 
-    will hurt performance drastically instead of helping.
-    */
     if (indexedQueries.length > 0 || compoundIndexQueries.length > 0) {
         let { optimizedSingleIndexes, optimizedCompoundIndexes } = optimizeIndexedQueries(indexedQueries, compoundIndexQueries);
         debugLog("Optimized Indexed Queries", { optimizedSingleIndexes, optimizedCompoundIndexes });
 
+        traceQueryPlannerStage("indexed-physical-optimization", {
+            inputIndexedQueryCount: indexedQueries.length,
+            inputIndexedConditionsPerQuery: indexedQueries.map(query => Array.isArray(query) ? query.length : null),
+            inputCompoundQueryCount: compoundIndexQueries.length,
+            outputSingleIndexQueryCount: optimizedSingleIndexes.length,
+            outputCompoundIndexQueryCount: optimizedCompoundIndexes.length,
+            outputSingleIndexes: summarizePhysicalQueries(optimizedSingleIndexes),
+            outputCompoundIndexes: summarizePhysicalQueries(optimizedCompoundIndexes)
+        });
+
         let allOptimizedQueries = [...optimizedSingleIndexes, ...optimizedCompoundIndexes];
 
-        // ** Execute queries in parallel and get a streamed result set**
+        traceQueryPlannerStage("indexed-execution", {
+            queryCount: allOptimizedQueries.length,
+            queries: summarizePhysicalQueries(allOptimizedQueries)
+        });
+
         let results = await runIndexedQueries(db, table, allOptimizedQueries,
             queryAdditions, primaryKeys, yieldedPrimaryKeys);
 
-        // **Process records one at a time, maintaining low memory usage**
+        traceQueryPlannerStage("indexed-execution-result", {
+            resultCount: results.length
+        });
+
         while (results.length > 0) {
-            let record = results.shift(); // ** Immediately remove from memory**
+            let record = results.shift();
             yield record;
         }
     }
 
     if (Array.isArray(cursorConditions) && cursorConditions.length > 0) {
+        traceQueryPlannerStage("cursor-execution", {
+            conditionSetCount: cursorConditions.length,
+            undefinedConditionSetCount: cursorConditions.filter(condition => condition === undefined).length,
+            queryAdditions: (queryAdditions || []).map(addition => addition.additionFunction)
+        });
+
         let cursorResults = await runCursorQuery(db, table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys);
         debugLog("Cursor Query Results Count", { count: cursorResults.length });
 
+        traceQueryPlannerStage("cursor-execution-result", {
+            resultCount: cursorResults.length
+        });
+
         while (cursorResults.length > 0) {
-            let record = cursorResults.shift(); // Remove the first record from memory immediately
+            let record = cursorResults.shift();
             let recordKey = normalizeCompoundKey(primaryKeys, record);
 
             if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                 addYieldedKey(yieldedPrimaryKeys, recordKey);
-                yield record; // The record no longer exists in cursorResults after yielding
+                yield record;
             }
         }
     }
-
 }
 
 function hasStableOrdering(queryAdditions) {
     return queryAdditions?.some(q => q.additionFunction === QUERY_ADDITIONS.STABLE_ORDERING);
 }
 
+function summarizePhysicalQueries(queries) {
+    return (queries || []).map(query =>
+        (query || []).map(condition => ({
+            property: condition?.property ?? null,
+            properties: Array.isArray(condition?.properties) ? condition.properties : null,
+            operation: condition?.operation ?? null,
+            valueKind: Array.isArray(condition?.value) ? "array" : typeof condition?.value,
+            valueCount: Array.isArray(condition?.value) ? condition.value.length : null
+        })));
+}
+
 async function runIndexedQueries(db, table, universalQueries,
     queryAdditions, primaryKeys, yieldedPrimaryKeys) {
     if (universalQueries.length === 0) {
         debugLog("No indexed conditions provided, returning entire table.");
-        return await table.toArray(); // Immediate return if no conditions
+        return await table.toArray();
     }
 
     let queries = [];
@@ -144,11 +175,10 @@ async function runIndexedQueries(db, table, universalQueries,
     await Promise.all(
         queries.map(async (q) => {
             await db.transaction('r', table, async () => {
-                // **Check if it's a single-record result (`first()` or `last()`)**
                 if (q instanceof Promise) {
-                    let record = await q; // Get single result
+                    let record = await q;
 
-                    if (record) { // Ensure it's not null
+                    if (record) {
                         let recordKey = normalizeCompoundKey(primaryKeys, record);
                         if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                             addYieldedKey(yieldedPrimaryKeys, recordKey);
@@ -156,7 +186,6 @@ async function runIndexedQueries(db, table, universalQueries,
                         }
                     }
                 }
-                // **Otherwise, it's a collection, so process with `.each()`**
                 else {
                     await q.each((record) => {
                         let recordKey = normalizeCompoundKey(primaryKeys, record);
@@ -173,17 +202,16 @@ async function runIndexedQueries(db, table, universalQueries,
     return finalResults;
 }
 
-
-
-
 /**
- * Executes an indexed query using IndexedDB.
- * @param {Object} table - The Dexie table instance.
- * @param {Array} indexedConditions - The array of indexed conditions.
- * @returns {AsyncGenerator} - A generator that yields query results.
+ * Executes one logical indexed branch. The first condition is the physical index
+ * candidate; any remaining conditions are residual predicates of the same AND branch.
  */
 function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
     debugLog("Executing runIndexedQuery", { indexedConditions, queryAdditions });
+
+    if (!Array.isArray(indexedConditions) || indexedConditions.length === 0) {
+        throw new Error("Indexed query branch must contain at least one condition.");
+    }
 
     let query;
     const firstCondition = indexedConditions[0];
@@ -199,7 +227,6 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
         q.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING
     );
 
-    // === Handle Universal Filter Shortcut (full table scan with orderBy) ===
     if (isUniversalFilter && orderAddition?.property) {
         debugLog("Detected universal filter with orderBy!", { orderBy: orderAddition.property });
 
@@ -208,13 +235,10 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
             query = query.reverse();
         }
     }
-
-    // === Handle Compound Index Query ===
     else if (Array.isArray(firstCondition.properties)) {
         debugLog("Detected Compound Index Query!", { properties: firstCondition.properties });
 
         const valuesInCorrectOrder = firstCondition.properties.map((_, i) => firstCondition.value[i]);
-
         query = table.where(firstCondition.properties);
 
         if (firstCondition.operation === QUERY_OPERATIONS.EQUAL) {
@@ -225,39 +249,42 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
             throw new Error(`Unsupported operation for compound indexes: ${firstCondition.operation}`);
         }
     }
-
-    // === Handle Single Indexed Query ===
     else if (firstCondition.property) {
         debugLog("Detected Single-Index Query!", { property: firstCondition.property });
+        const where = table.where(firstCondition.property);
 
         switch (firstCondition.operation) {
             case QUERY_OPERATIONS.EQUAL:
-                query = table.where(firstCondition.property).equals(firstCondition.value);
+                query = firstCondition.isString === true && firstCondition.caseSensitive === false
+                    ? where.equalsIgnoreCase(firstCondition.value)
+                    : where.equals(firstCondition.value);
                 break;
             case QUERY_OPERATIONS.IN:
-                query = table.where(firstCondition.property).anyOf(firstCondition.value);
+                query = where.anyOf(firstCondition.value);
                 break;
             case QUERY_OPERATIONS.GREATER_THAN:
-                query = table.where(firstCondition.property).above(firstCondition.value);
+                query = where.above(firstCondition.value);
                 break;
             case QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL:
-                query = table.where(firstCondition.property).aboveOrEqual(firstCondition.value);
+                query = where.aboveOrEqual(firstCondition.value);
                 break;
             case QUERY_OPERATIONS.LESS_THAN:
-                query = table.where(firstCondition.property).below(firstCondition.value);
+                query = where.below(firstCondition.value);
                 break;
             case QUERY_OPERATIONS.LESS_THAN_OR_EQUAL:
-                query = table.where(firstCondition.property).belowOrEqual(firstCondition.value);
+                query = where.belowOrEqual(firstCondition.value);
                 break;
             case QUERY_OPERATIONS.STARTS_WITH:
-                query = table.where(firstCondition.property).startsWith(firstCondition.value);
+                query = firstCondition.isString === true && firstCondition.caseSensitive === false
+                    ? where.startsWithIgnoreCase(firstCondition.value)
+                    : where.startsWith(firstCondition.value);
                 break;
             case "between":
                 if (Array.isArray(firstCondition.value) && firstCondition.value.length === 2) {
                     const [lower, upper] = firstCondition.value;
                     const includeLower = firstCondition.includeLower !== false;
                     const includeUpper = firstCondition.includeUpper !== false;
-                    query = table.where(firstCondition.property).between(lower, upper, includeLower, includeUpper);
+                    query = where.between(lower, upper, includeLower, includeUpper);
                 } else {
                     throw new Error("Invalid 'between' value format. Expected [min, max]");
                 }
@@ -269,13 +296,19 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
         throw new Error("Invalid indexed condition--missing `properties` or `property`.");
     }
 
-    // === Apply Query Additions (take, skip, first, etc.) ===
+    // Do not turn an AND branch into several independent indexed queries. Use the
+    // selected index to produce candidates, then enforce every residual condition.
+    const residualConditions = indexedConditions.slice(1);
+    if (residualConditions.length > 0) {
+        query = query.filter(record =>
+            residualConditions.every(condition => matchesIndexedCondition(record, condition)));
+    }
+
     if (requiresQueryAdditions(queryAdditions)) {
         for (const addition of queryAdditions) {
             switch (addition.additionFunction) {
                 case QUERY_ADDITIONS.ORDER_BY:
                 case QUERY_ADDITIONS.ORDER_BY_DESCENDING:
-                    // Already handled above (only valid without .where())
                     break;
                 case QUERY_ADDITIONS.SKIP:
                     query = query.offset(addition.intValue);
@@ -284,7 +317,6 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
                     query = query.limit(addition.intValue);
                     break;
                 case QUERY_ADDITIONS.TAKE_LAST:
-                    // Read the tail efficiently, then restore the caller's requested order.
                     query = query.reverse().limit(addition.intValue).reverse();
                     break;
                 case QUERY_ADDITIONS.FIRST:
@@ -292,7 +324,7 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
                 case QUERY_ADDITIONS.LAST:
                     return query.last();
                 case QUERY_ADDITIONS.STABLE_ORDERING:
-                    break; // do nothing
+                    break;
                 default:
                     throw new Error(`Unsupported query addition: ${addition.additionFunction}`);
             }
@@ -302,27 +334,56 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
     return query;
 }
 
+function matchesIndexedCondition(record, condition) {
+    let recordValue = record[condition.property];
+    let queryValue = condition.value;
+
+    if (condition.isString === true && condition.caseSensitive === false &&
+        typeof recordValue === "string" && typeof queryValue === "string") {
+        recordValue = recordValue.toLowerCase();
+        queryValue = queryValue.toLowerCase();
+    }
+
+    switch (condition.operation) {
+        case QUERY_OPERATIONS.EQUAL:
+            return recordValue === queryValue;
+        case QUERY_OPERATIONS.IN:
+            return Array.isArray(queryValue) && queryValue.includes(recordValue);
+        case QUERY_OPERATIONS.GREATER_THAN:
+            return recordValue > queryValue;
+        case QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL:
+            return recordValue >= queryValue;
+        case QUERY_OPERATIONS.LESS_THAN:
+            return recordValue < queryValue;
+        case QUERY_OPERATIONS.LESS_THAN_OR_EQUAL:
+            return recordValue <= queryValue;
+        case QUERY_OPERATIONS.STARTS_WITH:
+            return typeof recordValue === "string" &&
+                typeof queryValue === "string" &&
+                recordValue.startsWith(queryValue);
+        default:
+            throw new Error(`Unsupported indexed residual operation: ${condition.operation}`);
+    }
+}
 
 function requiresQueryAdditions(queryAdditions = []) {
     if (!queryAdditions || queryAdditions.length === 0) {
-        return false; // No query additions at all, skip processing
+        return false;
     }
 
     if (queryAdditions.length === 1) {
         const singleAddition = queryAdditions[0].additionFunction;
         if (singleAddition === QUERY_ADDITIONS.ORDER_BY || singleAddition === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
-            return false; // Only an order by, which we don't need
+            return false;
         }
     }
 
-    return true; // Query additions required
+    return true;
 }
 
-
-
-
 /**
- * Optimizes indexed queries by merging `anyOf()` conditions and recognizing compound indexes.
+ * Preserve each DNF branch. Global property grouping loses whether conditions were
+ * joined by AND within one branch or OR across separate branches.
  */
 function optimizeIndexedQueries(indexedQueries, compoundIndexQueries) {
     if ((!indexedQueries || indexedQueries.length === 0) && (!compoundIndexQueries || compoundIndexQueries.length === 0)) {
@@ -331,13 +392,9 @@ function optimizeIndexedQueries(indexedQueries, compoundIndexQueries) {
 
     debugLog("Optimizing Indexed Queries", { indexedQueries, compoundIndexQueries });
 
-    // Optimize single-index queries normally
     let optimizedSingleIndexes = optimizeIndexedOnlyQueries(indexedQueries);
-
-    // Optimize compound queries, ensuring fallbackSingleIndexes is always an array
     let { optimizedCompoundIndexes = [], fallbackSingleIndexes = [] } = optimizeCompoundIndexedOnlyQueries(compoundIndexQueries);
 
-    // **Merge any single-index fallbacks from compound queries**
     optimizedSingleIndexes.push(...fallbackSingleIndexes);
 
     if (optimizedSingleIndexes.length === 0 && optimizedCompoundIndexes.length === 0) {
@@ -345,87 +402,27 @@ function optimizeIndexedQueries(indexedQueries, compoundIndexQueries) {
     }
 
     debugLog("Final Optimized Queries", { optimizedSingleIndexes, optimizedCompoundIndexes });
-
     return { optimizedSingleIndexes, optimizedCompoundIndexes };
 }
 
-
-
-/**
- * Optimizes single-field indexed queries (e.g., `where("field")`).
- */
 function optimizeIndexedOnlyQueries(indexedQueries) {
     if (!indexedQueries || indexedQueries.length === 0) return [];
 
-    let optimizedSingleIndexes = [];
-    let groupedByProperty = {};
-
-    // Group queries by property name
-    for (let query of indexedQueries) {
-        for (let condition of query) {
-            if (!groupedByProperty[condition.property]) {
-                groupedByProperty[condition.property] = [];
-            }
-            groupedByProperty[condition.property].push(condition);
-        }
-    }
-
-    for (let [property, conditions] of Object.entries(groupedByProperty)) {
-        if (conditions.length > 1) {
-            // Convert multiple `.Equal` conditions into `.anyOf()`
-            if (conditions.every(c => c.operation === QUERY_OPERATIONS.EQUAL)) {
-                optimizedSingleIndexes.push([{
-                    property,
-                    operation: QUERY_OPERATIONS.IN,
-                    value: conditions.map(c => c.value)
-                }]);
-            }
-            // Convert multiple `.StartsWith()` conditions into `.anyOf()`
-            else if (conditions.every(c => c.operation === QUERY_OPERATIONS.STARTS_WITH)) {
-                optimizedSingleIndexes.push([{
-                    property,
-                    operation: QUERY_OPERATIONS.IN,
-                    value: conditions.map(c => c.value)
-                }]);
-            }
-            // Combine range conditions into `.between()` if possible
-            else if (
-                conditions.some(c => c.operation.includes("Greater")) &&
-                conditions.some(c => c.operation.includes("Less"))
-            ) {
-                const minCondition = conditions.find(c => c.operation.includes("Greater"));
-                const maxCondition = conditions.find(c => c.operation.includes("Less"));
-
-                optimizedSingleIndexes.push([{
-                    property,
-                    operation: "between",
-                    value: [minCondition.value, maxCondition.value],
-                    includeLower: minCondition.operation === QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL,
-                    includeUpper: maxCondition.operation === QUERY_OPERATIONS.LESS_THAN_OR_EQUAL
-                }]);
-
-            } else {
-                optimizedSingleIndexes.push(conditions);
-            }
-        } else {
-            optimizedSingleIndexes.push(conditions);
-        }
-    }
-
-    return optimizedSingleIndexes;
+    // A query entry is one AND branch. Do not regroup entries by property: that turns
+    // independent branches into a different boolean expression (and was the source of
+    // the range-OR, multi-prefix, and independent-index AND defects).
+    return indexedQueries
+        .filter(query => Array.isArray(query) && query.length > 0)
+        .map(query => query.map(condition => ({ ...condition })));
 }
 
-/**
- * Optimizes compound-indexed queries (e.g., `where(["field1", "field2"])`).
- * If a compound query cannot be optimized, it falls back to single-index queries.
- */
 function optimizeCompoundIndexedOnlyQueries(compoundIndexQueries) {
     if (!compoundIndexQueries || compoundIndexQueries.length === 0) {
         return { optimizedCompoundIndexes: [], fallbackSingleIndexes: [] };
     }
 
     let optimizedCompoundIndexes = [];
-    let fallbackToSingleIndex = []; // Store compound queries that need to be handled as single-index
+    let fallbackSingleIndexes = [];
 
     for (let compoundQuery of compoundIndexQueries) {
         let conditions = compoundQuery.conditions;
@@ -434,24 +431,18 @@ function optimizeCompoundIndexedOnlyQueries(compoundIndexQueries) {
         let canUseEquals = conditions.every(c => c.operation === QUERY_OPERATIONS.EQUAL);
 
         if (canUseEquals) {
-            // **Use .equals() for compound indexes when possible**
             optimizedCompoundIndexes.push([{
                 properties,
                 operation: QUERY_OPERATIONS.EQUAL,
-                value: conditions.map(c => c.value) // Ordered values
+                value: conditions.map(c => c.value)
             }]);
         } else {
-            // **If the compound query cannot be optimized, pass conditions to single-index processing**
-            debugLog("Cannot optimize compound index due to unsupported operations. Falling back to single-index processing.", { compoundQuery });
-            fallbackToSingleIndex.push(...conditions);
+            debugLog("Cannot optimize compound index due to unsupported operations. Preserving branch as single-index candidates.", { compoundQuery });
+            fallbackSingleIndexes.push(
+                (compoundQuery.allConditions ?? conditions).map(condition => ({ ...condition }))
+            );
         }
     }
 
-    // **Run single-index optimization on fallback queries**
-    let fallbackSingleIndexes = fallbackToSingleIndex.length > 0
-        ? optimizeIndexedOnlyQueries([fallbackToSingleIndex])
-        : [];
-
     return { optimizedCompoundIndexes, fallbackSingleIndexes };
 }
-

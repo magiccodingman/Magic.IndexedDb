@@ -8,10 +8,6 @@ import { rebuildCursorConditionsToPredicateTree } from "./rebuildNestedPredicate
 /**
  * Executes a cursor-based query using Dexie's `each()` for efficient iteration.
  * This ensures that records are not duplicated if they match multiple OR conditions.
- *
- * @param {Object} table - The Dexie table instance.
- * @param {Array} conditionsArray - Array of OR groups containing AND conditions.
- * @returns {Promise<Array>} - Filtered results based on conditions.
  */
 export async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
 
@@ -44,19 +40,13 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
             debugLog("Stable Ordering detected. Disabling any ordering by indexed queries.");
         }
 
-        // **Metadata Path: Extract primary keys and sorting properties**
         let primaryKeyList = await runMetaDataCursorQuery(db, table, structuredPredicateTree, queryAdditions, yieldedPrimaryKeys, compoundKeys, indexOrderProps);
-
-        // **Apply sorting, take, and skip operations**
         let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, true, indexOrderProps);
-
-        // **Fetch only the required records from IndexedDB**
         let finalRecords = await fetchRecordsByPrimaryKeys(db, table, finalPrimaryKeys, compoundKeys);
 
         debugLog("Final Cursor Query Records Retrieved", { count: finalRecords.length });
-        return finalRecords; // Ready for yielding
+        return finalRecords;
     } else {
-        // **Direct Retrieval Path: Skip metadata processing & fetch full records immediately**
         return await runDirectCursorQuery(db, table, structuredPredicateTree, yieldedPrimaryKeys, compoundKeys);
     }
 }
@@ -69,26 +59,20 @@ function hasStableOrdering(queryAdditions) {
 function detectIndexOrderProperties(predicateTree, table) {
     const indexedProps = new Set();
 
-    // Step 1: Get actual indexed fields from Dexie table schema
-    const dexieIndexKeys = Object.keys(table.schema.idxByName || {});
-
-    // This gives you:
-    // - For single indexes: ["Email", "Age"]
-    // - For compound indexes: ["[FirstName+LastName]", "[LastName+Age]"], etc.
-
-    // Step 2: Expand compound indexes
+    // Only true standalone indexes can define single-property index ordering. A field
+    // that merely participates in [A+B] is not an IndexedDB index named A or B.
     const normalizedIndexProps = new Set();
-
-    for (const idx of dexieIndexKeys) {
-        if (idx.startsWith('[')) {
-            const parts = idx.replace(/[\[\]]/g, "").split("+").map(x => x.trim());
-            for (const p of parts) normalizedIndexProps.add(p);
-        } else {
-            normalizedIndexProps.add(idx);
+    for (const index of table.schema.indexes || []) {
+        if (typeof index.keyPath === "string") {
+            normalizedIndexProps.add(index.keyPath);
         }
     }
 
-    // Step 3: Walk the predicate tree
+    const primaryKeyPath = table.schema.primKey?.keyPath;
+    if (typeof primaryKeyPath === "string") {
+        normalizedIndexProps.add(primaryKeyPath);
+    }
+
     walkPredicateTree(predicateTree, node => {
         if (node.nodeType === "condition") {
             const prop = node.condition?.property;
@@ -106,7 +90,7 @@ function walkPredicateTree(node, visitFn) {
         return;
 
     if (node.nodeType === "condition") {
-        visitFn(node); // Visit condition nodes directly
+        visitFn(node);
     } else if (node.nodeType === "logical" && Array.isArray(node.children)) {
         for (const child of node.children) {
             walkPredicateTree(child, visitFn);
@@ -117,10 +101,6 @@ function walkPredicateTree(node, visitFn) {
 
 let lastCursorWarningTime = null;
 
-/**
- * Generalized cursor processing function for both metadata extraction and direct record retrieval.
- * @param {Function} recordHandler - Callback function to process each record.
- */
 async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys, compoundKeys, recordHandler) {
     debugLog("Processing Cursor Records");
 
@@ -129,7 +109,6 @@ async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys
 
     const requiredPropertiesFiltered = new Set();
 
-    // Only collect properties if we actually have a filter tree with children
     const hasConditions =
         predicateTree &&
         (
@@ -142,8 +121,10 @@ async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys
     }
 
     await db.transaction('r', table, async () => {
-        await table.orderBy(compoundKeys[0]).each((record) => {
-            // Still apply property checks *only* if we have any to check
+        // toCollection() traverses the store by its actual primary key, including a
+        // compound primary key. orderBy(compoundKeys[0]) incorrectly assumes the first
+        // component of a compound key is also a standalone index.
+        await table.toCollection().each((record) => {
             if (requiredPropertiesFiltered.size > 0) {
                 for (const prop of requiredPropertiesFiltered) {
                     if (record[prop] === undefined) {
@@ -162,7 +143,6 @@ async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys
                 return;
             }
 
-            // Only evaluate if we actually have predicate logic
             if (hasConditions && !evaluatePredicateTree(predicateTree, record))
                 return;
 
@@ -174,7 +154,9 @@ async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys
 
 function collectPropertiesFromTree(node, propertySet) {
     if (node.nodeType === "condition") {
-        propertySet.add(node.condition.property);
+        if (node.condition?.property !== "__constant") {
+            propertySet.add(node.condition.property);
+        }
         return;
     }
     for (const child of node.children ?? []) {
@@ -184,6 +166,10 @@ function collectPropertiesFromTree(node, propertySet) {
 
 function evaluatePredicateTree(node, record) {
     if (node.nodeType === "condition") {
+        if (node.condition?.property === "__constant") {
+            return node.condition.value === true;
+        }
+
         if (!node.optimized) {
             node.optimized = optimizeSingleCondition(node.condition);
         }
@@ -198,12 +184,11 @@ function evaluatePredicateTree(node, record) {
 
 function optimizeSingleCondition(condition) {
     if (condition.value === -Infinity || condition.value === Infinity) {
-        return condition; // Already a no-op filter, skip transformation
+        return condition;
     }
 
     const optimized = { ...condition };
 
-    // Lowercase normalization for string values if not case-sensitive
     if (condition.isString && !condition.caseSensitive && typeof condition.value === "string") {
         optimized.value = condition.value.toLowerCase();
     }
@@ -213,42 +198,32 @@ function optimizeSingleCondition(condition) {
 }
 
 
-
-
-/**
- * Directly retrieves records that match the conditions without metadata processing.
- */
 async function runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, compoundKeys) {
     debugLog("Running Direct Cursor Query");
 
-    // **Estimate table size to preallocate memory**
     let estimatedSize = await table.count();
     if (estimatedSize === 0) {
         debugLog("No records found in the table. Skipping direct cursor query.");
         return [];
     }
 
-    let records = new Array(estimatedSize); // **Preallocate**
+    let records = new Array(estimatedSize);
     let resultIndex = 0;
 
     await processCursorRecords(db, table, conditions, yieldedPrimaryKeys, compoundKeys, (record) => {
-        records[resultIndex++] = record; // **Store record using index assignment**
+        records[resultIndex++] = record;
 
-        // **Dynamically resize if needed**
         if (resultIndex >= records.length) {
-            records.length *= 2; // **Double array size**
+            records.length *= 2;
         }
     });
 
     debugLog("Direct Cursor Query Records Retrieved", { count: resultIndex });
 
-    return records.slice(0, resultIndex); // **Trim unused slots**
+    return records.slice(0, resultIndex);
 }
 
 
-/**
- * Extracts only necessary metadata using a Dexie cursor in a transaction.
- */
 async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys, detectedIndexOrderProperties = []) {
     debugLog("Extracting Metadata for Cursor Query", { conditions, queryAdditions });
 
@@ -256,7 +231,6 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
     let magicOrder = 0;
 
     if (conditions?.nodeType === "logical" && !conditions.children) {
-        // No conditions -- grab everything
         debugLog("Detected no-op predicate. All records will be evaluated.");
     } else {
         collectPropertiesFromTree(conditions, requiredProperties);
@@ -275,7 +249,6 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
         requiredProperties.add(key);
     }
 
-    // Include all indexable props that affect ordering
     for (const prop of detectedIndexOrderProperties) {
         requiredProperties.add(prop);
     }
@@ -319,8 +292,6 @@ function normalizeDate(value) {
         return new Date(Number.NaN);
     }
 
-    // IndexedDB values can cross a browser-realm boundary. Firefox does not
-    // consistently recognize those Date objects with the local instanceof.
     if (Object.prototype.toString.call(value) === "[object Date]") {
         return new Date(value.getTime());
     }
@@ -339,7 +310,6 @@ function getComparisonFunction(operation) {
         [QUERY_OPERATIONS.STARTS_WITH]: (recordValue, queryValue) =>
             typeof recordValue === "string" && recordValue.startsWith(queryValue),
 
-
         [QUERY_OPERATIONS.CONTAINS]: (recordValue, queryValue) => {
             if (typeof recordValue === "string") {
                 return recordValue.includes(queryValue);
@@ -352,7 +322,6 @@ function getComparisonFunction(operation) {
             }
             return false;
         },
-
 
         [QUERY_OPERATIONS.NOT_CONTAINS]: (recordValue, queryValue) => {
             if (typeof recordValue === "string") {
@@ -367,13 +336,9 @@ function getComparisonFunction(operation) {
             return true;
         },
 
-
         [QUERY_OPERATIONS.IN]: (recordValue, queryValue) =>
             Array.isArray(queryValue) && queryValue.includes(recordValue),
 
-
-
-        // ------ MONTH OPERATIONS ------
         [QUERY_OPERATIONS.MONTH_EQUAL]: (recordValue, queryValue) => {
             recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && (recordValue.getMonth() + 1) === queryValue;
@@ -404,7 +369,6 @@ function getComparisonFunction(operation) {
             return !isNaN(recordValue) && (recordValue.getMonth() + 1) <= queryValue;
         },
 
-        // ------ DAY OPERATIONS ------
         [QUERY_OPERATIONS.DAY_EQUAL]: (recordValue, queryValue) => {
             recordValue = normalizeDate(recordValue);
             return !isNaN(recordValue) && recordValue.getDate() === queryValue;
@@ -435,8 +399,6 @@ function getComparisonFunction(operation) {
             return !isNaN(recordValue) && recordValue.getDate() <= queryValue;
         },
 
-
-        // ------ DAY OF WEEK OPERATIONS ------
         [QUERY_OPERATIONS.DAY_OF_WEEK_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
             recordValue = normalizeDate(recordValue);
@@ -473,8 +435,6 @@ function getComparisonFunction(operation) {
             return !isNaN(recordValue) && recordValue.getDay() <= queryValue;
         },
 
-
-        // ------ YEAR OPERATIONS ------
         [QUERY_OPERATIONS.YEAR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
             recordValue = normalizeDate(recordValue);
@@ -511,7 +471,6 @@ function getComparisonFunction(operation) {
             return !isNaN(recordValue) && recordValue.getFullYear() <= queryValue;
         },
 
-        // ------ DAY OF YEAR OPERATIONS ------
         [QUERY_OPERATIONS.DAY_OF_YEAR_EQUAL]: (recordValue, queryValue) => {
             if (recordValue === null || recordValue === undefined) return false;
             recordValue = normalizeDate(recordValue);
@@ -572,8 +531,6 @@ function getComparisonFunction(operation) {
             return dayOfYear <= queryValue;
         },
 
-
-
         [QUERY_OPERATIONS.ENDS_WITH]: (recordValue, queryValue) =>
             typeof recordValue === "string" && recordValue.endsWith(queryValue),
 
@@ -582,7 +539,6 @@ function getComparisonFunction(operation) {
 
         [QUERY_OPERATIONS.NOT_STARTS_WITH]: (recordValue, queryValue) =>
             typeof recordValue === "string" && !recordValue.startsWith(queryValue),
-
 
         [QUERY_OPERATIONS.NOT_LENGTH_EQUAL]: (recordValue, queryValue) =>
             (typeof recordValue === "string" || Array.isArray(recordValue)) && recordValue.length !== queryValue,
@@ -611,7 +567,6 @@ function getComparisonFunction(operation) {
         [QUERY_OPERATIONS.TYPEOF_BLOB]: (value) => typeof Blob !== "undefined" && value instanceof Blob,
         [QUERY_OPERATIONS.TYPEOF_ARRAYBUFFER]: (value) => value instanceof ArrayBuffer || ArrayBuffer.isView(value),
         [QUERY_OPERATIONS.TYPEOF_FILE]: (value) => typeof File !== "undefined" && value instanceof File,
-
 
         [QUERY_OPERATIONS.IS_NULL]: (value) => value === null || value === undefined,
         [QUERY_OPERATIONS.IS_NOT_NULL]: (value) => value !== null && value !== undefined,
@@ -669,7 +624,6 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
 
     let isCompoundKey = Array.isArray(compoundKeys) && compoundKeys.length > 1;
 
-    // Normalize single-key inputs to ensure flat values
     const normalizeBatch = (batch) => {
         return isCompoundKey
             ? batch.map(pk => Array.isArray(pk) ? pk : compoundKeys.map(key => pk[key]))
@@ -689,7 +643,6 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
         requestedOrder.get(JSON.stringify(keyForRecord(right)))
     );
 
-    // **Tier 1: Small datasets (< 1500)  Single Fetch**
     if (primaryKeys.length < 1500) {
         const records = await db.transaction('r', table, async () => {
             let formattedBatch = normalizeBatch(primaryKeys);
@@ -700,7 +653,6 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
         return restoreRequestedOrder(records);
     }
 
-    // **Tier 2: Medium Datasets (< Large Threshold)  Fire All Batches In Parallel**
     if (primaryKeys.length < batchSize * maxConcurrentBatches * 3) {
         let batchPromises = [];
         await db.transaction('r', table, async () => {
@@ -718,13 +670,10 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
         return restoreRequestedOrder(batchResults.flat());
     }
 
-    // **Tier 3: Massive Datasets - Controlled Concurrency, Shrinking `anyOf()` for faster lookups**
     const records = await db.transaction('r', table, async () => {
         let remainingKeys = [...primaryKeys];
         let foundKeys = new Set();
         let results = [];
-
-        // **Queue only maxConcurrentBatches at a time**
         let activePromises = new Set();
 
         async function processNextBatch() {
@@ -733,7 +682,6 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
             let batch = remainingKeys.splice(0, batchSize);
             let formattedBatch = normalizeBatch(batch);
 
-            // **Split the query if it's too large**
             if (formattedBatch.length > 1000) {
                 let mid = Math.floor(formattedBatch.length / 2);
                 let firstHalf = formattedBatch.slice(0, mid);
@@ -775,12 +723,10 @@ async function fetchRecordsByPrimaryKeys(db, table, primaryKeys, compoundKeys, b
             }
         }
 
-        // **Start initial batches**
         for (let i = 0; i < maxConcurrentBatches; i++) {
             processNextBatch();
         }
 
-        // **Wait for all batches to complete**
         await Promise.all(activePromises);
         return results;
     });
@@ -800,14 +746,13 @@ function applyCursorQueryAdditions(
             compoundKeys.map(key => item.sortingProperties[key])
         );
     }
-    // waca
+
     debugLog("Applying cursor query additions in strict given order", {
         queryAdditions,
         detectedIndexOrderProperties
     });
 
-    let additions = [...queryAdditions]; // Avoid modifying original
-    // Step 0: Always apply detectedIndexOrderProperties first
+    let additions = [...queryAdditions];
     if (detectedIndexOrderProperties?.length > 0) {
         primaryKeyList.sort((a, b) => {
             for (let prop of detectedIndexOrderProperties) {
@@ -815,12 +760,10 @@ function applyCursorQueryAdditions(
                 const bVal = b.sortingProperties[prop];
                 if (aVal !== bVal) return aVal > bVal ? 1 : -1;
             }
-            // Always fallback to internal row ordering
             return a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"];
         });
     }
 
-    // Flip TAKE + SKIP if needed (for consistent cursor behavior)
     if (flipSkipTakeOrder) {
         let takeIndex = -1, skipIndex = -1;
         for (let i = 0; i < additions.length; i++) {
@@ -834,7 +777,6 @@ function applyCursorQueryAdditions(
         }
     }
 
-    // Step 1: Apply all query additions in declared order
     for (const addition of additions) {
         switch (addition.additionFunction) {
             case QUERY_ADDITIONS.ORDER_BY:
@@ -850,7 +792,6 @@ function applyCursorQueryAdditions(
                             : (valueA > valueB ? 1 : -1);
                     }
 
-                    // Fallback to row order
                     return a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"];
                 });
                 break;
@@ -875,8 +816,8 @@ function applyCursorQueryAdditions(
                 primaryKeyList = primaryKeyList.length > 0 ? [primaryKeyList[primaryKeyList.length - 1]] : [];
                 break;
 
-            case QUERY_ADDITIONS.STABLE_ORDERING:                
-                break; // skip this
+            case QUERY_ADDITIONS.STABLE_ORDERING:
+                break;
 
             default:
                 throw new Error(`Unsupported query addition: ${addition.additionFunction}`);

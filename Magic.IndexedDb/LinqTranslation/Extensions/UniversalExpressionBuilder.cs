@@ -94,6 +94,22 @@ public class UniversalExpressionBuilder<T>
     {
         if (bin.NodeType == ExpressionType.AndAlso || bin.NodeType == ExpressionType.OrElse)
         {
+            if (TryGetBooleanConstant(bin.Left, out var leftConstant))
+            {
+                if (bin.NodeType == ExpressionType.AndAlso)
+                    return leftConstant ? ParseExpression(bin.Right) : HandleConstantBoolean(Expression.Constant(false));
+
+                return leftConstant ? HandleConstantBoolean(Expression.Constant(true)) : ParseExpression(bin.Right);
+            }
+
+            if (TryGetBooleanConstant(bin.Right, out var rightConstant))
+            {
+                if (bin.NodeType == ExpressionType.AndAlso)
+                    return rightConstant ? ParseExpression(bin.Left) : HandleConstantBoolean(Expression.Constant(false));
+
+                return rightConstant ? HandleConstantBoolean(Expression.Constant(true)) : ParseExpression(bin.Left);
+            }
+
             var op = bin.NodeType == ExpressionType.AndAlso
                 ? FilterLogicalOperator.And
                 : FilterLogicalOperator.Or;
@@ -119,11 +135,15 @@ public class UniversalExpressionBuilder<T>
     {
         if (TryFlattenContains(call, out var flattenedConditions))
         {
+            var conditions = flattenedConditions.ToList();
+            if (conditions.Count == 0)
+                return HandleConstantBoolean(Expression.Constant(false));
+
             return new FilterNode
             {
                 NodeType = FilterNodeType.Logical,
                 Operator = FilterLogicalOperator.Or,
-                Children = flattenedConditions
+                Children = conditions
                     .Select(c => new FilterNode
                     {
                         NodeType = FilterNodeType.Condition,
@@ -135,13 +155,13 @@ public class UniversalExpressionBuilder<T>
         string name = call.Method.Name;
         string operation = name switch
         {
-            "Equals" => "StringEquals",
+            "Equals" => "Equal",
             _ => name
         };
 
         bool caseSensitive = ExtractCaseSensitivity(call);
 
-        if (operation is "Contains" or "StartsWith" or "EndsWith" or "StringEquals")
+        if (operation is "Contains" or "StartsWith" or "EndsWith" or "Equal")
         {
             var leftExpr = call.Object as MemberExpression;
             var rightVal = ToConst(call.Arguments[0]);
@@ -224,8 +244,8 @@ public class UniversalExpressionBuilder<T>
             ExpressionType.LessThan => "GreaterThanOrEqual",
             ExpressionType.GreaterThanOrEqual => "LessThan",
             ExpressionType.LessThanOrEqual => "GreaterThan",
-            ExpressionType.Equal => "NotEquals",
-            ExpressionType.NotEqual => "StringEquals",
+            ExpressionType.Equal => "NotEqual",
+            ExpressionType.NotEqual => "Equal",
             _ => throw new InvalidOperationException($"Unsupported NOT binary: {bin}")
         };
 
@@ -395,18 +415,18 @@ public class UniversalExpressionBuilder<T>
 
 
         var finalSegment = memberPath[^1];
-        var rootSegment = memberPath[^2];
 
         SearchPropEntry spe = PropertyMappingCache.GetTypeOfTProperties(typeof(T));
 
-        string rootPropName =  ExtractRootProperty(memberPath);
+        string rootPropName = ExtractRootProperty(memberPath);
         MagicPropertyEntry mpe = spe.GetPropertyByCsharpName(rootPropName);
 
-        string jsProp = mpe.JsPropertyName;            
+        string jsProp = mpe.JsPropertyName;
 
         if (!IsDateType(mpe.Property.PropertyType))
             return false;
 
+        bool isNullableDate = Nullable.GetUnderlyingType(mpe.Property.PropertyType) != null;
         var rightUnwrapped = UnwrapConvert(bin.Right);
         object? rawConst = ToConst(rightUnwrapped).Value;
 
@@ -416,7 +436,7 @@ public class UniversalExpressionBuilder<T>
         switch (finalSegment)
         {
             case "Date":
-                node = BuildDateEqualityRange(jsProp, rawConst, operation);
+                node = BuildDateEqualityRange(jsProp, rawConst, operation, isNullableDate);
                 return true;
 
             case "Year":
@@ -479,7 +499,7 @@ public class UniversalExpressionBuilder<T>
         return actual == typeof(DateTime) || actual == typeof(DateOnly);
     }
 
-    private FilterNode BuildDateEqualityRange(string jsProp, object rawConst, string op)
+    private FilterNode BuildDateEqualityRange(string jsProp, object rawConst, string op, bool isNullableDate)
     {
         if (rawConst is not DateTime dt)
             throw new InvalidOperationException("Expected DateTime constant for .Date comparison");
@@ -509,11 +529,51 @@ public class UniversalExpressionBuilder<T>
             };
         }
 
-        // For <, <=, >, >=, NotEqual, etc.
+        if (op is "NotEqual")
+        {
+            var children = new List<FilterNode>();
+
+            if (isNullableDate)
+            {
+                children.Add(new FilterNode
+                {
+                    NodeType = FilterNodeType.Condition,
+                    Condition = new FilterCondition(jsProp, "IsNull", null, false, false)
+                });
+            }
+
+            children.Add(new FilterNode
+            {
+                NodeType = FilterNodeType.Condition,
+                Condition = new FilterCondition(jsProp, "LessThan", startOfDay, false, false)
+            });
+            children.Add(new FilterNode
+            {
+                NodeType = FilterNodeType.Condition,
+                Condition = new FilterCondition(jsProp, "GreaterThanOrEqual", nextDay, false, false)
+            });
+
+            return new FilterNode
+            {
+                NodeType = FilterNodeType.Logical,
+                Operator = FilterLogicalOperator.Or,
+                Children = children
+            };
+        }
+
+        var (finalOperation, boundary) = op switch
+        {
+            "GreaterThan" => ("GreaterThanOrEqual", nextDay),
+            "GreaterThanOrEqual" => ("GreaterThanOrEqual", startOfDay),
+            "LessThan" => ("LessThan", startOfDay),
+            "LessThanOrEqual" => ("LessThan", nextDay),
+            _ => throw new InvalidOperationException($"Unsupported operator '{op}' for .Date")
+        };
+
         return new FilterNode
         {
             NodeType = FilterNodeType.Condition,
-            Condition = new FilterCondition(jsProp, op, startOfDay, false, false)
+            Condition = new FilterCondition(jsProp, finalOperation, boundary, false, false)
         };
     }
 
@@ -603,7 +663,6 @@ public class UniversalExpressionBuilder<T>
                     var propInfo = typeof(T).GetProperty(propExpr.Member.Name);
                     if (propInfo == null) return false;
 
-                    // Suppose you have a way to map property name to something universal:
                     string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
 
                     flattened = enumerable
@@ -613,7 +672,7 @@ public class UniversalExpressionBuilder<T>
                             "Equal",
                             val,
                             val is string,
-                            false
+                            val is string
                         ));
                     return true;
                 }
@@ -634,10 +693,10 @@ public class UniversalExpressionBuilder<T>
             {
                 new FilterCondition(
                     universalProp,
-                    "ArrayContains",
+                    "Contains",
                     constant.Value,
                     constant.Value is string,
-                    false
+                    constant.Value is string
                 )
             };
             return true;
@@ -670,12 +729,12 @@ public class UniversalExpressionBuilder<T>
         MemberExpression? memberExpr,
         ConstantExpression? constExpr,
         string operation,
-        bool caseSensitive = false)
+        bool? caseSensitive = null)
     {
         if (memberExpr == null || constExpr == null)
         {
             throw new InvalidOperationException("Cannot build filter condition from null expressions.");
-        }           
+        }
 
         var propInfo = typeof(T).GetProperty(memberExpr.Member.Name);
         if (propInfo == null)
@@ -683,24 +742,18 @@ public class UniversalExpressionBuilder<T>
             throw new InvalidOperationException($"Property {memberExpr.Member.Name} not found on type {typeof(T).Name}.");
         }
 
-        // Possibly convert to a JSON node or keep as raw object. 
-        // If you absolutely need a JSON representation, do:
-        // object? val = constExpr.Value != null ? JsonValue.Create(constExpr.Value) : null;
-        // Otherwise, you can just store the raw object in FilterCondition.value:
         object? val = NormalizeEnumComparisonValue(propInfo, constExpr.Value, operation);
 
-        // e.g. "name", "age"
         string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
-
-        // isString is relevant only if the constant is indeed a string
         bool isString = val is string;
+        bool effectiveCaseSensitivity = caseSensitive ?? isString;
 
         return new FilterCondition(
             universalProp,
             operation,
             val,
             isString,
-            caseSensitive
+            effectiveCaseSensitivity
         );
     }
 
@@ -738,13 +791,12 @@ public class UniversalExpressionBuilder<T>
 
     private static string Invert(string methodName)
     {
-        // e.g. Contains -> NotContains, StartsWith -> NotStartsWith, etc.
         return methodName switch
         {
             "Contains" => "NotContains",
             "StartsWith" => "NotStartsWith",
             "EndsWith" => "NotEndsWith",
-            "Equals" => "NotEquals",
+            "Equals" => "NotEqual",
             _ => throw new InvalidOperationException($"Cannot invert unsupported method: {methodName}")
         };
     }
@@ -763,7 +815,6 @@ public class UniversalExpressionBuilder<T>
 
     private static bool SupportedUnaryMethod(string name)
     {
-        // Your custom logic for "GetDay", "IsNull", etc.
         return name.StartsWith("TypeOf")
                || name.StartsWith("NotTypeOf")
                || name.StartsWith("Length")
@@ -773,14 +824,27 @@ public class UniversalExpressionBuilder<T>
 
     private static bool ExtractCaseSensitivity(MethodCallExpression call)
     {
-        // Mimic your logic that checks if a StringComparison was passed in
         if (call.Arguments.Count > 1 && call.Arguments[1] is ConstantExpression cmp && cmp.Value is StringComparison cmpVal)
         {
-            // If it’s ordinal or current-culture, consider it case-sensitive
-            return cmpVal == StringComparison.Ordinal || cmpVal == StringComparison.CurrentCulture;
+            return cmpVal is StringComparison.Ordinal
+                or StringComparison.CurrentCulture
+                or StringComparison.InvariantCulture;
         }
-        // Otherwise default to "true" or "false" depending on your preference:
+
         return true;
+    }
+
+    private static bool TryGetBooleanConstant(Expression expression, out bool value)
+    {
+        expression = StripConvert(expression);
+        if (expression is ConstantExpression { Type: var type, Value: bool boolValue } && type == typeof(bool))
+        {
+            value = boolValue;
+            return true;
+        }
+
+        value = default;
+        return false;
     }
 
     private static bool IsParameterMember(Expression expr)
@@ -823,13 +887,12 @@ public class UniversalExpressionBuilder<T>
 
     private static ConstantExpression ToConst(Expression expr)
     {
-        expr = StripConvert(expr); // <-- handle Convert wrappers
+        expr = StripConvert(expr);
 
         return expr switch
         {
             ConstantExpression c => c,
 
-            // e.g., new DateTime(...) or anything not marked constant but compile-safe
             NewExpression or MemberExpression or MethodCallExpression =>
                 Expression.Constant(Expression.Lambda(expr).Compile().DynamicInvoke()),
 

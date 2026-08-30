@@ -1,5 +1,5 @@
 "use strict";
-import { debugLog } from "./utilityHelpers.js";
+import { debugLog, beginQueryPlannerTrace, traceQueryPlannerStage } from "./utilityHelpers.js";
 import {
     resolveNodeType,
     resolveLogicalOperator
@@ -14,9 +14,17 @@ import { optimizeOrGroupStructure } from "./optimizeOrGroupStructure.js";
  * from a tree of nested `And`/`Or` logical nodes.
  */
 export function flattenUniversalPredicate(rootNode) {
+    beginQueryPlannerTrace({
+        sourceNodeType: resolveNodeType(rootNode?.nodeType) ?? null
+    });
+
     debugLog("Flattening universal predicate", rootNode);
 
     if (!rootNode) {
+        traceQueryPlannerStage("logical-flatten", {
+            branchCount: 0,
+            reason: "missing-root"
+        });
         return {
             nestedOrFilterUnclean: { orGroups: [] },
             isUniversalTrue: false,
@@ -31,13 +39,46 @@ export function flattenUniversalPredicate(rootNode) {
 
     const andGroups = flattenNodeToAndGroups(rootNode);
 
+    traceQueryPlannerStage("logical-flatten", {
+        branchCount: andGroups.length,
+        conditionsPerBranch: andGroups.map(group => group.length),
+        isUniversalTrue: detection.isUniversalTrue,
+        isUniversalFalse: detection.isUniversalFalse
+    });
+
     const orGroups = andGroups.map(andConditions => ({
         andGroups: [
             { conditions: andConditions }
         ]
     }));
 
-    let orGroupsOptimized = optimizeOrGroupStructure(advancedOptimizeNestedOrFilter(orGroups));
+    const optimizerInput = { orGroups };
+    traceQueryPlannerStage("optimizer-dispatch", {
+        optimizer: "advancedOptimizeNestedOrFilter",
+        inputShape: "object-with-orGroups-array",
+        expectedShape: "object-with-orGroups-array",
+        invokedWithCompatibleShape: true
+    });
+
+    const advancedResult = advancedOptimizeNestedOrFilter(optimizerInput);
+
+    traceQueryPlannerStage("optimizer-result", {
+        optimizer: "advancedOptimizeNestedOrFilter",
+        sameReferenceReturned: advancedResult === optimizerInput,
+        branchCountBefore: orGroups.length,
+        branchCountAfter: advancedResult?.orGroups?.length ?? null
+    });
+
+    let orGroupsOptimized = optimizeOrGroupStructure(advancedResult);
+
+    traceQueryPlannerStage("optimizer-result", {
+        optimizer: "optimizeOrGroupStructure",
+        branchCountBefore: advancedResult?.orGroups?.length ?? null,
+        branchCountAfter: Array.isArray(orGroupsOptimized)
+            ? orGroupsOptimized.length
+            : orGroupsOptimized?.orGroups?.length ?? null
+    });
+
     const result = {
         nestedOrFilterUnclean: {
             orGroups: orGroupsOptimized
@@ -141,10 +182,8 @@ function normalizeCondition(condition) {
             ? QUERY_OPERATIONS.IS_NULL
             : QUERY_OPERATIONS.IS_NOT_NULL;
 
-        // Leave value in place to pass validation
         normalized.value = null;
     }
 
     return normalized;
 }
-

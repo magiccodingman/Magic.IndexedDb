@@ -3,7 +3,7 @@
 // Import constants
 import { QUERY_ADDITIONS } from "./queryConstants.js";
 import { validateQueryAdditions, validateQueryCombinations, isSupportedIndexedOperation } from "./linqValidation.js";
-import { debugLog } from "./utilityHelpers.js";
+import { debugLog, traceQueryPlannerStage } from "./utilityHelpers.js";
 
 /**
  * Partitions query conditions into IndexedDB-optimized and cursor-based conditions.
@@ -20,6 +20,12 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
     let requiresCursor = validateQueryAdditions(queryAdditions, indexCache)
         || validateQueryCombinations(nestedOrFilter) || forceCursor;
 
+    traceQueryPlannerStage("partition-decision", {
+        requiresCursor,
+        forceCursor: forceCursor === true,
+        queryAdditions: (queryAdditions || []).map(addition => addition.additionFunction)
+    });
+
     debugLog("Determined if query requires cursor", { requiresCursor });
 
     debugLog("Partitioning query conditions", { nestedOrFilter, queryAdditions, requiresCursor });
@@ -34,9 +40,17 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
             for (const andGroup of orGroup.andGroups || []) {
                 if (andGroup.conditions && andGroup.conditions.length > 0) {
                     cursorConditions.push(andGroup.conditions);
+                    traceQueryPlannerStage("branch-classified", {
+                        strategy: "cursor",
+                        reason: "query-level-cursor-requirement",
+                        inputConditionCount: andGroup.conditions.length,
+                        operations: andGroup.conditions.map(condition => condition.operation),
+                        properties: andGroup.conditions.map(condition => condition.property)
+                    });
                 }
             }
         }
+        tracePartitionSummary(indexedQueries, compoundIndexQueries, cursorConditions);
         return { indexedQueries: [], compoundIndexQueries: [], cursorConditions };
     }
 
@@ -50,13 +64,31 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
             let singleFieldConditions = [];
 
             const schema = indexCache;
-            const primaryKeys = Array.from(schema.compoundKeys); // Always an array
 
             // **Step 1: Detect if this is a compound query**
             let compoundQuery = detectCompoundQuery(andGroup.conditions, indexCache);
 
             if (compoundQuery) {
-                compoundIndexQueries.push(compoundQuery);
+                const residualConditionCount = compoundQuery.residualConditions.length;
+
+                traceQueryPlannerStage("branch-classified", {
+                    strategy: "compound-index",
+                    properties: compoundQuery.properties,
+                    inputConditionCount: andGroup.conditions.length,
+                    consumedConditionCount: compoundQuery.conditions.length,
+                    residualConditionCount,
+                    inputProperties: andGroup.conditions.map(condition => condition.property),
+                    consumedProperties: compoundQuery.conditions.map(condition => condition.property)
+                });
+
+                if (residualConditionCount > 0) {
+                    // A physical index is only a candidate producer. Until the compound executor
+                    // has a residual-filter stage, execute the complete logical branch with the
+                    // cursor instead of silently dropping predicates outside the compound key.
+                    cursorConditions.push(compoundQuery.allConditions);
+                } else {
+                    compoundIndexQueries.push(compoundQuery);
+                }
                 continue;
             }
 
@@ -67,8 +99,8 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
                     continue;
                 }
 
-                // **Primary Key Check Must Support Compound Keys**
-                const isPrimaryKey = primaryKeys.includes(condition.property);
+                // A component of a compound primary key is not a standalone IndexedDB index.
+                const isPrimaryKey = schema.primaryKeyIndexes?.has(condition.property) === true;
                 const isUniqueKey = schema.uniqueKeys.has(condition.property);
                 const isStandaloneIndex = schema.indexes.has(condition.property);
 
@@ -85,15 +117,31 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
 
             if (needsCursor) {
                 cursorConditions.push(andGroup.conditions);
+                traceQueryPlannerStage("branch-classified", {
+                    strategy: "cursor",
+                    reason: "condition-not-index-compatible",
+                    inputConditionCount: andGroup.conditions.length,
+                    operations: andGroup.conditions.map(condition => condition.operation),
+                    properties: andGroup.conditions.map(condition => condition.property)
+                });
             } else {
+                // Keep the complete AND branch together. Physical optimization may choose one
+                // index as the candidate producer, but the remaining conditions stay residual
+                // predicates of this same branch instead of becoming independent OR queries.
                 indexedQueries.push(singleFieldConditions);
+                traceQueryPlannerStage("branch-classified", {
+                    strategy: "single-index",
+                    inputConditionCount: singleFieldConditions.length,
+                    operations: singleFieldConditions.map(condition => condition.operation),
+                    properties: singleFieldConditions.map(condition => condition.property)
+                });
             }
         }
     }
 
     /**
-     * **Final Check:** If query additions (`TAKE`, `SKIP`, etc.) exist and there are multiple indexed queries,
-     * force all queries (including compound index queries) to cursor execution.
+     * If pagination/terminal additions exist and more than one physical branch would execute,
+     * reconverge the original logical branches to the cursor so pagination is applied globally.
      */
     const hasTakeOrSkipOrFirstOrLast = queryAdditions.some(addition =>
         [QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE_LAST,
@@ -102,14 +150,45 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
 
     if (hasTakeOrSkipOrFirstOrLast && (indexedQueries.length + compoundIndexQueries.length) > 1) {
         debugLog("Multiple indexed/compound queries detected with TAKE/SKIP, forcing all to cursor.");
-        cursorConditions = [...cursorConditions, ...indexedQueries.map(q => q.conditions), ...compoundIndexQueries.map(q => q.conditions)];
+
+        const regularIndexedEntryShape = indexedQueries.map(query => ({
+            isArray: Array.isArray(query),
+            hasConditionsProperty: Array.isArray(query?.conditions),
+            conditionCount: Array.isArray(query) ? query.length : null
+        }));
+
+        cursorConditions = [
+            ...cursorConditions,
+            ...indexedQueries,
+            ...compoundIndexQueries.map(q => q.allConditions ?? q.conditions)
+        ];
+
+        traceQueryPlannerStage("pagination-reconvergence", {
+            indexedQueryCountBefore: indexedQueries.length,
+            compoundIndexQueryCountBefore: compoundIndexQueries.length,
+            regularIndexedEntryShape,
+            cursorConditionCountAfter: cursorConditions.length,
+            undefinedCursorConditionCountAfter: cursorConditions.filter(condition => condition === undefined).length
+        });
+
         indexedQueries = [];
         compoundIndexQueries = [];
     }
 
     debugLog("Partitioned Queries", { indexedQueries, compoundIndexQueries, cursorConditions });
+    tracePartitionSummary(indexedQueries, compoundIndexQueries, cursorConditions);
 
     return { indexedQueries, compoundIndexQueries, cursorConditions };
+}
+
+function tracePartitionSummary(indexedQueries, compoundIndexQueries, cursorConditions) {
+    traceQueryPlannerStage("partition-summary", {
+        indexedQueryCount: indexedQueries.length,
+        indexedConditionsPerQuery: indexedQueries.map(query => Array.isArray(query) ? query.length : null),
+        compoundIndexQueryCount: compoundIndexQueries.length,
+        cursorConditionCount: cursorConditions.length,
+        undefinedCursorConditionCount: cursorConditions.filter(condition => condition === undefined).length
+    });
 }
 
 function detectCompoundQuery(andConditions, indexCache) {
@@ -120,25 +199,30 @@ function detectCompoundQuery(andConditions, indexCache) {
     for (const fieldSet of schema.compoundIndexes.values()) {
         let matchedFields = new Set();
 
-        // **Check if all fields in the compound index are present in the conditions**
         for (const cond of andConditions) {
             if (fieldSet.has(cond.property)) {
                 matchedFields.add(cond.property);
             }
         }
 
-        // **Ensure the query contains ALL fields required for the compound index**
         if (matchedFields.size === fieldSet.size) {
-            // **Sort conditions to match the compound index order**
             let sortedConditions = [...andConditions]
                 .filter(cond => fieldSet.has(cond.property))
                 .sort((a, b) => [...fieldSet].indexOf(a.property) - [...fieldSet].indexOf(b.property));
 
-            debugLog("Detected valid compound query", { properties: [...fieldSet], sortedConditions });
+            const residualConditions = andConditions.filter(cond => !fieldSet.has(cond.property));
+
+            debugLog("Detected valid compound query", {
+                properties: [...fieldSet],
+                sortedConditions,
+                residualConditions
+            });
 
             return {
                 properties: [...fieldSet],
-                conditions: sortedConditions
+                conditions: sortedConditions,
+                residualConditions,
+                allConditions: [...andConditions]
             };
         }
     }

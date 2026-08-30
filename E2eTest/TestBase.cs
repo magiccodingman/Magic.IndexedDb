@@ -23,10 +23,15 @@ public abstract partial class TestBase<TPage> : ContextTest
         return methodInfo.Name;
     }
 
+    private static string ResolveRoute()
+        => typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "/";
+
     protected sealed record DisposablePage(IPage Page) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync() => await Page.CloseAsync();
     }
+
+    protected sealed record PlannerTraceRunResult(string Output, string? TraceJson);
 
     protected async ValueTask<IPage> NewPageAsync(string? initScript = null)
     {
@@ -39,21 +44,52 @@ public abstract partial class TestBase<TPage> : ContextTest
             if (File.Exists(initScript))
                 await page.AddInitScriptAsync(scriptPath: initScript);
         }
-        await page.GotoAsync("/");
+
+        // Direct JavaScript regression probes still need a real rendered application
+        // document so module imports resolve against the same host as the normal E2E
+        // path. Navigating to bare `/` is unnecessary and Firefox can terminate that
+        // root navigation without a response when no test page owns the route. Use the
+        // page type this fixture is parameterized for, exactly like the method runner.
+        await page.GotoAsync(ResolveRoute());
         return page;
     }
 
     protected async ValueTask<string> RunTestPageMethodAsync(
         Expression<Func<TPage, Func<Task<string>>>> method)
     {
+        var result = await RunTestPageMethodCoreAsync(method, capturePlannerTrace: false);
+        return result.Output;
+    }
+
+    protected async ValueTask<PlannerTraceRunResult> RunTestPageMethodWithPlannerTraceAsync(
+        Expression<Func<TPage, Func<Task<string>>>> method)
+    {
+        return await RunTestPageMethodCoreAsync(method, capturePlannerTrace: true);
+    }
+
+    private async ValueTask<PlannerTraceRunResult> RunTestPageMethodCoreAsync(
+        Expression<Func<TPage, Func<Task<string>>>> method,
+        bool capturePlannerTrace)
+    {
         var page = await this.Context.NewPageAsync();
 
-        await page.GotoAsync(typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "");
+        await page.GotoAsync(ResolveRoute());
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync("Loaded.");
         
         await page.DeleteDatabaseAsync("Animal");
         await page.DeleteDatabaseAsync("Client");
         await page.DeleteDatabaseAsync("Employee");
+
+        if (capturePlannerTrace)
+        {
+            await page.EvaluateAsync(
+                """
+                async () => {
+                    const module = await import('/_content/Magic.IndexedDb/magicDbMethods.js');
+                    module.clearQueryPlannerTrace();
+                }
+                """);
+        }
 
         await page.GetByTestId("method").FillAsync(ResolveMethod(method));
         await page.WaitForTimeoutAsync(500);
@@ -64,7 +100,22 @@ public abstract partial class TestBase<TPage> : ContextTest
         await page.GetByTestId("run").ClickAsync();
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(AnyCharacter());
 
-        return await page.GetByTestId("output").InputValueAsync();
+        var output = await page.GetByTestId("output").InputValueAsync();
+        string? traceJson = null;
+
+        if (capturePlannerTrace)
+        {
+            traceJson = await page.EvaluateAsync<string?>(
+                """
+                async () => {
+                    const module = await import('/_content/Magic.IndexedDb/magicDbMethods.js');
+                    const trace = module.getLastQueryPlannerTrace();
+                    return trace == null ? null : JSON.stringify(trace);
+                }
+                """);
+        }
+
+        return new PlannerTraceRunResult(output, traceJson);
     }
 
     public override BrowserNewContextOptions ContextOptions()
