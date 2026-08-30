@@ -64,16 +64,12 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
             let singleFieldConditions = [];
 
             const schema = indexCache;
-            const primaryKeys = Array.from(schema.compoundKeys); // Always an array
 
             // **Step 1: Detect if this is a compound query**
             let compoundQuery = detectCompoundQuery(andGroup.conditions, indexCache);
 
             if (compoundQuery) {
-                const residualConditionCount = Math.max(
-                    0,
-                    andGroup.conditions.length - compoundQuery.conditions.length
-                );
+                const residualConditionCount = compoundQuery.residualConditions.length;
 
                 traceQueryPlannerStage("branch-classified", {
                     strategy: "compound-index",
@@ -85,7 +81,14 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
                     consumedProperties: compoundQuery.conditions.map(condition => condition.property)
                 });
 
-                compoundIndexQueries.push(compoundQuery);
+                if (residualConditionCount > 0) {
+                    // A physical index is only a candidate producer. Until the compound executor
+                    // has a residual-filter stage, execute the complete logical branch with the
+                    // cursor instead of silently dropping predicates outside the compound key.
+                    cursorConditions.push(compoundQuery.allConditions);
+                } else {
+                    compoundIndexQueries.push(compoundQuery);
+                }
                 continue;
             }
 
@@ -96,8 +99,8 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
                     continue;
                 }
 
-                // **Primary Key Check Must Support Compound Keys**
-                const isPrimaryKey = primaryKeys.includes(condition.property);
+                // A component of a compound primary key is not a standalone IndexedDB index.
+                const isPrimaryKey = schema.primaryKeyIndexes?.has(condition.property) === true;
                 const isUniqueKey = schema.uniqueKeys.has(condition.property);
                 const isStandaloneIndex = schema.indexes.has(condition.property);
 
@@ -122,6 +125,9 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
                     properties: andGroup.conditions.map(condition => condition.property)
                 });
             } else {
+                // Keep the complete AND branch together. Physical optimization may choose one
+                // index as the candidate producer, but the remaining conditions stay residual
+                // predicates of this same branch instead of becoming independent OR queries.
                 indexedQueries.push(singleFieldConditions);
                 traceQueryPlannerStage("branch-classified", {
                     strategy: "single-index",
@@ -134,8 +140,8 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
     }
 
     /**
-     * **Final Check:** If query additions (`TAKE`, `SKIP`, etc.) exist and there are multiple indexed queries,
-     * force all queries (including compound index queries) to cursor execution.
+     * If pagination/terminal additions exist and more than one physical branch would execute,
+     * reconverge the original logical branches to the cursor so pagination is applied globally.
      */
     const hasTakeOrSkipOrFirstOrLast = queryAdditions.some(addition =>
         [QUERY_ADDITIONS.TAKE, QUERY_ADDITIONS.SKIP, QUERY_ADDITIONS.TAKE_LAST,
@@ -151,7 +157,11 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
             conditionCount: Array.isArray(query) ? query.length : null
         }));
 
-        cursorConditions = [...cursorConditions, ...indexedQueries.map(q => q.conditions), ...compoundIndexQueries.map(q => q.conditions)];
+        cursorConditions = [
+            ...cursorConditions,
+            ...indexedQueries,
+            ...compoundIndexQueries.map(q => q.allConditions ?? q.conditions)
+        ];
 
         traceQueryPlannerStage("pagination-reconvergence", {
             indexedQueryCountBefore: indexedQueries.length,
@@ -189,25 +199,30 @@ function detectCompoundQuery(andConditions, indexCache) {
     for (const fieldSet of schema.compoundIndexes.values()) {
         let matchedFields = new Set();
 
-        // **Check if all fields in the compound index are present in the conditions**
         for (const cond of andConditions) {
             if (fieldSet.has(cond.property)) {
                 matchedFields.add(cond.property);
             }
         }
 
-        // **Ensure the query contains ALL fields required for the compound index**
         if (matchedFields.size === fieldSet.size) {
-            // **Sort conditions to match the compound index order**
             let sortedConditions = [...andConditions]
                 .filter(cond => fieldSet.has(cond.property))
                 .sort((a, b) => [...fieldSet].indexOf(a.property) - [...fieldSet].indexOf(b.property));
 
-            debugLog("Detected valid compound query", { properties: [...fieldSet], sortedConditions });
+            const residualConditions = andConditions.filter(cond => !fieldSet.has(cond.property));
+
+            debugLog("Detected valid compound query", {
+                properties: [...fieldSet],
+                sortedConditions,
+                residualConditions
+            });
 
             return {
                 properties: [...fieldSet],
-                conditions: sortedConditions
+                conditions: sortedConditions,
+                residualConditions,
+                allConditions: [...andConditions]
             };
         }
     }

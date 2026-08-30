@@ -197,12 +197,10 @@ export function isSupportedIndexedOperation(conditions) {
             case QUERY_OPERATIONS.LESS_THAN:
             case QUERY_OPERATIONS.LESS_THAN_OR_EQUAL:
             case QUERY_OPERATIONS.IN:
-                break; //  Supported
             case QUERY_OPERATIONS.STARTS_WITH:
-                if (condition.caseSensitive) return false; //  Needs Cursor
-                break;
+                break; // Supported by the physical indexed executor, including case-sensitive/ignore-case StartsWith.
             default:
-                return false; //  Unsupported operation
+                return false; // Unsupported operation
         }
     }
     return true;

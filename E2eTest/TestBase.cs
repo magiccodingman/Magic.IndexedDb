@@ -23,6 +23,9 @@ public abstract partial class TestBase<TPage> : ContextTest
         return methodInfo.Name;
     }
 
+    private static string ResolveRoute()
+        => typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "/";
+
     protected sealed record DisposablePage(IPage Page) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync() => await Page.CloseAsync();
@@ -41,7 +44,13 @@ public abstract partial class TestBase<TPage> : ContextTest
             if (File.Exists(initScript))
                 await page.AddInitScriptAsync(scriptPath: initScript);
         }
-        await page.GotoAsync("/");
+
+        // Direct JavaScript regression probes still need a real rendered application
+        // document so module imports resolve against the same host as the normal E2E
+        // path. Navigating to bare `/` is unnecessary and Firefox can terminate that
+        // root navigation without a response when no test page owns the route. Use the
+        // page type this fixture is parameterized for, exactly like the method runner.
+        await page.GotoAsync(ResolveRoute());
         return page;
     }
 
@@ -64,7 +73,7 @@ public abstract partial class TestBase<TPage> : ContextTest
     {
         var page = await this.Context.NewPageAsync();
 
-        await page.GotoAsync(typeof(TPage).GetCustomAttribute<RouteAttribute>()?.Template ?? "");
+        await page.GotoAsync(ResolveRoute());
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync("Loaded.");
         
         await page.DeleteDatabaseAsync("Animal");
