@@ -4,7 +4,7 @@ import { QUERY_OPERATIONS, QUERY_ADDITIONS } from "./utilities/queryConstants.js
 import { flattenUniversalPredicate } from "./utilities/FlattenFilterNode.js";
 import {
     buildIndexMetadata, normalizeCompoundKey,
-    hasYieldedKey, addYieldedKey, debugLog
+    hasYieldedKey, addYieldedKey, debugLog, traceQueryPlannerStage
 } from "./utilities/utilityHelpers.js";
 
 import { initiateNestedOrFilter } from "./utilities/nestedOrFilterUtilities.js";
@@ -91,11 +91,30 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         let { optimizedSingleIndexes, optimizedCompoundIndexes } = optimizeIndexedQueries(indexedQueries, compoundIndexQueries);
         debugLog("Optimized Indexed Queries", { optimizedSingleIndexes, optimizedCompoundIndexes });
 
+        traceQueryPlannerStage("indexed-physical-optimization", {
+            inputIndexedQueryCount: indexedQueries.length,
+            inputIndexedConditionsPerQuery: indexedQueries.map(query => Array.isArray(query) ? query.length : null),
+            inputCompoundQueryCount: compoundIndexQueries.length,
+            outputSingleIndexQueryCount: optimizedSingleIndexes.length,
+            outputCompoundIndexQueryCount: optimizedCompoundIndexes.length,
+            outputSingleIndexes: summarizePhysicalQueries(optimizedSingleIndexes),
+            outputCompoundIndexes: summarizePhysicalQueries(optimizedCompoundIndexes)
+        });
+
         let allOptimizedQueries = [...optimizedSingleIndexes, ...optimizedCompoundIndexes];
+
+        traceQueryPlannerStage("indexed-execution", {
+            queryCount: allOptimizedQueries.length,
+            queries: summarizePhysicalQueries(allOptimizedQueries)
+        });
 
         // ** Execute queries in parallel and get a streamed result set**
         let results = await runIndexedQueries(db, table, allOptimizedQueries,
             queryAdditions, primaryKeys, yieldedPrimaryKeys);
+
+        traceQueryPlannerStage("indexed-execution-result", {
+            resultCount: results.length
+        });
 
         // **Process records one at a time, maintaining low memory usage**
         while (results.length > 0) {
@@ -105,8 +124,18 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
     }
 
     if (Array.isArray(cursorConditions) && cursorConditions.length > 0) {
+        traceQueryPlannerStage("cursor-execution", {
+            conditionSetCount: cursorConditions.length,
+            undefinedConditionSetCount: cursorConditions.filter(condition => condition === undefined).length,
+            queryAdditions: (queryAdditions || []).map(addition => addition.additionFunction)
+        });
+
         let cursorResults = await runCursorQuery(db, table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys);
         debugLog("Cursor Query Results Count", { count: cursorResults.length });
+
+        traceQueryPlannerStage("cursor-execution-result", {
+            resultCount: cursorResults.length
+        });
 
         while (cursorResults.length > 0) {
             let record = cursorResults.shift(); // Remove the first record from memory immediately
@@ -123,6 +152,17 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
 
 function hasStableOrdering(queryAdditions) {
     return queryAdditions?.some(q => q.additionFunction === QUERY_ADDITIONS.STABLE_ORDERING);
+}
+
+function summarizePhysicalQueries(queries) {
+    return (queries || []).map(query =>
+        (query || []).map(condition => ({
+            property: condition?.property ?? null,
+            properties: Array.isArray(condition?.properties) ? condition.properties : null,
+            operation: condition?.operation ?? null,
+            valueKind: Array.isArray(condition?.value) ? "array" : typeof condition?.value,
+            valueCount: Array.isArray(condition?.value) ? condition.value.length : null
+        })));
 }
 
 async function runIndexedQueries(db, table, universalQueries,
@@ -454,4 +494,3 @@ function optimizeCompoundIndexedOnlyQueries(compoundIndexQueries) {
 
     return { optimizedCompoundIndexes, fallbackSingleIndexes };
 }
-
