@@ -6,14 +6,13 @@ public interface IMagicQuery<T> : IMagicExecute<T> where T : class
 {
     string DatabaseName { get; }
     public string SchemaName { get; }
+
     /// <summary>
-    /// The order you apply does get applied correctly in the query, 
-    /// but the returned results will not be in the same order. 
-    /// If order matters, you must apply the order again on return. 
-    /// This is a fundemental limitation of IndexDB. 
+    /// Adds a predicate to the query pipeline. Materialized results returned by
+    /// <see cref="IMagicExecute{T}.ToListAsync"/> preserve the resulting query order.
     /// </summary>
-    /// <param name="predicate"></param>
-    /// <returns></returns>
+    /// <param name="predicate">Predicate to apply.</param>
+    /// <returns>The staged query.</returns>
     IMagicQueryStaging<T> Where(Expression<Func<T, bool>> predicate);
 
     IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate);
@@ -31,17 +30,21 @@ public interface IMagicQuery<T> : IMagicExecute<T> where T : class
     IMagicQueryFinal<T> Skip(int amount);
 
     /// <summary>
-    /// This always orders first by the primary key, then by whatever is appended afterwards
+    /// Orders the query ascending by the selected persisted property. When that
+    /// property is not independently orderable by IndexedDB, the planner uses the
+    /// cursor ordering path rather than treating compound-key membership as an index.
     /// </summary>
-    /// <param name="predicate"></param>
-    /// <returns></returns>
+    /// <param name="predicate">Property to order by.</param>
+    /// <returns>The ordered query.</returns>
     IMagicQueryOrderableTable<T> OrderBy(Expression<Func<T, object>> predicate);
 
     /// <summary>
-    /// This always orders by descending by the primary key first, then by whatever is appended afterwards
+    /// Orders the query descending by the selected persisted property. When that
+    /// property is not independently orderable by IndexedDB, the planner uses the
+    /// cursor ordering path rather than treating compound-key membership as an index.
     /// </summary>
-    /// <param name="predicate"></param>
-    /// <returns></returns>
+    /// <param name="predicate">Property to order by.</param>
+    /// <returns>The ordered query.</returns>
     IMagicQueryOrderableTable<T> OrderByDescending(Expression<Func<T, object>> predicate);
 
     Task AddRangeAsync(IEnumerable<T> records, CancellationToken cancellationToken = default);
