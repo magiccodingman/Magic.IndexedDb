@@ -20,16 +20,12 @@ internal class MagicQueryExtensions<T> :
     }
 
     /// <summary>
-    /// EXPERIMENTAL FEATURE: 
-    /// True IAsyncEnumerable between C# Blazor and JS. How?! 
-    /// It's god damn magic! IMPORTANT NOTE: the order in which items 
-    /// are returned may not be the order you specified. Your ordering 
-    /// is properly utilized inside of IndexDB, but the returned process 
-    /// due to IndexDB limitations can't return the same order. Please re-apply 
-    /// your desired ordering after your results are brought back if order is important.
+    /// Progressively streams query results across the Blazor/JavaScript boundary.
+    /// Progressive streaming is distinct from the final materialized ordering contract;
+    /// callers that require the completed ordered sequence should use <see cref="ToListAsync"/>.
     /// </summary>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
+    /// <param name="cancellationToken">Cancellation token for the streaming enumeration.</param>
+    /// <returns>The progressive query stream.</returns>
     public async IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         await foreach (var item in MagicQuery.Manager.LinqToIndexedDbYield<T>(nestedOrFilter, MagicQuery, cancellationToken))
@@ -42,14 +38,11 @@ internal class MagicQueryExtensions<T> :
     }
 
     /// <summary>
-    /// The order you apply does get applied correctly in the query, 
-    /// but the returned results will not be in the same order. 
-    /// If order matters, you must apply the order again on return. 
-    /// This is a fundemental limitation of IndexDB. 
+    /// Materializes the current query and then applies the supplied predicate in memory.
+    /// LINQ filtering preserves the enumeration order of the materialized sequence.
     /// </summary>
-    /// <param name="predicate"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
+    /// <param name="predicate">Predicate to apply after materialization.</param>
+    /// <returns>The filtered materialized sequence.</returns>
     public async Task<IEnumerable<T>> WhereAsync(
         Expression<Func<T, bool>> predicate)
     {
@@ -60,12 +53,10 @@ internal class MagicQueryExtensions<T> :
     private FilterNode nestedOrFilter { get => GetCollectedBinaryJsonExpressions(); }
 
     /// <summary>
-    /// The order you apply does get applied correctly in the query, 
-    /// but the returned results will not be in the same order. 
-    /// If order matters, you must apply the order again on return. 
-    /// This is a fundemental limitation of IndexDB. 
+    /// Materializes the query. When ordering operators are present, the returned list
+    /// preserves the resulting query order after indexed/cursor execution and refetch.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>The materialized query results.</returns>
     public async Task<List<T>> ToListAsync()
     {
         return (await MagicQuery.Manager.LinqToIndexedDb<T>(
@@ -126,7 +117,6 @@ internal class MagicQueryExtensions<T> :
         );
     }
 
-    // Not currently available in Dexie version 1,2, or 3
     public IMagicQueryOrderableTable<T> OrderBy(Expression<Func<T, object>> predicate)
     {
         return new MagicQueryExtensions<T>(
@@ -134,7 +124,6 @@ internal class MagicQueryExtensions<T> :
         );
     }
 
-    // Not currently available in Dexie version 1,2, or 3
     public IMagicQueryOrderableTable<T> OrderByDescending(Expression<Func<T, object>> predicate)
     {
         return new MagicQueryExtensions<T>(

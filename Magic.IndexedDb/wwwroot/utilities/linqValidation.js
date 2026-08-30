@@ -16,7 +16,6 @@ export function validateQueryAdditions(queryAdditionsPre, indexCache) {
     let requiresCursor = false;
 
     const schema = indexCache;
-    const primaryKeys = schema ? Array.from(schema.compoundKeys) : [];
 
     for (let i = 0; i < queryAdditions.length; i++) {
         const addition = queryAdditions[i];
@@ -28,9 +27,14 @@ export function validateQueryAdditions(queryAdditionsPre, indexCache) {
             throw new Error(`Unsupported query addition: ${addition.additionFunction} (valid additions: ${Object.keys(QUERY_ADDITION_RULES).join(", ")})`);
         }
 
-        // **Ensure ORDER_BY targets an indexed property**
+        // ORDER_BY can use an IndexedDB ordering path only when the selected property is
+        // independently queryable. `compoundKeys` contains the fields needed to rebuild
+        // the store's primary key; membership there does not create a standalone index.
         if (addition.additionFunction === QUERY_ADDITIONS.ORDER_BY || addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING) {
-            const isIndexed = schema?.indexes.has(addition.property) || primaryKeys.includes(addition.property);
+            const isStandaloneIndex = schema?.indexes?.has(addition.property) === true;
+            const isStandalonePrimaryKey = schema?.primaryKeyIndexes?.has(addition.property) === true;
+            const isIndexed = isStandaloneIndex || isStandalonePrimaryKey;
+
             if (!isIndexed) {
                 debugLog(`Query requires cursor: ORDER_BY on non-indexed property ${addition.property}`);
                 requiresCursor = true;
