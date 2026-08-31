@@ -41,15 +41,22 @@ The C# translator supports these principal expression families:
 - Logical composition: `&&`, `||`, and supported negation forms
 - Strings: `Equals`, `StartsWith`, `EndsWith`, and `Contains`, including supported `StringComparison` overloads
 - Membership: `values.Contains(person.Property)`
-- Collection containment: `person.Values.Contains(value)`
+- Collection containment with a literal constant: `person.Values.Contains(3)`
+- Captured-sequence quantifiers in supported shapes: `values.Any(...)` and `values.All(...)`
 - Length comparisons on supported strings or collections
 - Null checks: `property == null` and `property != null`
 - Date/time comparisons, including supported `Date`, `Year`, `Month`, `Day`, `DayOfWeek`, and `DayOfYear` member comparisons
 - Enum comparisons, including explicit enum casts
 
-Support does not mean every expression is indexable. `Contains`, `EndsWith`, null checks, component-level date operations, and case-insensitive matching generally require cursor evaluation. See the [query expression reference](../reference/query-expressions.md).
+Captured membership and stored collection containment are different operations. `values.Contains(person.Id)` expresses “the property equals any captured value” and may use an index. `person.TagIds.Contains(42)` inspects a collection stored in each record and requires cursor evaluation. The documented stored-collection shape uses a literal constant; a captured argument in that position is not currently a supported translation shape. An empty captured membership set matches no rows.
+
+Constant boolean predicates preserve ordinary boolean identities. `true && predicate` is the predicate, `false || predicate` is the predicate, `true || predicate` matches everything, and `false && predicate` matches nothing. Supported `Any` and `All` expressions over an empty captured sequence preserve the usual semantics: `Any` is false and `All` is true.
+
+Support does not mean every expression is indexable. Stored collection `Contains`, string `Contains`, `EndsWith`, null checks, component-level date operations, and case-insensitive matching generally require cursor evaluation. See the [query expression reference](../reference/query-expressions.md).
 
 Unsupported method calls or expression shapes should be treated as translation errors, not as arbitrary C# code that Magic can execute inside IndexedDB.
+
+Arithmetic, property-to-property comparisons, arbitrary helper methods, and most nested member access are not supported just because the expression compiles. Write a false check as `person.IsActive == false`; unary `!person.IsActive` is not translated.
 
 ## Indexed and cursor paths
 
@@ -59,7 +66,7 @@ Calling `Where` asks Magic to choose the best execution plan. An individual bran
 2. A compound-index lookup when the schema and predicate align.
 3. The cursor engine when no compatible index path can represent the branch.
 
-Use `Cursor` only when you intentionally want the entire predicate processed by the cursor engine:
+Use `Cursor` when you want the entire predicate processed by the cursor engine:
 
 ```csharp
 List<Person> results = await people
@@ -133,13 +140,14 @@ IEnumerable<Person> result = await people
 
 This is deliberately different from `Where`: it is an in-memory operation and cannot improve the IndexedDB execution plan.
 
-## Fluent-interface guardrails
+## Valid method order
 
-Magic's staged interfaces intentionally limit which operations are available next. Let IntelliSense and compile-time return types guide the chain. In particular:
+The return type of each method controls what can come next. IntelliSense will show the valid choices. The important rules are:
 
 - Apply all IndexedDB `Where` predicates before pagination.
 - Use `Take(n).Skip(m)`, not `Skip(m).Take(n)`.
+- `IMagicQueryStaging<T>` does not expose `OrderBy`. For a filtered ordered list, use `Cursor(predicate).OrderBy(...)` or load the filtered records and order them in .NET.
 - Use `Cursor` when you need cursor-only additions such as `StableOrdering()`.
 - Execute or use `WhereAsync` after a chain reaches `IMagicQueryFinal<T>`.
 
-See [ordering and pagination](ordering-and-pagination.md) for the complete rationale and examples.
+See [ordering and pagination](ordering-and-pagination.md) for examples.

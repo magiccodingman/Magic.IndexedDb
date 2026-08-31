@@ -1,10 +1,10 @@
 # Schema evolution and migrations
 
-Automated schema migrations are still under construction in Magic IndexedDB. Do not rely on the library to generate or run a migration simply because a C# model changed.
+Magic IndexedDB does not currently migrate existing records when your C# model changes. Once an application has stored real data, schema changes need to be handled by the application.
 
 ## What creates the initial schema
 
-Magic discovers repository database sets and table definitions, builds the store schema, and creates or opens the declared databases when the service is first used. This is initial deployment, not a complete migration protocol.
+Magic discovers repositories and tables, builds the IndexedDB store definitions, and creates the databases when they are first used. On later runs, changing those definitions does not transform the records that are already there.
 
 ## Changes that need explicit planning
 
@@ -31,7 +31,7 @@ Use `[MagicName]` to decouple a C# property name from its stored name:
 public string Number { get; set; } = string.Empty;
 ```
 
-You can later rename `Number` in C# while retaining `customerNumber` in IndexedDB. The attribute prevents an accidental storage-contract rename; it does not migrate data from an already different name.
+You can later rename `Number` in C# while retaining `customerNumber` in IndexedDB. The attribute prevents an accidental stored-name change; it does not rename data that was already written under another name.
 
 `GetTableName()` provides the same kind of explicit persisted name for the object store.
 
@@ -50,7 +50,7 @@ When a cursor predicate accesses a missing field, the browser engine may be unab
 
 Changing the constructor Magic uses can break old rows if required parameters cannot be bound. Parameter names are matched to stored properties case-insensitively, optional defaults are honored, and remaining writable properties are populated after construction.
 
-Use `[MagicConstructor]` only when the automatic choice is not the desired persistence contract. See [schema attributes and constructors](../reference/schema-attributes.md).
+Use `[MagicConstructor]` when the automatic choice is not the constructor you want Magic to use. See [schema attributes and constructors](../reference/schema-attributes.md).
 
 ## Deployment strategies today
 
@@ -73,4 +73,6 @@ Never silently delete a user's IndexedDB database merely because the runtime mod
 - Test multiple tabs, because an older open connection can block a version change.
 - Test cancellation, offline startup, and recovery from an interrupted conversion.
 
-The migration model classes and JavaScript migration scaffolding currently present in the repository are implementation groundwork, not a published automatic migration API.
+See [browser storage and multiple tabs](../reference/browser-support-and-storage.md) for connection and deletion details, and [serialization](../reference/serialization.md) before changing numeric, date, enum, collection, or converter representations.
+
+Migration-related types found in the source are not a usable migration API yet.
