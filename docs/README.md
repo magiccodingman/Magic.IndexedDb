@@ -14,6 +14,8 @@ The engine uses Dexie.js for mature IndexedDB access while keeping query transla
 
 Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ordering, cursor, and schema-evolution guides is part of using the engine effectively.
 
+The documentation is layered deliberately. The start-here path is enough to become productive; guides explain everyday decisions; reference and architecture pages provide the complete behavioral depth for advanced users. You do not need to read every page before creating a table.
+
 ## Start here
 
 1. [Install Magic IndexedDB](getting-started/installation.md)
@@ -32,9 +34,14 @@ Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ord
 
 ## Reference
 
+- [Behavioral contract index](reference/behavioral-contracts.md) — direct map from an operation or concern to its canonical contract
 - [Public API reference](reference/public-api.md)
 - [Schema attributes and constructors](reference/schema-attributes.md)
 - [Query expression reference](reference/query-expressions.md)
+- [Writes, bulk operations, and transactions](reference/writes-and-transactions.md)
+- [Serialization and persisted types](reference/serialization.md)
+- [Errors, cancellation, and recovery](reference/errors-and-cancellation.md)
+- [Browser support, storage, and multiple tabs](reference/browser-support-and-storage.md)
 
 ## Architecture
 
@@ -45,6 +52,7 @@ Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ord
 
 - [Testing and continuous integration](contributing/testing.md)
 - [Query planner diagnostics](contributing/query-planner-diagnostics.md)
+- [Maintaining the documentation contract](contributing/documentation-contracts.md)
 
 ## Upgrading and legacy versions
 

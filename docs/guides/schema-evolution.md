@@ -73,4 +73,6 @@ Never silently delete a user's IndexedDB database merely because the runtime mod
 - Test multiple tabs, because an older open connection can block a version change.
 - Test cancellation, offline startup, and recovery from an interrupted conversion.
 
+See [browser support, storage, and multiple tabs](../reference/browser-support-and-storage.md) for connection-scope and deletion limitations, and [serialization and persisted types](../reference/serialization.md) before changing numeric, date, enum, collection, or converter representations.
+
 The migration model classes and JavaScript migration scaffolding currently present in the repository are implementation groundwork, not a published automatic migration API.

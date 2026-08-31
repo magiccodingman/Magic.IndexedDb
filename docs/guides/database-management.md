@@ -41,7 +41,7 @@ Delete a database only when permanent data loss is intended:
 await database.DeleteAsync();
 ```
 
-`DeleteAsync()` removes the browser database and all of its object stores and records. A future query may create a new empty database from the current schema.
+`DeleteAsync()` requests removal of the browser database and all of its object stores and records. A future query may create a new empty database from the current schema. Other tabs can block deletion, and the current browser helper does not return a detailed deletion result, so call `DoesExistAsync()` afterward when confirmation matters.
 
 The current API does not expose a public multi-database overload, parameterless `Database()`, `CloseAll`, or `DeleteAll`. Call the single-database API for each explicit database your application owns if such coordination is required.
 
@@ -66,6 +66,8 @@ double quotaMiB = storage.QuotaInMegabytes;
 ```
 
 The values come from the browser's storage estimate and should be treated as an estimate, not as a reservation or guaranteed capacity.
+
+When the browser estimate API is unavailable, the current implementation returns zero values. Storage is origin/profile scoped and can be cleared or evicted according to browser policy. See [browser support, storage, and multiple tabs](../reference/browser-support-and-storage.md) for the complete operational contract.
 
 ## Disposal
 

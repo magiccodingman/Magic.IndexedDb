@@ -2,6 +2,8 @@
 
 This page summarizes the supported application surface. It is a guide to the interfaces and return contracts, not generated API documentation.
 
+For cross-cutting guarantees such as bulk atomicity, cancellation, serialization, and browser persistence, start with the [behavioral contract index](behavioral-contracts.md).
+
 ## Registration
 
 ```csharp
@@ -59,7 +61,7 @@ IMagicQueryFinal<T> TakeLast(int amount);
 IMagicQueryFinal<T> Skip(int amount);
 ```
 
-Execution:
+Shared execution through `IMagicExecute<T>`:
 
 ```csharp
 Task<List<T>> ToListAsync();
@@ -95,6 +97,8 @@ Task ClearTable();
 
 `AddAsync` and `AddRangeAsync` do not return generated primary keys or assign an auto-incremented key to the supplied objects. Updates and deletes require populated primary keys.
 
+`UpdateAsync` is update-only and returns `0` or `1`. `UpdateRangeAsync` currently uses bulk-put/upsert behavior and returns the input count after success. `DeleteRangeAsync` likewise returns the number of requested keys, not a count of keys proven to have existed. Range operations do not have a documented all-or-nothing guarantee. See [writes, bulk operations, and transactions](writes-and-transactions.md).
+
 ## Staged query interfaces
 
 The return type narrows the operations that can legally follow:
@@ -102,12 +106,16 @@ The return type narrows the operations that can legally follow:
 | Current interface | Notable next operations |
 |---|---|
 | `IMagicQuery<T>` | `Where`, `Cursor`, order, pagination, execution, CRUD |
-| `IMagicQueryStaging<T>` | Additional `Where`, `Take`, `TakeLast`, `Skip`, execution |
-| `IMagicQueryOrderableTable<T>` | `Take`, `TakeLast`, `Skip`, first/last, execution, `WhereAsync` |
+| `IMagicQueryStaging<T>` | Additional `Where`, `Take`, `TakeLast`, `Skip`, parameterless first/last, execution |
+| `IMagicQueryOrderable<T>` | `Take`, `TakeLast`, `Skip`, parameterless first/last, execution, `WhereAsync` |
+| `IMagicQueryOrderableTable<T>` | Everything on `IMagicQueryOrderable<T>` plus predicate overloads of first/last |
 | `IMagicQueryPaginationTake<T>` | `Skip`, execution, `WhereAsync` |
 | `IMagicQueryFinal<T>` | Execution and in-memory `WhereAsync` |
-| `IMagicCursor<T>` | Additional `Cursor`, order, pagination, `StableOrdering`, first/last, execution |
-| `IMagicCursorStage<T>` | `Take`, `TakeLast`, `Skip`, first/last, execution |
+| `IMagicCursor<T>` | Additional `Cursor`, order, `Take`, `TakeLast`, `Skip`, `StableOrdering`, parameterless first/last, execution |
+| `IMagicCursorStage<T>` | `Take`, `TakeLast`, `Skip`, parameterless first/last, execution |
+| `IMagicCursorPaginationTake<T>` | `Skip` and execution |
+| `IMagicCursorSkip<T>` | Parameterless first/last and execution |
+| `IMagicCursorFinal<T>` | Parameterless first/last and execution |
 
 ```csharp
 Task<IEnumerable<T>> WhereAsync(
@@ -115,6 +123,8 @@ Task<IEnumerable<T>> WhereAsync(
 ```
 
 `WhereAsync` on a final/orderable query materializes first and applies the predicate in .NET. It is not translated into IndexedDB.
+
+`StableOrdering()` is available only on `IMagicCursor<T>` before the cursor moves to a later stage. It asks the cursor engine to retain deterministic internal ordering where that contract is documented; it does not change the progressive-stream arrival-order limitation.
 
 ## Database scope
 
@@ -127,6 +137,8 @@ Task<bool> DoesExistAsync();
 ```
 
 The API manages one explicit database scope at a time. There are no public multi-database or all-database overloads.
+
+`IsOpenAsync()` describes the current service instance's cached connection, not every browser tab. `DeleteAsync()` requests destructive deletion but does not return a detailed deletion result. See [browser support, storage, and multiple tabs](browser-support-and-storage.md).
 
 ## Storage estimate
 
@@ -172,6 +184,8 @@ CreateCompoundIndex(...)
 `MagicSerializationHelper`, `MagicJsonSerializationSettings`, `ITypedArgument`, and `TypedArgument<T>` are public for compatibility and testing. They support Magic's persisted-name mappings, constructor materialization, custom `System.Text.Json` options, nested collection shapes, and stream serialization.
 
 Normal applications should use `IMagicIndexedDb`; the typed-argument and JavaScript envelope types are interop infrastructure, not a requirement for ordinary database access.
+
+Settings supplied directly to `MagicSerializationHelper` do not globally configure the injected `IMagicIndexedDb` service. See [serialization and persisted types](serialization.md#custom-converters-and-advanced-helpers).
 
 ## Obsolete implementation paths
 

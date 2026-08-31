@@ -167,6 +167,34 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
             : "Incorrect";
     }
 
+    public async Task<string> WriteContractSemantics()
+    {
+        var db = await magic.Query<Person>();
+
+        var generated = new Person { Name = "generated" };
+        await db.AddAsync(generated);
+        var generatedRow = (await db.ToListAsync()).Single();
+
+        var missing = new Person { _Id = 100, Name = "missing" };
+        var singleUpdateCount = await db.UpdateAsync(missing);
+        var rangeUpdateCount = await db.UpdateRangeAsync([missing]);
+        var afterUpsert = await db.OrderBy(person => person._Id).ToListAsync();
+
+        var deleteRequestCount = await db.DeleteRangeAsync([
+            missing,
+            new Person { _Id = 999, Name = "never-stored" }
+        ]);
+        var finalRows = await db.ToListAsync();
+
+        return generated._Id == 0 && generatedRow._Id != 0 &&
+               singleUpdateCount == 0 && rangeUpdateCount == 1 &&
+               afterUpsert.Any(person => person._Id == missing._Id) &&
+               deleteRequestCount == 2 &&
+               finalRows.Count == 1 && finalRows[0]._Id == generatedRow._Id
+            ? "OK"
+            : "Incorrect";
+    }
+
     public async Task<string> ClearAndPopulatedCount()
     {
         var db = await magic.Query<Person>();

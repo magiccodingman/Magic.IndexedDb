@@ -86,6 +86,8 @@ List<Person> page = await people
 
 In application terms, this represents the familiar pagination intent: skip `offset` rows and return `pageSize` rows. The method order is intentionally reversed because of the way the IndexedDB/Dexie path composes its limit and offset operations. The staged interfaces prevent calling `Take` after `Skip`.
 
+Use a positive count for `Take` and `TakeLast`, and a non-negative offset for `Skip`. Zero and negative counts are not part of the current supported contract because the wrapper does not validate them consistently before different IndexedDB and cursor execution paths apply them.
+
 For page-number pagination:
 
 ```csharp

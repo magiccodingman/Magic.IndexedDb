@@ -92,6 +92,8 @@ IMagicQuery<Person> employeeQuery =
 
 `Query<T>()` uses `GetDefaultDatabase()`. The selector overload should point to one of the table's declared `Databases` fields. The selector is a strongly typed database choice, not an authorization boundary; Magic does not use it to enforce which callers may access a database.
 
+The current schema bootstrap supplies every discovered Magic table schema to every discovered `IndexedDbSet`. A table's `Databases` property makes intended selections strongly typed, but it does not currently prune that table's object-store schema from other discovered Magic databases. See [browser support, storage, and multiple tabs](../reference/browser-support-and-storage.md#schema-discovery-across-databases).
+
 ## Primary keys
 
 A single primary key can optionally auto-increment:
@@ -131,6 +133,8 @@ The order of fields in a compound key or compound index is part of the persisted
 Stored models may contain nested objects, arrays, lists, sets, dictionaries, and nested collections. Dictionaries remain JSON objects when used as entity properties or collection elements; they are not treated as arrays merely because they implement `IEnumerable`. The current release also preserves escaped strings, Unicode text, `MagicName` mappings inside nested objects, and supported concrete collection shapes when values are materialized.
 
 Indexes and primary keys still need to describe values IndexedDB can use as keys. Do not assume an arbitrary nested object is indexable merely because it can be serialized.
+
+For numeric precision, collection reconstruction, custom converters, and the distinction between storage and query support, see [serialization and persisted types](../reference/serialization.md).
 
 ## Constructors
 

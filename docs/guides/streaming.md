@@ -68,6 +68,8 @@ await foreach (Person person in query.AsAsyncEnumerable(cancellationToken))
 
 Wrap the enumeration in the same error handling you would use for any browser-backed operation. Exceptions may represent translation errors, JavaScript failures, browser storage errors, cancellation, or serialization failures.
 
+Cancellation cleans up the stream and stops further consumption; already yielded records remain consumed. A stream is not documented as a snapshot transaction. See [errors, cancellation, and recovery](../reference/errors-and-cancellation.md) for the operation-by-operation cancellation matrix.
+
 ## Message-size configuration
 
 The limit supplied to `AddMagicBlazorDB` controls interop chunk sizing; it is not a result-set limit. Increasing it trades fewer messages for larger peak chunks. Start with the built-in `BlazorInteropMode` value and adjust only after measuring your application and transport.

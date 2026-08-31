@@ -68,7 +68,7 @@ int updated = await table.UpdateAsync(person, cancellationToken);
 int updatedMany = await table.UpdateRangeAsync(people, cancellationToken);
 ```
 
-The integer result is the number reported by the underlying bulk operation.
+`UpdateAsync` returns `0` when the primary key does not identify an existing row and `1` when it updates a row. `UpdateRangeAsync` currently has upsert behavior and returns the number of requested records after success. See [writes, bulk operations, and transactions](../reference/writes-and-transactions.md) before relying on range-operation counts or failure behavior.
 
 ## Delete
 
@@ -78,6 +78,8 @@ int deletedMany = await table.DeleteRangeAsync(people, cancellationToken);
 ```
 
 Delete operations also use each object's primary key.
+
+`DeleteRangeAsync` reports the number of requested keys after success, not the number proven to have existed. Range writes are not documented as all-or-nothing operations.
 
 ## Clear a table
 
@@ -105,3 +107,5 @@ Use streaming when progressive processing and lower peak result memory matter mo
 - Learn the full [query syntax](../guides/querying.md).
 - Understand [`Where` versus `Cursor`](../guides/where-vs-cursor.md).
 - Read the rules for [ordering and pagination](../guides/ordering-and-pagination.md).
+- Review [write and transaction semantics](../reference/writes-and-transactions.md) before building retries or batch workflows.
+- Use the [behavioral contract index](../reference/behavioral-contracts.md) when you need advanced guarantees and edge cases.

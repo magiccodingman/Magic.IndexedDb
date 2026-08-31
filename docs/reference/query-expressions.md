@@ -20,6 +20,8 @@ Compatible lower and upper bounds on one field may be compressed into a range. M
 
 Reversed comparisons such as `minimum < x.Value` are normalized without changing operand meaning. Comparisons between two record properties and arithmetic such as `x.Value + 1 > limit` are not supported translation shapes.
 
+Numeric comparison correctness also depends on the persisted browser representation. Values that exceed JavaScript's exact integer precision are not a safe query key merely because the CLR expression compiles. See [serialization and persisted types](serialization.md#numeric-precision-across-javascript).
+
 ## Strings and collections
 
 | C# expression family | Universal operation | Typical path |
