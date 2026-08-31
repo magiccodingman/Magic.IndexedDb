@@ -1,8 +1,6 @@
 # Public API reference
 
-This page summarizes the supported application surface. It is a guide to the interfaces and return contracts, not generated API documentation.
-
-For cross-cutting guarantees such as bulk atomicity, cancellation, serialization, and browser persistence, start with the [behavioral contract index](behavioral-contracts.md).
+This page is a quick reference for the interfaces most applications use. For complete signatures, use IntelliSense or the package's XML documentation.
 
 ## Registration
 
@@ -76,9 +74,9 @@ Task<T?> LastOrDefaultAsync(Expression<Func<T, bool>> predicate);
 Task<int> CountAsync();
 ```
 
-`CountAsync()` counts the whole table. Materialized queries apply requested ordering; progressive enumeration does not promise final arrival order.
+`CountAsync()` counts the whole table. `ToListAsync()` applies the requested ordering. A progressive stream can yield records from separate query branches out of order.
 
-`Where(...)` returns `IMagicQueryStaging<T>`, which intentionally does not expose `OrderBy`. Use `Cursor(predicate).OrderBy(...)` for one browser-side filtered and ordered chain, or materialize the `Where` result and order it in .NET.
+`OrderBy` is not available after `Where(...)`. Use `Cursor(predicate).OrderBy(...)` for a browser-side filtered and ordered query, or load the `Where` result and sort it in .NET.
 
 Writes:
 
@@ -97,7 +95,7 @@ Task ClearTable();
 
 `AddAsync` and `AddRangeAsync` do not return generated primary keys or assign an auto-incremented key to the supplied objects. Updates and deletes require populated primary keys.
 
-`UpdateAsync` is update-only and returns `0` or `1`. `UpdateRangeAsync` currently uses bulk-put/upsert behavior and returns the input count after success. `DeleteRangeAsync` likewise returns the number of requested keys, not a count of keys proven to have existed. Range operations do not have a documented all-or-nothing guarantee. See [writes, bulk operations, and transactions](writes-and-transactions.md).
+`UpdateAsync` is update-only and returns `0` or `1`. `UpdateRangeAsync` uses bulk-put/upsert behavior and returns the input count after success. `DeleteRangeAsync` returns the number of requested keys, not a count of keys proven to have existed. If a range operation fails partway through, earlier writes may already have succeeded. See [adding, updating, and deleting records](writes-and-transactions.md).
 
 ## Staged query interfaces
 
@@ -124,7 +122,7 @@ Task<IEnumerable<T>> WhereAsync(
 
 `WhereAsync` on a final/orderable query materializes first and applies the predicate in .NET. It is not translated into IndexedDB.
 
-`StableOrdering()` is available only on `IMagicCursor<T>` before the cursor moves to a later stage. It asks the cursor engine to retain deterministic internal ordering where that contract is documented; it does not change the progressive-stream arrival-order limitation.
+`StableOrdering()` is available only on `IMagicCursor<T>` before another operation moves the query to a later stage. It keeps the cursor's stable scan order and does not make a progressive stream arrive in sorted order.
 
 ## Database scope
 
@@ -138,7 +136,7 @@ Task<bool> DoesExistAsync();
 
 The API manages one explicit database scope at a time. There are no public multi-database or all-database overloads.
 
-`IsOpenAsync()` describes the current service instance's cached connection, not every browser tab. `DeleteAsync()` requests destructive deletion but does not return a detailed deletion result. See [browser support, storage, and multiple tabs](browser-support-and-storage.md).
+`IsOpenAsync()` describes the current service instance's cached connection, not every browser tab. `DeleteAsync()` requests destructive deletion but does not return a detailed deletion result. See [browser storage and multiple tabs](browser-support-and-storage.md).
 
 ## Storage estimate
 
@@ -152,7 +150,7 @@ double UsageInMegabytes { get; }
 (double quota, double usage) InMegabytes { get; }
 ```
 
-## Schema contracts
+## Schema interfaces
 
 `IMagicRepository` is a marker interface used during discovery.
 
@@ -179,14 +177,14 @@ CreateCompoundKey(...)
 CreateCompoundIndex(...)
 ```
 
-## Advanced serialization helpers
+## Serialization helpers
 
-`MagicSerializationHelper`, `MagicJsonSerializationSettings`, `ITypedArgument`, and `TypedArgument<T>` are public for compatibility and testing. They support Magic's persisted-name mappings, constructor materialization, custom `System.Text.Json` options, nested collection shapes, and stream serialization.
+`MagicSerializationHelper`, `MagicJsonSerializationSettings`, `ITypedArgument`, and `TypedArgument<T>` support stored-name mappings, constructor materialization, custom `System.Text.Json` options, nested collections, and stream serialization.
 
 Normal applications should use `IMagicIndexedDb`; the typed-argument and JavaScript envelope types are interop infrastructure, not a requirement for ordinary database access.
 
-Settings supplied directly to `MagicSerializationHelper` do not globally configure the injected `IMagicIndexedDb` service. See [serialization and persisted types](serialization.md#custom-converters-and-advanced-helpers).
+Settings supplied directly to `MagicSerializationHelper` do not globally configure the injected `IMagicIndexedDb` service. See [custom converters](serialization.md#custom-converters).
 
-## Obsolete implementation paths
+## Avoid implementation classes
 
-Concrete implementation classes still contain obsolete raw database/schema override methods for compatibility and unfinished migration work. They are intentionally absent from `IMagicIndexedDb`. Do not cast the injected service to reach implementation details; those paths are not the stable consumer contract.
+Some concrete classes still contain obsolete database and schema override methods. They are not part of `IMagicIndexedDb` and may disappear. Application code should use the injected interface instead of casting it to an implementation class.

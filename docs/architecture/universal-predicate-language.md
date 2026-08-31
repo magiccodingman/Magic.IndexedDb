@@ -1,10 +1,10 @@
 # Universal predicate language
 
-Magic IndexedDB separates language-specific expressions from its browser query planner with a universal predicate tree. The Blazor wrapper currently builds this tree from C# expression trees; the architecture is intended to allow future wrappers to produce the same intent from other languages.
+Magic IndexedDB converts C# expressions into a small predicate tree before sending them to the browser. This keeps C# expression parsing separate from IndexedDB query planning and gives other language wrappers a format they could target later.
 
-## Stability notice
+## Who this page is for
 
-The supported public integration surface is the C# `IMagicIndexedDb` API. The JavaScript modules, transport envelope, and direct query functions are package implementation details and may evolve. Treat this page as contributor architecture documentation, not as a promise that external JavaScript can call an unversioned public SDK.
+This page is for contributors working on expression translation, query planning, or another language wrapper. Blazor applications should use `IMagicIndexedDb`; the JavaScript modules and transport format are not a public JavaScript SDK.
 
 ## Node model
 
@@ -104,7 +104,7 @@ is represented by the current C# transport in this shape:
 }
 ```
 
-The stored property names shown above assume camel-case transport and no overriding `[MagicName]`. A wrapper must use the actual persisted schema names, not merely its language's source-member names.
+The property names above assume camel-case storage and no `[MagicName]` override. The tree must always use the names stored in IndexedDB, which may differ from the C# member names.
 
 Ordinary C# string equality is case-sensitive, so the string equality conditions above carry `caseSensitive: true`. Case-insensitive supported method overloads carry `false` and normally require cursor evaluation.
 
@@ -123,7 +123,7 @@ The operation vocabulary includes:
 
 The source of truth is [`queryConstants.js`](../../Magic.IndexedDb/wwwroot/utilities/queryConstants.js), together with the C# translator and cursor evaluator. An operation existing in the vocabulary does not mean it can use an IndexedDB index.
 
-Operation names are canonical wire tokens. Use `Equal`, `NotEqual`, and `Contains`; older or invented variants such as `StringEquals`, `NotEquals`, and `ArrayContains` are not part of the current vocabulary. A captured membership expression can begin as several `Equal` alternatives and later be compressed to `In`, while the documented `record.Values.Contains(3)` literal-constant shape uses `Contains` for cursor evaluation.
+Operation names must match exactly. The names are `Equal`, `NotEqual`, and `Contains`, not variants such as `StringEquals`, `NotEquals`, or `ArrayContains`. A captured membership expression may begin as several `Equal` alternatives and later be compressed to `In`. The supported `record.Values.Contains(3)` form uses `Contains` and runs through the cursor evaluator.
 
 ## Query additions
 
@@ -179,22 +179,22 @@ The current camel-case shape is:
 | `columnNamesInCompoundIndex` | Ordered property lists for compound indexes |
 | `columnNamesInCompoundKey` | Ordered primary-key property list |
 
-Database migration fields currently present in the source are not a supported automatic migration protocol.
+The migration fields shown in the source are not a usable automatic migration feature yet.
 
 ## Internal browser execution
 
-The package currently has materialized and generator-based query paths corresponding to `magicQueryAsync` and `magicQueryYield`. Both accept the table, universal predicate, query additions, and a forced-cursor flag. The Blazor package calls them through its versioned streaming envelope; they are not exported as a separately supported JavaScript SDK.
+The package has a materialized path (`magicQueryAsync`) and a generator path (`magicQueryYield`). Both receive the table, predicate tree, query additions, and a forced-cursor flag. Blazor calls them through its streaming transport; applications do not call these functions directly.
 
-## Building another wrapper
+## What another language wrapper would need
 
-A future wrapper needs more than a JSON serializer. It must:
+Producing the JSON shape is only one part of a wrapper. A wrapper would also need to:
 
 1. Translate its language's expressions without changing logical meaning.
 2. Apply persisted-name mappings consistently to schemas, predicates, and returned objects.
 3. Validate supported operations and normalize values such as dates and enums.
 4. Preserve AND/OR nesting and constant true/false predicates.
-5. Follow the query-addition ordering contract.
+5. Enforce the same valid order for query additions.
 6. Implement the versioned interop and streaming lifecycle, including cancellation and errors.
-7. Track changes to the internal JavaScript contract until a standalone public wrapper API is formally versioned.
+7. Be updated when the internal JavaScript transport changes, until a public wrapper API exists.
 
-Contributors should propose the public boundary and compatibility tests along with any new language wrapper rather than coupling directly to one internal module function.
+Because the JavaScript entry points are still internal, a new wrapper should define and test a public boundary instead of depending directly on one module function.

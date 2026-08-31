@@ -1,6 +1,6 @@
 # Query expression reference
 
-Magic IndexedDB translates supported C# expression-tree shapes into its universal predicate language. The tables below describe the principal operations and their likely IndexedDB execution path.
+Magic IndexedDB translates the C# expressions listed below into browser queries. The tables also show whether an expression can use an index or needs cursor filtering.
 
 “Index-capable” means the operation can use an appropriate declared index in a compatible predicate plan. It is not a guarantee that a particular compound expression will remain indexed.
 
@@ -20,7 +20,7 @@ Compatible lower and upper bounds on one field may be compressed into a range. M
 
 Reversed comparisons such as `minimum < x.Value` are normalized without changing operand meaning. Comparisons between two record properties and arithmetic such as `x.Value + 1 > limit` are not supported translation shapes.
 
-Numeric comparison correctness also depends on the persisted browser representation. Values that exceed JavaScript's exact integer precision are not a safe query key merely because the CLR expression compiles. See [serialization and persisted types](serialization.md#numeric-precision-across-javascript).
+Numeric comparisons also depend on how the value survives JavaScript. Values outside JavaScript's exact integer range are not safe query keys merely because the C# expression compiles. See [numeric precision](serialization.md#numeric-precision).
 
 ## Strings and collections
 
@@ -150,7 +150,7 @@ Literal boolean nodes and supported captured-sequence quantifiers preserve norma
 
 Captured `Any` and `All` are expanded into boolean branches. Use them for bounded application values, not as a substitute for arbitrary correlated subqueries.
 
-Negation is supported for documented binary comparisons, logical groups, and the documented string methods. Unary `!x.BooleanProperty` is not part of the supported contract; write `x.BooleanProperty == false`.
+Negation works with the comparisons, logical groups, and string methods listed on this page. For a boolean property, write `x.BooleanProperty == false` instead of `!x.BooleanProperty`.
 
 ## Query additions
 
@@ -165,10 +165,10 @@ Negation is supported for documented binary comparisons, logical groups, and the
 | `TakeLast` | `takeLast` |
 | `StableOrdering` | `stableOrdering` |
 
-See [ordering and pagination](../guides/ordering-and-pagination.md) for the valid fluent order and output-order contract.
+See [ordering and pagination](../guides/ordering-and-pagination.md) for the valid method order and the difference between materialized and streamed ordering.
 
-## Treat the list as versioned
+## Unsupported expressions
 
-This reference describes the current supported expression surface, not every method LINQ exposes. A method being legal inside a C# expression tree does not make it translatable. Verify new expression shapes with tests against realistic IndexedDB data before depending on them in production.
+Magic supports the expression shapes listed here, not every expression that C# or LINQ can build. Arithmetic, arbitrary helper methods, property-to-property comparisons, and most nested-member predicates cannot be translated.
 
-Nested objects and collections can be persisted without implying that arbitrary nested-member predicates are translatable. The documented query surface targets direct table properties plus the explicit date, nullable, length, enum, and collection shapes described above.
+Nested objects and collections can still be stored. Querying them is limited to the date, nullable, length, enum, and collection forms described above.

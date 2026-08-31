@@ -56,7 +56,7 @@ Support does not mean every expression is indexable. Stored collection `Contains
 
 Unsupported method calls or expression shapes should be treated as translation errors, not as arbitrary C# code that Magic can execute inside IndexedDB.
 
-In particular, do not assume support for arithmetic inside the predicate, direct property-to-property comparisons, arbitrary helper methods, or nested member access merely because the expression compiles as C#. Write boolean false explicitly as `person.IsActive == false`; unary negation of a boolean member is not part of the documented expression surface.
+Arithmetic, property-to-property comparisons, arbitrary helper methods, and most nested member access are not supported just because the expression compiles. Write a false check as `person.IsActive == false`; unary `!person.IsActive` is not translated.
 
 ## Indexed and cursor paths
 
@@ -66,7 +66,7 @@ Calling `Where` asks Magic to choose the best execution plan. An individual bran
 2. A compound-index lookup when the schema and predicate align.
 3. The cursor engine when no compatible index path can represent the branch.
 
-Use `Cursor` only when you intentionally want the entire predicate processed by the cursor engine:
+Use `Cursor` when you want the entire predicate processed by the cursor engine:
 
 ```csharp
 List<Person> results = await people
@@ -140,14 +140,14 @@ IEnumerable<Person> result = await people
 
 This is deliberately different from `Where`: it is an in-memory operation and cannot improve the IndexedDB execution plan.
 
-## Fluent-interface guardrails
+## Valid method order
 
-Magic's staged interfaces intentionally limit which operations are available next. Let IntelliSense and compile-time return types guide the chain. In particular:
+The return type of each method controls what can come next. IntelliSense will show the valid choices. The important rules are:
 
 - Apply all IndexedDB `Where` predicates before pagination.
 - Use `Take(n).Skip(m)`, not `Skip(m).Take(n)`.
-- `IMagicQueryStaging<T>` does not expose `OrderBy`. For a filtered ordered list, use a deliberate `Cursor(predicate).OrderBy(...)` chain or materialize the filtered query and order it in .NET.
+- `IMagicQueryStaging<T>` does not expose `OrderBy`. For a filtered ordered list, use `Cursor(predicate).OrderBy(...)` or load the filtered records and order them in .NET.
 - Use `Cursor` when you need cursor-only additions such as `StableOrdering()`.
 - Execute or use `WhereAsync` after a chain reaches `IMagicQueryFinal<T>`.
 
-See [ordering and pagination](ordering-and-pagination.md) for the complete rationale and examples.
+See [ordering and pagination](ordering-and-pagination.md) for examples.

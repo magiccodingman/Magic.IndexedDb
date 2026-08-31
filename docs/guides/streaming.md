@@ -28,13 +28,13 @@ await foreach (Person person in table
 }
 ```
 
-The current streaming transport drains chunks while JavaScript is producing them, measures chunk limits in UTF-8 bytes, avoids splitting Unicode code points, and disposes interop stream resources. JavaScript failures and incomplete streams propagate to .NET instead of silently producing a partial success.
+Magic transfers the result in UTF-8 chunks while JavaScript is producing it. JavaScript failures and incomplete streams are reported to .NET instead of looking like a successful partial result.
 
 Streaming reduces the need to hold the complete returned collection at once, but it is not a promise of constant memory for every query. The browser engine may still need metadata, keys, de-duplication state, ordered subsets, or batches to evaluate the plan.
 
-## Ordering contract
+## Ordering
 
-Progressive delivery does not promise final arrival order. If ordering matters after streaming, buffer and sort explicitly:
+Records from separate query branches may arrive out of order. If order matters, buffer and sort the records:
 
 ```csharp
 List<Person> received = [];
@@ -68,7 +68,7 @@ await foreach (Person person in query.AsAsyncEnumerable(cancellationToken))
 
 Wrap the enumeration in the same error handling you would use for any browser-backed operation. Exceptions may represent translation errors, JavaScript failures, browser storage errors, cancellation, or serialization failures.
 
-Cancellation cleans up the stream and stops further consumption; already yielded records remain consumed. A stream is not documented as a snapshot transaction. See [errors, cancellation, and recovery](../reference/errors-and-cancellation.md) for the operation-by-operation cancellation matrix.
+Cancellation cleans up the stream and stops further consumption, but it cannot take back records your code already processed. A stream is not a snapshot transaction. See [errors and cancellation](../reference/errors-and-cancellation.md) for more detail.
 
 ## Message-size configuration
 

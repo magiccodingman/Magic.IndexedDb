@@ -1,49 +1,45 @@
-# Serialization and persisted types
+# Serialization
 
-Magic IndexedDB serializes C# values with `System.Text.Json`, transports JSON through JavaScript, stores the resulting values in IndexedDB, and applies Magic's materializer when records return to .NET. A type working in an in-process JSON round trip does not by itself prove that every value of that type is lossless through JavaScript and the browser database.
+Magic IndexedDB uses `System.Text.Json` to send records between .NET and the browser. IndexedDB stores the JavaScript values produced from that JSON, and Magic converts them back to your C# types when you read them.
 
-## Supported model shapes
+Most ordinary models work without extra configuration:
 
-The current serializer supports these principal shapes:
-
-| Shape | Current behavior |
+| C# value | How it is stored |
 |---|---|
-| Strings, booleans, and nulls | Preserve their JSON meanings, including escaped and Unicode text. |
-| Primitive numeric types and `decimal` | Serialize as JSON numbers; JavaScript precision constraints apply. |
-| `DateTime`, `DateTimeOffset`, `Guid`, `Uri`, and `TimeSpan` | Use their `System.Text.Json` representations. Query translation support is narrower than storage support. |
-| Nullable values | Preserve null separately from the underlying value. |
-| Enums | Numeric by default; a configured string-enum converter can store names. |
-| Nested objects | Persist recursively, including Magic persisted-name mappings. |
-| Arrays and `List<T>` | Restore as the requested array or list shape. |
-| `HashSet<T>` | Restores as a set. |
-| Dictionaries | Persist as JSON objects, including dictionaries nested in entities and collections. |
-| Nested collections | Restore supported concrete collection shapes recursively. |
+| Strings, booleans, and nulls | As their normal JSON values |
+| Numeric types and `decimal` | As JavaScript numbers; see [numeric precision](#numeric-precision) |
+| `DateTime`, `DateTimeOffset`, `Guid`, `Uri`, and `TimeSpan` | Using their `System.Text.Json` representation |
+| Nullable values | As either `null` or the underlying value |
+| Enums | As numbers by default, or names when a string-enum converter is used |
+| Nested objects | Recursively |
+| Arrays, lists, and sets | As arrays, restored to the declared collection type |
+| Dictionaries | As JSON objects |
 
-Storage support and query support are separate contracts. A nested object, dictionary, or collection can be stored without making arbitrary members inside it indexable or translatable. See the [query expression reference](query-expressions.md).
+Being able to store a value does not mean every part of it can be queried. For example, you can store a nested object or dictionary, but Magic cannot translate an arbitrary predicate against its contents. The supported predicate shapes are listed in the [query expression reference](query-expressions.md).
 
-## Numeric precision across JavaScript
+## Numeric precision
 
-JSON numbers become JavaScript `Number` values in the browser transport. Integers outside JavaScript's exactly representable range, and high-precision decimal values, can lose precision even though `long`, `ulong`, and `decimal` serialize successfully in .NET.
+Numbers pass through JavaScript before reaching IndexedDB. JavaScript cannot represent every `long`, `ulong`, or high-precision `decimal` value exactly.
 
-Do not use an unverified large numeric value as a primary key, unique identity, money representation, or concurrency token. Safer persisted representations include:
+Be careful with large numeric identifiers, money, and concurrency values. Depending on the data, a safer representation may be:
 
-- A `Guid` for identity
-- A decimal or large integer encoded as an invariant string
-- Money stored as an integer minor-unit value only when the entire expected range remains exactly representable
+- a `Guid` for an identifier;
+- a large integer or decimal stored as an invariant string; or
+- money stored in minor units, provided the largest possible value is still safe in JavaScript.
 
-Test the largest and smallest production values through a real browser, not only through `MagicSerializationHelper`.
+If exact precision matters, test the largest values through the browser. A .NET-only serialization test will not catch precision lost in JavaScript.
 
 ## Dates and times
 
-`DateTime` and `DateTimeOffset` can be persisted, but their semantic meaning still belongs to the application. Decide whether a value represents UTC, a local wall-clock time, or an offset-bearing instant before persisting it.
+`DateTime` and `DateTimeOffset` can be stored normally. Your application still needs a consistent rule for what each value means: UTC, local time, or an offset-bearing instant.
 
-The query translator specifically documents direct `DateTime` comparisons and supported date-member expressions. Persisting a time-related CLR type does not automatically make every property or method on that type translatable.
+Magic supports the date comparisons described in the [query expression reference](query-expressions.md), but it does not translate every property or method available on a .NET date type.
 
-Changing an existing property's date representation, offset policy, or JSON converter is a schema/data migration even if the C# property name does not change.
+Changing how an existing property represents time can make older records incompatible even if the property name stays the same.
 
 ## Enums
 
-Numeric enum storage is the default. A `JsonStringEnumConverter` placed on the enum type changes its persisted representation to a name:
+Enums are stored as numbers by default. Add `JsonStringEnumConverter` to an enum when you prefer to store its names:
 
 ```csharp
 using System.Text.Json.Serialization;
@@ -56,53 +52,44 @@ public enum OrderStatus
 }
 ```
 
-Type-level converter metadata is honored by ordinary persisted records and equality filters. Switching an existing database between numeric and named enum storage does not rewrite old records. See [schema evolution](../guides/schema-evolution.md).
+The converter is also used when Magic builds equality filters. Do not switch an existing property between numeric and named enum storage without handling the records already in the database.
 
-## Persisted names and ignored members
+## Property names and ignored properties
 
-- `[MagicName]`, `[MagicIndex]`, and `[MagicUniqueIndex]` can define a stable persisted property name.
-- `[MagicNotMapped]` prevents a property from being written and ignores it during materialization.
-- Unknown stored properties are ignored when the current model does not map them.
-- Missing stored properties retain constructor/default values unless they are constructor-bound as described below.
-- A default-valued auto-increment primary key is omitted from the serialized insert so IndexedDB can generate it.
+- `[MagicName]`, `[MagicIndex]`, and `[MagicUniqueIndex]` can set the name stored in IndexedDB.
+- `[MagicNotMapped]` leaves a property out of stored records and ignores it when records are read.
+- Extra properties in an older stored record are ignored when the current model no longer contains them.
+- Properties missing from a stored record keep their constructor or default value, unless they are required by the selected constructor.
+- A default-valued auto-increment key is left out of an insert so IndexedDB can generate it.
 
-Persisted names are data contracts. Renaming or removing them requires the same planning as changing a column in another database.
+Once data has been deployed, changing a stored property name is much like renaming a database column: existing records still use the old name. See [schema evolution](../guides/schema-evolution.md) before making that change.
 
-## Constructor materialization
+## Constructors
 
-Constructor selection follows this order:
+When Magic creates an object from a stored record, it chooses a constructor in this order:
 
-1. The single constructor marked `[MagicConstructor]`
-2. The single constructor marked `[JsonConstructor]`
+1. The constructor marked `[MagicConstructor]`
+2. The constructor marked `[JsonConstructor]`
 3. A public parameterless constructor
-4. The only available constructor
-5. For legacy ambiguous types, the constructor with the most parameters, with a deterministic tie-break
+4. The only constructor on the type
+5. For older ambiguous models, the constructor with the most parameters
 
-Constructor parameter matching is case-insensitive. Optional parameter defaults are honored. After construction, remaining writable properties are populated.
+Constructor parameters are matched to properties without regard to case, and optional parameter defaults are honored. Magic fills any remaining writable properties after the object is constructed.
 
-The table type itself must still satisfy the `new()` constraint required by `Query<T>()`; constructor-based materialization is most useful for nested persisted types and for table models that retain a public parameterless constructor alongside a selected materialization constructor.
+`Query<T>()` still requires the table type to satisfy its `new()` constraint. Constructor-based materialization is therefore most useful for nested types, or for a table model that also keeps a public parameterless constructor.
 
-See [schema attributes and constructors](schema-attributes.md) for examples and precedence details.
+See [schema attributes and constructors](schema-attributes.md) for examples.
 
-## Collection restoration
+## Collections and dictionaries
 
-Arrays, lists, sets, and collection types constructible from `IEnumerable<T>` can be restored. An arbitrary custom `IEnumerable<T>` implementation is not automatically supported. If Magic cannot reconstruct the requested concrete collection from a JSON array, deserialization fails instead of silently substituting a different declared type.
+Magic can restore arrays, lists, sets, and collection types that can be constructed from `IEnumerable<T>`. It will not silently substitute a different type when it cannot recreate a custom collection.
 
-Dictionary properties follow `System.Text.Json` dictionary-key rules. With a value type such as `object`, individual values commonly materialize as `JsonElement`; application code should interpret those elements explicitly.
+Dictionary keys follow the normal `System.Text.Json` rules. In a `Dictionary<string, object>`, values will often come back as `JsonElement`; your code should read those elements as the expected type.
 
-## Custom converters and advanced helpers
+## Custom converters
 
-Converter attributes declared on persisted types and properties participate in normal serialization. The ordinary `IMagicIndexedDb` registration API does not expose a global `JsonSerializerOptions` hook.
+Converter attributes on a persisted type or property are used during normal database operations. There is currently no global `JsonSerializerOptions` setting on `IMagicIndexedDb`.
 
-`MagicJsonSerializationSettings` and `MagicSerializationHelper` are public compatibility and testing helpers. Passing settings to those helpers customizes that helper call; it does not reconfigure the injected database service.
+`MagicJsonSerializationSettings` and `MagicSerializationHelper` are useful for direct serialization calls and tests. Settings passed to those helpers do not change the serializer used by the injected database service.
 
-## Verification checklist
-
-For every application-specific type or converter:
-
-1. Insert representative minimum, maximum, null, empty, and non-ASCII values.
-2. Close and reopen the database.
-3. Read the record in each supported browser engine.
-4. Compare exact values, not only successful deserialization.
-5. Exercise any equality or range queries separately from the storage round trip.
-6. Repeat the check with data created by the previous application version before deploying a representation change.
+For an unusual type or converter, test a real insert and read after closing and reopening the database. Include nulls, empty values, Unicode text, boundary numbers, and data written by the previous version of your application. Test its queries separately, because a successful round trip does not guarantee that the type can be used in a predicate.

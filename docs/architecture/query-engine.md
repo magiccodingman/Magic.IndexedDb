@@ -53,19 +53,19 @@ There are two principal paths:
 - Without pagination/first/last additions, matching full records are collected directly.
 - When additions require selection or ordering, the engine collects the primary key and only the fields needed for filtering/order metadata, applies the additions, and then fetches the selected full records by primary key.
 
-Rows missing a property required by the cursor predicate are skipped because the predicate cannot be evaluated reliably for that row. This makes additive schema compatibility an application concern; it is not a substitute for migrations.
+The cursor skips a row when it cannot evaluate the predicate because a required property is missing. If a new property will be queried, older records may need to be backfilled first.
 
-`StableOrdering()` suppresses inferred indexed predicate fields in cursor metadata ordering and uses the cursor's stable scan order. The current fluent surface does not combine `StableOrdering()` with an explicit `OrderBy` in the same cursor chain.
+`StableOrdering()` leaves inferred indexed predicate fields out of cursor ordering and uses the stable scan order instead. It cannot be combined with `OrderBy` in the same cursor chain.
 
 One field inside a compound primary key is not independently orderable merely because it participates in that compound key. Ordering by such a component uses the cursor unless a standalone ordinary or unique index exists for the property.
 
 ## 7. Result transport
 
-`ToListAsync()` collects the query into a materialized list and applies the requested materialized ordering contract.
+`ToListAsync()` collects the query into a list and applies the requested ordering.
 
-`AsAsyncEnumerable()` uses the streamed interop path. The .NET consumer drains chunks while JavaScript produces them, and duplicate primary keys are filtered by the engine. Progressive delivery does not promise final arrival order across query paths.
+`AsAsyncEnumerable()` uses the streaming path. .NET drains chunks while JavaScript produces them, and the engine removes duplicate primary keys. Records from separate query paths can arrive out of order.
 
-The internal interop envelope is versioned. The current transport sends arguments as raw JSON elements rather than JSON strings nested inside JSON, preserving falsey values and avoiding extra parsing. The JavaScript reader retains support for the earlier envelope.
+The interop envelope has its own version. Arguments are sent as raw JSON elements rather than JSON strings inside JSON, which preserves values such as `0`, `false`, and `null` and avoids another parsing step. The JavaScript reader can also read the older envelope.
 
 ## Performance implications
 

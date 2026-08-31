@@ -17,7 +17,7 @@ IMagicQuery<Person> employees = await MagicDb.Query<Person>(
     person => person.Databases.Employee);
 ```
 
-The older raw `IndexedDbSet` and name/schema override query paths are not part of the supported `IMagicIndexedDb` surface. Build normal application code around the two typed overloads above.
+Use these two typed overloads in application code. Older methods that accept raw database or schema overrides are obsolete and are not exposed by `IMagicIndexedDb`.
 
 ## Manage one database
 
@@ -67,7 +67,7 @@ double quotaMiB = storage.QuotaInMegabytes;
 
 The values come from the browser's storage estimate and should be treated as an estimate, not as a reservation or guaranteed capacity.
 
-When the browser estimate API is unavailable, the current implementation returns zero values. Storage is origin/profile scoped and can be cleared or evicted according to browser policy. See [browser support, storage, and multiple tabs](../reference/browser-support-and-storage.md) for the complete operational contract.
+When the browser cannot provide an estimate, Magic returns zero values. Storage belongs to the current site and browser profile, and the browser or user can clear it. See [browser storage and multiple tabs](../reference/browser-support-and-storage.md) for more detail.
 
 ## Disposal
 

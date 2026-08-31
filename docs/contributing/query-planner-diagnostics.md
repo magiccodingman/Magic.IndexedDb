@@ -1,45 +1,43 @@
 # Query planner diagnostics
 
-Magic IndexedDB debug mode now records a structured trace of the planning path used by the most recent query. The trace exists for development and test diagnostics only. It does not participate in query planning and must never change query semantics.
+Debug mode records how the browser planned the most recent query. This is useful when a query returns the wrong records or you need to understand why it used an index or cursor.
 
-## Compatibility contract
+Enable it during registration:
 
-Planner diagnostics and regression tests target the library's supported IndexedDB 2.0 behavior. IndexedDB 3.0 remains a draft and is not used as a correctness assumption or as a way to bypass IndexedDB 2.0 limitations.
+```csharp
+builder.Services.AddMagicBlazorDB(
+    BlazorInteropMode.WASM,
+    isDebug: true);
+```
 
-## What the trace records
+## What the trace contains
 
-When `AddMagicBlazorDB(..., isDebug: true)` is used, the JavaScript planner records stages such as:
+Depending on the query, the trace can show:
 
-- source predicate and logical flattening;
-- optimizer dispatch and before/after branch counts;
-- whether the advanced optimizer received the shape it expects;
-- cursor-forcing decisions;
-- per-branch strategy selection (`single-index`, `compound-index`, or `cursor`);
-- how many conditions a compound index consumed and how many remain outside the selected index;
-- pagination reconvergence, including invalid or undefined cursor entries;
-- indexed physical optimization, including input branch counts and output operations without recording query values;
-- indexed or cursor execution selection and result counts where execution reaches completion;
-- the final partition summary.
+- the predicate before and after logical flattening;
+- optimizer input and output branch counts;
+- whether the query was forced through a cursor;
+- whether each branch used a single index, compound index, or cursor;
+- which conditions a compound index handled and which remained;
+- pagination branches being brought back together;
+- physical index operations without including the query values;
+- result counts and the final partition summary.
 
-The physical-optimization stage is particularly useful for detecting semantic drift between logical planning and Dexie execution. For example, it can show that one logical AND branch containing two indexed conditions became two independent physical index queries, or that two prefix branches were rewritten into a single `In` operation.
+The JavaScript debug module exposes `getLastQueryPlannerTrace()` and `clearQueryPlannerTrace()`. Browser tests read the structured trace instead of parsing console output.
 
-The debug module exposes `getLastQueryPlannerTrace()` and `clearQueryPlannerTrace()` for diagnostics. Browser regression tests consume this structured object rather than parsing console text.
+Only the latest query is retained. Concurrent queries can overwrite or interleave the trace, so run a query by itself when diagnosing it.
 
-The current implementation is intentionally a lightweight **last-query development probe**, not a concurrent tracing subsystem. Overlapping queries can replace or interleave the global diagnostic trace. Tests therefore execute traced queries independently. If concurrent trace correlation becomes necessary, trace identity should be propagated through the planner rather than making planning depend on global diagnostic state.
+## Testing a planner problem
 
-## Testing philosophy
+A good planner test checks the result first and the trace second:
 
-Planner tests use two independent checks:
+1. Run the query against IndexedDB.
+2. Run the equivalent predicate against the same records with in-memory LINQ.
+3. Compare the returned records.
+4. Inspect the trace to see where the browser plan diverged.
 
-1. **Semantic oracle:** execute the real query through IndexedDB/Dexie and compare the returned records with the equivalent in-memory LINQ predicate.
-2. **Planner evidence:** inspect the structured trace to prove the intended predicate structure reached the relevant planning boundary and include the trace in semantic failure output.
+The records are the important result. Avoid asserting every detail of the chosen plan when more than one plan would return the same correct answer.
 
-Planner evidence should avoid turning a particular optimization strategy into a permanent behavioral contract when multiple correct physical plans are possible. The semantic result remains authoritative.
+The .NET tests verify the predicate tree produced from C#. Browser tests then verify what happens after that tree reaches JavaScript and IndexedDB. This split helps narrow a failure to expression translation or browser execution.
 
-The C# contract suite separately verifies that the expression builder sends the intended boolean topology and all predicate conditions into the JavaScript planner. This establishes a useful correctness boundary: if the C# semantic tree is correct but the browser regression differs from the LINQ oracle, the defect lies after expression translation.
-
-## Regression status
-
-The diagnostics were introduced with intentionally red reproductions, followed by semantic fixes. The current suite is expected to be green. It covers independent indexed AND intersection, compound-index residual predicates, multi-branch pagination reconvergence, prefix preservation, optimizer truth laws, string case behavior, empty membership, constant boolean identities, full-day date boundaries, cursor OR correlation, indexed range unions, normalized compound-key de-duplication, and compound-primary-key ordering fallback.
-
-Future regression work should preserve the same two-step discipline when practical: first prove that a test detects the pre-existing defect, then apply the repair. Do not leave an intentional-failure statement in maintained current-version documentation after the repair is merged.
+The planner targets IndexedDB 2.0 behavior. It does not rely on features that only exist in the IndexedDB 3.0 draft.

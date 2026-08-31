@@ -51,7 +51,7 @@ Namespace: `Magic.IndexedDb.SchemaAnnotations`
 public string DisplayLabel => $"{LastName}, {FirstName}";
 ```
 
-`MagicNotMapped` excludes a public property from Magic's stored contract. It is useful for calculated, decrypted, or UI-only values.
+`MagicNotMapped` leaves a public property out of the stored record. It is useful for calculated, decrypted, or UI-only values.
 
 ## Attribute combinations
 

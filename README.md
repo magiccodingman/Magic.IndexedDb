@@ -3,38 +3,33 @@
 [![NuGet version](https://img.shields.io/nuget/v/Magic.IndexedDb.svg?logo=nuget&label=NuGet)](https://www.nuget.org/packages/Magic.IndexedDb/)
 [![NuGet downloads](https://img.shields.io/nuget/dt/Magic.IndexedDb.svg?logo=nuget&label=downloads)](https://www.nuget.org/packages/Magic.IndexedDb/)
 
-Magic IndexedDB is a C#-first LINQ-to-IndexedDB query engine and typed browser database library for Blazor. It lets .NET applications query IndexedDB with C# expression trees while preserving the performance characteristics of a browser-native database.
+Magic IndexedDB is a typed browser database library for Blazor. It lets you query IndexedDB with C# expressions while keeping filtering and query planning in the browser.
 
 Instead of treating LINQ as an in-memory filter over an already-loaded collection, Magic IndexedDB translates supported predicates into an IndexedDB-aware query plan. It uses single-field and compound indexes where possible, partitions complex AND/OR expressions, and uses an optimized cursor engine for operations that IndexedDB cannot execute through an index.
-
-Beneath the current C# API is a language-neutral predicate and schema model. The C# wrapper is the first implementation, but the translation boundary is designed so other languages and frameworks can build wrappers that target the same browser query planner instead of recreating its indexing, cursor, and optimization logic.
 
 [Documentation](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/README.md) · [NuGet](https://www.nuget.org/packages/Magic.IndexedDb/) · [.NET 10 upgrade notes](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/upgrading/dotnet-10.md) · [Issues](https://github.com/magiccodingman/Magic.IndexedDb/issues)
 
 ## Why use Magic IndexedDB?
 
 - **Write browser database queries in C#.** Use strongly typed predicates instead of maintaining a separate JavaScript data-access layer.
-- **Build on a universal query model.** Additional language wrappers can translate their native query intent into the same predicate tree and browser execution engine.
 - **Keep filtering close to the data.** Compatible equality, range, membership, ordering, and compound-key operations are planned around IndexedDB indexes.
 - **Express real application logic.** Nested `&&` and `||` predicates are translated, partitioned, optimized, and de-duplicated by primary key.
-- **Choose the execution strategy deliberately.** `Where(...)` preserves opportunities for index optimization; `Cursor(...)` explicitly selects cursor evaluation when a scan is appropriate.
+- **Use indexes without giving up flexible queries.** `Where(...)` lets the planner use indexes where it can, while `Cursor(...)` handles scan-oriented queries.
 - **Process large results progressively.** `AsAsyncEnumerable()` streams interop results so applications can begin processing before materializing the full returned collection.
-- **Define schemas in C#.** Tables describe their primary keys, indexes, compound indexes, persisted names, and valid databases through typed contracts.
-- **Store practical object models.** The current release supports nested objects and collections, custom JSON converters, Unicode and escaped text, and explicit constructor materialization.
+- **Define schemas in C#.** Attributes describe primary keys, indexes, compound indexes, stored names, and databases.
+- **Store practical object models.** Nested objects, collections, custom JSON converters, Unicode text, and constructor-based materialization are supported.
 
 Magic IndexedDB is a strong fit for offline-first Blazor applications, progressive web apps, local browser caches, disconnected workflows, and client-side datasets that need more than simple key/value access.
 
-## C# first, universal by design
+## The query engine
 
-Magic IndexedDB deliberately separates the language-facing wrapper from the engine that plans and executes browser queries:
+Magic separates the C# API from the browser engine that plans and runs queries:
 
-1. A language wrapper translates native query expressions and schema definitions.
-2. The universal layer represents predicates, logical groups, operations, query additions, and persisted schema names in a language-neutral form.
-3. The browser engine partitions and optimizes that intent across primary keys, indexes, compound indexes, and cursor execution.
+1. The C# library translates expressions and schema definitions.
+2. A language-neutral model carries predicates, operations, and stored names to the browser.
+3. The browser engine plans the query across primary keys, indexes, compound indexes, and cursor execution.
 
-Today, the supported public wrapper is the C# and Blazor API. A future TypeScript, JavaScript, Python, or other language wrapper could produce the same universal intent and reuse the same IndexedDB engine rather than starting over. Building a wrapper still requires semantic translation, schema mapping, validation, and transport compatibility; the internal JavaScript protocol is not yet presented as an independently versioned public SDK.
-
-See the [universal predicate language](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/architecture/universal-predicate-language.md) and [query engine architecture](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/architecture/query-engine.md) for the wrapper contract and execution model.
+The public API is the C# library. Contributors can read about the [universal predicate language](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/architecture/universal-predicate-language.md) and [query engine](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/architecture/query-engine.md).
 
 ## How it works
 
@@ -45,7 +40,7 @@ See the [universal predicate language](https://github.com/magiccodingman/Magic.I
 5. Remaining branches use the cursor engine, with metadata-first selection when pagination or first/last selection requires it.
 6. Results return as a materialized list or a progressive async stream.
 
-This provides a LINQ-oriented programming model without pretending IndexedDB is SQL or in-memory LINQ. The differences are documented so query behavior remains explicit and predictable.
+This feels familiar to LINQ users without pretending IndexedDB behaves like SQL or an in-memory collection.
 
 ## Requirements
 
@@ -123,14 +118,14 @@ Continue with [installation and configuration](https://github.com/magiccodingman
 ## Query behavior worth knowing
 
 - Start with `Where(...)`; it allows the engine to choose indexed, compound-indexed, and cursor branches.
-- Use `Cursor(...)` when you intentionally want cursor execution, such as scan-oriented text matching or stable cursor pagination.
+- Use `Cursor(...)` for scan-oriented text matching or when you specifically need cursor execution.
 - Magic's pagination chain is `Take(count).Skip(offset)` because of how its IndexedDB execution path composes limit and offset operations.
 - `Where(...)` returns a staged query without `OrderBy`; use `Cursor(predicate).OrderBy(...)` or materialize and sort in .NET when filtering and ordering must be combined.
 - `ToListAsync()` applies the requested materialized ordering.
-- `AsAsyncEnumerable()` prioritizes progressive delivery and does not promise final arrival order across query branches.
+- `AsAsyncEnumerable()` delivers records progressively; records from separate query branches may arrive out of order.
 - `CountAsync()` on the root query counts the whole table; it is not currently a filtered-count operator.
 
-The [`Where` versus `Cursor`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/where-vs-cursor.md) and [ordering and pagination](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/ordering-and-pagination.md) guides explain these contracts in detail.
+The [`Where` versus `Cursor`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/where-vs-cursor.md) and [ordering and pagination](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/ordering-and-pagination.md) guides explain these differences in detail.
 
 ## Documentation
 
@@ -153,7 +148,7 @@ Version 1 documentation remains available in the [legacy archive](https://github
 
 ## Schema evolution
 
-The automated migration protocol is still under construction. Magic IndexedDB does not automatically migrate existing browser data when a C# model changes. Plan and test persisted-name, index, primary-key, and required-property changes against data produced by the previously released application.
+Magic IndexedDB does not currently migrate existing browser data when a C# model changes. Plan and test changes to stored names, indexes, primary keys, and required properties against data from the previous version of your application.
 
 See [schema evolution and migrations](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/schema-evolution.md) before changing a deployed schema.
 
@@ -161,7 +156,7 @@ See [schema evolution and migrations](https://github.com/magiccodingman/Magic.In
 
 Issues and pull requests are welcome. Changes to expression translation, serialization, schema handling, or the JavaScript query engine should include focused unit tests and browser end-to-end coverage where applicable.
 
-See [testing and continuous integration](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/contributing/testing.md) for local commands, coverage expectations, and required CI checks.
+See [testing Magic IndexedDB](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/contributing/testing.md) for the local test commands and guidance on where to add tests.
 
 ## 🏆 Contributors Hall of Fame 🏆
 

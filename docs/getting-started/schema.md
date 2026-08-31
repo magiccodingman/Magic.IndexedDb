@@ -92,7 +92,7 @@ IMagicQuery<Person> employeeQuery =
 
 `Query<T>()` uses `GetDefaultDatabase()`. The selector overload should point to one of the table's declared `Databases` fields. The selector is a strongly typed database choice, not an authorization boundary; Magic does not use it to enforce which callers may access a database.
 
-The current schema bootstrap supplies every discovered Magic table schema to every discovered `IndexedDbSet`. A table's `Databases` property makes intended selections strongly typed, but it does not currently prune that table's object-store schema from other discovered Magic databases. See [browser support, storage, and multiple tabs](../reference/browser-support-and-storage.md#schema-discovery-across-databases).
+Magic currently creates every discovered table in every discovered `IndexedDbSet`. The table's `Databases` property gives you strongly typed choices when querying, but it does not remove that table from the other Magic databases. See [browser storage and multiple tabs](../reference/browser-support-and-storage.md#which-tables-are-created).
 
 ## Primary keys
 
@@ -130,15 +130,15 @@ The order of fields in a compound key or compound index is part of the persisted
 
 ## Nested data and collections
 
-Stored models may contain nested objects, arrays, lists, sets, dictionaries, and nested collections. Dictionaries remain JSON objects when used as entity properties or collection elements; they are not treated as arrays merely because they implement `IEnumerable`. The current release also preserves escaped strings, Unicode text, `MagicName` mappings inside nested objects, and supported concrete collection shapes when values are materialized.
+Stored models may contain nested objects, arrays, lists, sets, dictionaries, and nested collections. Dictionaries stay as JSON objects even though they implement `IEnumerable`. Escaped strings, Unicode text, `MagicName` mappings inside nested objects, and supported concrete collection types are preserved when records are read.
 
 Indexes and primary keys still need to describe values IndexedDB can use as keys. Do not assume an arbitrary nested object is indexable merely because it can be serialized.
 
-For numeric precision, collection reconstruction, custom converters, and the distinction between storage and query support, see [serialization and persisted types](../reference/serialization.md).
+For numeric precision, collection reconstruction, custom converters, and the difference between storing and querying a type, see [serialization](../reference/serialization.md).
 
 ## Constructors
 
-Most mutable table models should keep a public parameterless constructor. Immutable or hybrid persisted types can select a constructor with `[MagicConstructor]`; existing `[JsonConstructor]` annotations remain supported. See [schema attributes and constructors](../reference/schema-attributes.md) for the complete precedence rules.
+Most mutable table models should keep a public parameterless constructor. Immutable or hybrid types can select a constructor with `[MagicConstructor]`, and existing `[JsonConstructor]` annotations also work. See [schema attributes and constructors](../reference/schema-attributes.md).
 
 ## Attribute validation
 
@@ -156,4 +156,4 @@ Keep development validation enabled so conflicting attributes and invalid key de
 
 ## Schema changes
 
-Defining the C# schema does not provide an automatic migration protocol. Before changing table names, key paths, indexes, or persisted property names, read [schema evolution](../guides/schema-evolution.md).
+Changing the C# schema does not update existing records automatically. Before changing table names, key paths, indexes, or stored property names, read [schema evolution](../guides/schema-evolution.md).

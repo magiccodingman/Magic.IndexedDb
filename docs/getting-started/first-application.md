@@ -68,7 +68,7 @@ int updated = await table.UpdateAsync(person, cancellationToken);
 int updatedMany = await table.UpdateRangeAsync(people, cancellationToken);
 ```
 
-`UpdateAsync` returns `0` when the primary key does not identify an existing row and `1` when it updates a row. `UpdateRangeAsync` currently has upsert behavior and returns the number of requested records after success. See [writes, bulk operations, and transactions](../reference/writes-and-transactions.md) before relying on range-operation counts or failure behavior.
+`UpdateAsync` returns `0` when the key does not exist and `1` when it updates a record. `UpdateRangeAsync` uses upsert behavior and returns the size of the batch. See [adding, updating, and deleting records](../reference/writes-and-transactions.md) for the differences between single and bulk updates.
 
 ## Delete
 
@@ -108,4 +108,3 @@ Use streaming when progressive processing and lower peak result memory matter mo
 - Understand [`Where` versus `Cursor`](../guides/where-vs-cursor.md).
 - Read the rules for [ordering and pagination](../guides/ordering-and-pagination.md).
 - Review [write and transaction semantics](../reference/writes-and-transactions.md) before building retries or batch workflows.
-- Use the [behavioral contract index](../reference/behavioral-contracts.md) when you need advanced guarantees and edge cases.

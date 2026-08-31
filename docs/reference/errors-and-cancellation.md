@@ -1,26 +1,23 @@
-# Errors, cancellation, and recovery
+# Errors and cancellation
 
-Magic IndexedDB crosses expression translation, JSON serialization, Blazor interop, JavaScript, Dexie, IndexedDB, and browser storage. Failures can originate at any of those boundaries. Applications should handle operations as browser-backed I/O, not as infallible in-memory LINQ.
+An error may come from the C# query translator, JSON serialization, JavaScript interop, IndexedDB, or the browser's storage system. Where it happens usually tells you whether retrying makes sense.
 
-## Failure stages
+## Common errors
 
-| Stage | Typical cause | When it appears |
+| Error | Likely cause | What to do |
 |---|---|---|
-| Registration validation | Invalid keys, conflicting Magic attributes, or duplicate compound definitions | During `AddMagicBlazorDB` when `isDebug` is `true` |
-| Query composition | Invalid `OrderBy` selector shape | When the operator is added |
-| Query translation | Unsupported expression node, member, conversion, or method | Usually when the query is executed |
-| Serialization | Unsupported collection construction, converter failure, malformed JSON, or incompatible stored value | Before browser dispatch or while materializing a response |
-| Browser operation | Duplicate key, unique-index violation, invalid IndexedDB key, quota/storage failure, or blocked lifecycle operation | While awaiting JavaScript interop |
-| Streaming transport | JavaScript producer failure, cancellation, incomplete stream, or chunk deserialization failure | During `await foreach` |
-| Object lifetime | Use of a disposed scoped service | Before an operation is dispatched |
+| Table validation fails during startup | Invalid key, duplicate compound definition, or conflicting Magic attributes | Fix the model |
+| `InvalidOperationException` while running a query | Magic cannot translate part of the expression | Rewrite the query using the [supported expressions](query-expressions.md) |
+| `MagicConstructorException` | More than one constructor has the same constructor attribute | Leave only one selected constructor |
+| JavaScript interop error | IndexedDB rejected an operation, the browser disconnected, or JavaScript failed | Check the inner browser error and operation |
+| JSON error | A stored value no longer matches the model, or a converter failed | Check the stored data and recent model changes |
+| `OperationCanceledException` | The supplied token was cancelled | Handle it as cancellation, then verify any write that was already sent |
 
-Unsupported query syntax normally surfaces as an `InvalidOperationException` containing expression context. Constructor ambiguity uses `MagicConstructorException`. Browser and interop failures can arrive through the Blazor JavaScript interop exception path. Do not make recovery depend on the exact text of an exception message.
+`MagicException` is public, but Magic does not wrap every failure in it. Catch the error that matches the operation instead of relying on one library-wide exception type.
 
-`MagicException` remains public for compatibility, but it is not a universal wrapper around every failure produced by the library.
+## Query errors happen when the query runs
 
-## Deferred query failures
-
-`Where` records an expression; it does not execute the query. Translation therefore commonly occurs at `ToListAsync`, `AsAsyncEnumerable`, `FirstOrDefaultAsync`, or `LastOrDefaultAsync`:
+`Where` saves the expression for later. Magic normally translates it when you call `ToListAsync`, `AsAsyncEnumerable`, `FirstOrDefaultAsync`, or `LastOrDefaultAsync`.
 
 ```csharp
 try
@@ -31,31 +28,30 @@ try
 }
 catch (InvalidOperationException exception)
 {
-    // Treat this as an unsupported query contract, not a transient storage failure.
     LogTranslationFailure(exception);
 }
 ```
 
-Do not automatically retry deterministic translation or schema-validation failures. Change the query or model.
+Retrying the same unsupported expression will produce the same error. Rewrite it using a supported expression, or load the records and run that part in .NET.
 
-## Cancellation coverage
+## Which methods accept cancellation
 
-Cancellation support varies by method:
+| Operation | Cancellation token? |
+|---|---|
+| `AsAsyncEnumerable` | Yes |
+| Add, update, and delete methods | Yes |
+| `GetStorageEstimateAsync` | Yes |
+| `ToListAsync`, first/last, and `CountAsync` | No |
+| `ClearTable` | No |
+| Database open, close, delete, and existence checks | No |
 
-| Operation | Public token | Contract |
-|---|---|---|
-| `AsAsyncEnumerable` | Yes | Stops enumeration/transport waiting and cleans up the stream instance. Already yielded items remain consumed. |
-| Add, update, and delete methods | Yes | Can cancel .NET serialization or waiting; does not promise rollback after browser dispatch. |
-| `GetStorageEstimateAsync` | Yes | Cancels the streamed interop request/response path. |
-| `ToListAsync`, first/last, and `CountAsync` | No | No public cancellation token in the current API. |
-| `ClearTable` | No | No public cancellation token in the current API. |
-| Database open, close, delete, and existence checks | No | No public cancellation token in the current API. |
+Cancelling a stream stops further items and cleans up its interop resources. Items already yielded remain processed.
 
-Cancellation means the caller stopped waiting or consuming. It does not establish whether a dispatched write committed. See [writes and transactions](writes-and-transactions.md).
+Cancelling a write does not roll it back after it has reached the browser. Read the affected keys before retrying a cancelled bulk operation. See [adding, updating, and deleting records](writes-and-transactions.md).
 
-## Streaming failures
+## Handling stream errors
 
-An async stream can yield valid items and then fail. Consumers that create external side effects should decide whether those effects are resumable or idempotent:
+A stream can yield records and then fail. If each record triggers another side effect, make that work safe to resume or repeat:
 
 ```csharp
 try
@@ -67,21 +63,16 @@ try
 }
 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 {
-    // Expected cancellation; retain a resume checkpoint if required.
+    // Save a resume point here if the export needs one.
 }
 ```
 
-Concurrent streams use independent transport identities, but that isolation does not turn a stream into a snapshot transaction. Records can still be affected by ordinary application activity while browser operations are running.
+## Useful recovery rules
 
-## Recovery guidance
+- Fix schema and translation errors instead of retrying them.
+- Correct duplicate keys or unique values before writing again.
+- Read records back after a failed or cancelled bulk write.
+- Keep unsaved work available if the browser runs out of space.
+- Do not delete the database just because an upgraded model cannot read an old record.
 
-- Translation or model-contract failure: fix the expression or schema; do not retry unchanged.
-- Unique/key failure: correct the key or conflicting value, then issue a new operation.
-- Failed or cancelled bulk write: read affected keys before retrying because all-or-nothing behavior is not promised.
-- Quota/storage failure: preserve unsaved application state, reduce usage or ask the user for an explicit recovery action.
-- Interop or disconnected-circuit failure: wait until the application is interactive/connected and create a fresh operation.
-- Materialization failure after an application upgrade: retain the original data and use an explicit migration or compatible model rather than deleting it automatically.
-
-## Logging
-
-Development registration enables table validation and informational JavaScript diagnostics. Errors and warnings remain visible when informational debug logging is disabled. Log enough application context to identify the database, table, operation, and query shape, but do not log complete offline records when they may contain sensitive data.
+Development mode enables schema validation and extra JavaScript logging. Errors and warnings still appear when the extra logging is disabled.
