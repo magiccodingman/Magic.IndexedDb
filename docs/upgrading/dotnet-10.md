@@ -75,6 +75,13 @@ builder.Services.AddMagicBlazorDB(
 - Closing all cached connections internally closes the actual Dexie instances.
 - Multi-database creation passes each complete store definition to database creation.
 - The bundled Dexie source map is valid BOM-free JSON.
+- String `==` and supported `Equals` expressions retain case-sensitive C# equality semantics.
+- Negated equality, string equality, and stored collection containment use the canonical `NotEqual`, `Equal`, and `Contains` wire operations.
+- Empty captured membership matches no rows; supported empty `Any` and `All` expressions retain false and true respectively.
+- Mixed constant boolean expressions preserve normal AND/OR identities.
+- `.Date` inequalities use full-day boundaries, including the nullable not-equal contract.
+- Compound-index selection never discards residual predicates; a semantics-safe cursor fallback evaluates the complete branch when necessary.
+- Ordering by one component of a compound primary key falls back to a cursor unless the component also has a standalone index.
 
 ## Migration and ordering status
 

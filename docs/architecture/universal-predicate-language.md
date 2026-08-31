@@ -81,7 +81,7 @@ is represented by the current C# transport in this shape:
             "operation": "Equal",
             "value": "New York",
             "isString": true,
-            "caseSensitive": false
+            "caseSensitive": true
           }
         },
         {
@@ -93,7 +93,7 @@ is represented by the current C# transport in this shape:
             "operation": "Equal",
             "value": "San Francisco",
             "isString": true,
-            "caseSensitive": false
+            "caseSensitive": true
           }
         }
       ],
@@ -105,6 +105,10 @@ is represented by the current C# transport in this shape:
 ```
 
 The stored property names shown above assume camel-case transport and no overriding `[MagicName]`. A wrapper must use the actual persisted schema names, not merely its language's source-member names.
+
+Ordinary C# string equality is case-sensitive, so the string equality conditions above carry `caseSensitive: true`. Case-insensitive supported method overloads carry `false` and normally require cursor evaluation.
+
+Constant predicates use a condition whose property is `__constant` and whose `Equal` value is `true` or `false`. The planner treats this as boolean truth, not as a real stored property. Empty captured membership and empty `Any`/`All` inputs must retain their language semantics rather than producing malformed empty logical groups.
 
 ## Operations
 
@@ -118,6 +122,8 @@ The operation vocabulary includes:
 - Type operations used by the cursor evaluator
 
 The source of truth is [`queryConstants.js`](../../Magic.IndexedDb/wwwroot/utilities/queryConstants.js), together with the C# translator and cursor evaluator. An operation existing in the vocabulary does not mean it can use an IndexedDB index.
+
+Operation names are canonical wire tokens. Use `Equal`, `NotEqual`, and `Contains`; older or invented variants such as `StringEquals`, `NotEquals`, and `ArrayContains` are not part of the current vocabulary. A captured membership expression can begin as several `Equal` alternatives and later be compressed to `In`, while the documented `record.Values.Contains(3)` literal-constant shape uses `Contains` for cursor evaluation.
 
 ## Query additions
 

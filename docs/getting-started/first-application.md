@@ -2,6 +2,8 @@
 
 After [registering the service](installation.md) and [defining a table](schema.md), obtain an `IMagicQuery<T>` for that table. The query object is both the entry point for querying and the table-scoped CRUD API.
 
+The lifecycle example below is appropriate for standalone Blazor WebAssembly. In a prerendered server application, start IndexedDB work only after the component becomes interactive because JavaScript interop is unavailable during prerendering.
+
 ```razor
 @page "/people"
 @using Magic.IndexedDb
@@ -35,6 +37,8 @@ await table.AddRangeAsync(people, cancellationToken);
 ```
 
 For an auto-incrementing key, leave the new record's key at its default value. A unique-index violation or invalid key is reported by the browser operation.
+
+`AddAsync` and `AddRangeAsync` do not return generated keys or write an auto-generated key back into the supplied object. Re-query a newly inserted row before using that row with `UpdateAsync` or `DeleteAsync` when your code needs the generated primary key.
 
 ## Read
 

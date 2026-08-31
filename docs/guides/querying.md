@@ -41,15 +41,22 @@ The C# translator supports these principal expression families:
 - Logical composition: `&&`, `||`, and supported negation forms
 - Strings: `Equals`, `StartsWith`, `EndsWith`, and `Contains`, including supported `StringComparison` overloads
 - Membership: `values.Contains(person.Property)`
-- Collection containment: `person.Values.Contains(value)`
+- Collection containment with a literal constant: `person.Values.Contains(3)`
+- Captured-sequence quantifiers in supported shapes: `values.Any(...)` and `values.All(...)`
 - Length comparisons on supported strings or collections
 - Null checks: `property == null` and `property != null`
 - Date/time comparisons, including supported `Date`, `Year`, `Month`, `Day`, `DayOfWeek`, and `DayOfYear` member comparisons
 - Enum comparisons, including explicit enum casts
 
-Support does not mean every expression is indexable. `Contains`, `EndsWith`, null checks, component-level date operations, and case-insensitive matching generally require cursor evaluation. See the [query expression reference](../reference/query-expressions.md).
+Captured membership and stored collection containment are different operations. `values.Contains(person.Id)` expresses “the property equals any captured value” and may use an index. `person.TagIds.Contains(42)` inspects a collection stored in each record and requires cursor evaluation. The documented stored-collection shape uses a literal constant; a captured argument in that position is not currently a supported translation shape. An empty captured membership set matches no rows.
+
+Constant boolean predicates preserve ordinary boolean identities. `true && predicate` is the predicate, `false || predicate` is the predicate, `true || predicate` matches everything, and `false && predicate` matches nothing. Supported `Any` and `All` expressions over an empty captured sequence preserve the usual semantics: `Any` is false and `All` is true.
+
+Support does not mean every expression is indexable. Stored collection `Contains`, string `Contains`, `EndsWith`, null checks, component-level date operations, and case-insensitive matching generally require cursor evaluation. See the [query expression reference](../reference/query-expressions.md).
 
 Unsupported method calls or expression shapes should be treated as translation errors, not as arbitrary C# code that Magic can execute inside IndexedDB.
+
+In particular, do not assume support for arithmetic inside the predicate, direct property-to-property comparisons, arbitrary helper methods, or nested member access merely because the expression compiles as C#. Write boolean false explicitly as `person.IsActive == false`; unary negation of a boolean member is not part of the documented expression surface.
 
 ## Indexed and cursor paths
 
@@ -139,6 +146,7 @@ Magic's staged interfaces intentionally limit which operations are available nex
 
 - Apply all IndexedDB `Where` predicates before pagination.
 - Use `Take(n).Skip(m)`, not `Skip(m).Take(n)`.
+- `IMagicQueryStaging<T>` does not expose `OrderBy`. For a filtered ordered list, use a deliberate `Cursor(predicate).OrderBy(...)` chain or materialize the filtered query and order it in .NET.
 - Use `Cursor` when you need cursor-only additions such as `StableOrdering()`.
 - Execute or use `WhereAsync` after a chain reaches `IMagicQueryFinal<T>`.
 

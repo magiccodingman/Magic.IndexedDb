@@ -1,6 +1,6 @@
 # Define a schema
 
-Magic IndexedDB uses a table-first model. A table class describes its object-store name, primary key, indexes, and the databases where it is valid. An `IMagicRepository` supplies the named databases.
+Magic IndexedDB uses a table-first model. A table class describes its object-store name, primary key, indexes, and strongly typed database selectors. An `IMagicRepository` supplies the named databases.
 
 ## Create a repository
 
@@ -90,7 +90,7 @@ IMagicQuery<Person> employeeQuery =
     await MagicDb.Query<Person>(person => person.Databases.Employee);
 ```
 
-`Query<T>()` uses `GetDefaultDatabase()`. The selector overload should point to one of the table's declared `Databases` fields.
+`Query<T>()` uses `GetDefaultDatabase()`. The selector overload should point to one of the table's declared `Databases` fields. The selector is a strongly typed database choice, not an authorization boundary; Magic does not use it to enforce which callers may access a database.
 
 ## Primary keys
 
@@ -108,6 +108,8 @@ public IMagicCompoundKey GetKeys() =>
     CreateCompoundKey(x => x.TenantId, x => x.PersonId);
 ```
 
+A single primary-key property cannot be nullable. If it auto-increments, it must also be numeric. Development-time schema validation rejects nullable single keys, non-numeric auto-increment keys, duplicate compound-key column names, and duplicate compound-index definitions.
+
 ## Compound indexes
 
 Return every compound index from `GetCompoundIndexes()`:
@@ -122,6 +124,8 @@ public List<IMagicCompoundIndex> GetCompoundIndexes() =>
 
 Compound indexes let the optimizer satisfy compatible multi-field predicates with one IndexedDB index path.
 
+The order of fields in a compound key or compound index is part of the persisted schema. A component of a compound primary key is not automatically a standalone index. Add `[MagicIndex]` to a component when the application must order or query that property through its own index path.
+
 ## Nested data and collections
 
 Stored models may contain nested objects, arrays, lists, sets, dictionaries, and nested collections. Dictionaries remain JSON objects when used as entity properties or collection elements; they are not treated as arrays merely because they implement `IEnumerable`. The current release also preserves escaped strings, Unicode text, `MagicName` mappings inside nested objects, and supported concrete collection shapes when values are materialized.
@@ -131,6 +135,20 @@ Indexes and primary keys still need to describe values IndexedDB can use as keys
 ## Constructors
 
 Most mutable table models should keep a public parameterless constructor. Immutable or hybrid persisted types can select a constructor with `[MagicConstructor]`; existing `[JsonConstructor]` annotations remain supported. See [schema attributes and constructors](../reference/schema-attributes.md) for the complete precedence rules.
+
+## Attribute validation
+
+A property may have at most one Magic mapping attribute among `[MagicName]`, `[MagicIndex]`, `[MagicUniqueIndex]`, and `[MagicNotMapped]`. When an indexed property also needs a persisted name, use the index attribute's optional name instead of stacking attributes:
+
+```csharp
+[MagicIndex("email_address")]
+public string Email { get; set; } = string.Empty;
+
+[MagicUniqueIndex("external_id")]
+public Guid ExternalId { get; set; }
+```
+
+Keep development validation enabled so conflicting attributes and invalid key definitions fail during startup rather than surfacing later as browser schema errors.
 
 ## Schema changes
 

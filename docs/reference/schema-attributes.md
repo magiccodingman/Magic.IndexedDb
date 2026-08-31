@@ -44,7 +44,7 @@ public Guid ExternalId { get; set; }
 
 ## `MagicNotMapped`
 
-Namespace: `Magic.IndexedDb`
+Namespace: `Magic.IndexedDb.SchemaAnnotations`
 
 ```csharp
 [MagicNotMapped]
@@ -52,6 +52,17 @@ public string DisplayLabel => $"{LastName}, {FirstName}";
 ```
 
 `MagicNotMapped` excludes a public property from Magic's stored contract. It is useful for calculated, decrypted, or UI-only values.
+
+## Attribute combinations
+
+Development-time validation allows at most one Magic mapping attribute on a property. Do not combine `[MagicName]` with `[MagicIndex]` or `[MagicUniqueIndex]`. Both index attributes accept the persisted column name directly:
+
+```csharp
+[MagicIndex("email_address")]
+public string Email { get; set; } = string.Empty;
+```
+
+The protected primary-key helpers are not attributes, so a primary-key property may use `[MagicName]` to keep its persisted key path stable.
 
 ## Compound indexes and keys
 

@@ -24,6 +24,32 @@ List<Person> newest = await people
 
 The current fluent API exposes one explicit `OrderBy` or `OrderByDescending`; it is not the full `IOrderedQueryable<T>` surface and does not expose `ThenBy`.
 
+## Filtering and ordering
+
+`Where(...)` returns `IMagicQueryStaging<T>`, which does not expose `OrderBy`. Choose one of these explicit patterns when a filtered result also needs ordering:
+
+```csharp
+// Browser cursor filtering and ordering.
+List<Person> orderedMatches = await people
+    .Cursor(person => person.IsActive)
+    .OrderBy(person => person.LastName)
+    .ToListAsync();
+```
+
+```csharp
+// Preserve Where planning, then order the materialized result in .NET.
+List<Person> matches = await people
+    .Where(person => person.IsActive)
+    .ToListAsync();
+
+List<Person> orderedMatches = matches
+    .OrderBy(person => person.LastName)
+    .ThenBy(person => person.Id)
+    .ToList();
+```
+
+Do not generate `people.Where(...).OrderBy(...)`; that chain is not present on the current staged interface.
+
 ## Progressive results
 
 `AsAsyncEnumerable()` prioritizes yielding records progressively. It does not promise that arrival order is the final requested order when work is split across execution paths.
@@ -84,6 +110,12 @@ List<Person> lastFive = await people
 ```
 
 Magic may transform `TakeLast` using reverse traversal and a limit when the order/index path allows it. Otherwise, the cursor engine applies the requested semantics.
+
+## Compound primary keys and ordering
+
+One component of a compound primary key is not a standalone IndexedDB index. `OrderBy` or `OrderByDescending` on such a component uses a semantics-safe cursor path unless that property also has a real ordinary or unique index. A simple single-field primary key and a declared standalone index remain eligible for indexed ordering.
+
+Add `[MagicIndex]` to a compound-key component only when independent indexed filtering or ordering is an intentional part of the schema. Adding an index to an already deployed database is a schema change and requires the planning described in [schema evolution](schema-evolution.md).
 
 ## Stable cursor ordering
 

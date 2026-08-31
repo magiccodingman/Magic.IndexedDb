@@ -125,6 +125,7 @@ Continue with [installation and configuration](https://github.com/magiccodingman
 - Start with `Where(...)`; it allows the engine to choose indexed, compound-indexed, and cursor branches.
 - Use `Cursor(...)` when you intentionally want cursor execution, such as scan-oriented text matching or stable cursor pagination.
 - Magic's pagination chain is `Take(count).Skip(offset)` because of how its IndexedDB execution path composes limit and offset operations.
+- `Where(...)` returns a staged query without `OrderBy`; use `Cursor(predicate).OrderBy(...)` or materialize and sort in .NET when filtering and ordering must be combined.
 - `ToListAsync()` applies the requested materialized ordering.
 - `AsAsyncEnumerable()` prioritizes progressive delivery and does not promise final arrival order across query branches.
 - `CountAsync()` on the root query counts the whole table; it is not currently a filtered-count operator.

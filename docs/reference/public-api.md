@@ -76,6 +76,8 @@ Task<int> CountAsync();
 
 `CountAsync()` counts the whole table. Materialized queries apply requested ordering; progressive enumeration does not promise final arrival order.
 
+`Where(...)` returns `IMagicQueryStaging<T>`, which intentionally does not expose `OrderBy`. Use `Cursor(predicate).OrderBy(...)` for one browser-side filtered and ordered chain, or materialize the `Where` result and order it in .NET.
+
 Writes:
 
 ```csharp
@@ -90,6 +92,8 @@ Task<int> DeleteRangeAsync(IEnumerable<T> items, CancellationToken cancellationT
 
 Task ClearTable();
 ```
+
+`AddAsync` and `AddRangeAsync` do not return generated primary keys or assign an auto-incremented key to the supplied objects. Updates and deletes require populated primary keys.
 
 ## Staged query interfaces
 

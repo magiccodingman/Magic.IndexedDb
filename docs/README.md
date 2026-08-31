@@ -44,6 +44,7 @@ Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ord
 ## Contributing
 
 - [Testing and continuous integration](contributing/testing.md)
+- [Query planner diagnostics](contributing/query-planner-diagnostics.md)
 
 ## Upgrading and legacy versions
 
@@ -53,6 +54,7 @@ Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ord
 ## Important current-release status
 
 - Automated schema migrations are still under construction. Treat schema changes as explicit application work and test them against existing browser data.
+- `Where(...)` returns a staged query without `OrderBy`; use the documented cursor or in-memory alternatives for a filtered ordered result.
 - `ToListAsync()` returns a materialized result with the requested query ordering applied.
 - `AsAsyncEnumerable()` prioritizes progressive delivery and does not promise final arrival order. Materialize and sort afterward when order is part of your application contract.
 - The C# API is the supported integration surface. The universal predicate representation is documented for contributors and future wrappers, but the JavaScript modules are currently internal package implementation details.

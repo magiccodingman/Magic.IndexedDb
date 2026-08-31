@@ -4,7 +4,7 @@ Magic IndexedDB is a translator and planner, not an implementation of `IQueryabl
 
 ## 1. Expression translation
 
-The C# wrapper receives an `Expression<Func<T, bool>>`. `UniversalExpressionBuilder<T>` maps supported binary expressions, method calls, nullable member access, dates, enums, and logical composition into a `FilterNode` tree.
+The C# wrapper receives an `Expression<Func<T, bool>>`. `PredicateVisitor<T>` first expands supported captured `Any`/`All` shapes, including their empty-sequence truth values. `UniversalExpressionBuilder<T>` then maps supported binary expressions, method calls, nullable member access, dates, enums, constants, and logical composition into a `FilterNode` tree.
 
 Persisted property mappings are resolved at this stage, so `[MagicName]` affects the property names sent to JavaScript.
 
@@ -29,7 +29,7 @@ The planner builds index metadata from the Dexie table and classifies predicate 
 - Compound-index queries
 - Cursor conditions
 
-An AND group stays indexed only when its conditions can be represented by a compatible native or compound index path. OR alternatives may become independent query branches. Query additions such as take, skip, first, last, and ordering can require a combined cursor plan so that an addition applies once to the full logical result.
+An AND group stays indexed only when its conditions can be represented by a compatible native or compound index path. A compound index is only a candidate producer: if the branch contains a residual predicate that the compound index does not cover, the current planner sends the complete branch to the cursor instead of dropping that predicate. OR alternatives may become independent query branches. Query additions such as take, skip, first, last, and ordering can require a combined cursor plan so that an addition applies once to the full logical result.
 
 Calling `Cursor(...)` sets forced-cursor mode and bypasses index partitioning for that query.
 
@@ -56,6 +56,8 @@ There are two principal paths:
 Rows missing a property required by the cursor predicate are skipped because the predicate cannot be evaluated reliably for that row. This makes additive schema compatibility an application concern; it is not a substitute for migrations.
 
 `StableOrdering()` suppresses inferred indexed predicate fields in cursor metadata ordering and uses the cursor's stable scan order. The current fluent surface does not combine `StableOrdering()` with an explicit `OrderBy` in the same cursor chain.
+
+One field inside a compound primary key is not independently orderable merely because it participates in that compound key. Ordering by such a component uses the cursor unless a standalone ordinary or unique index exists for the property.
 
 ## 7. Result transport
 

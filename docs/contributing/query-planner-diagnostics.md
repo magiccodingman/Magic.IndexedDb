@@ -38,8 +38,8 @@ Planner evidence should avoid turning a particular optimization strategy into a 
 
 The C# contract suite separately verifies that the expression builder sends the intended boolean topology and all predicate conditions into the JavaScript planner. This establishes a useful correctness boundary: if the C# semantic tree is correct but the browser regression differs from the LINQ oracle, the defect lies after expression translation.
 
-## Intentional red regressions
+## Regression status
 
-The initial diagnostics PR intentionally contains failing browser regressions for currently reproduced planner defects. It also invokes the currently dormant advanced optimizer directly with synthetic truth tables so optimizer rewrite laws can be validated independently of whether the live planner dispatches that optimizer correctly.
+The diagnostics were introduced with intentionally red reproductions, followed by semantic fixes. The current suite is expected to be green. It covers independent indexed AND intersection, compound-index residual predicates, multi-branch pagination reconvergence, prefix preservation, optimizer truth laws, string case behavior, empty membership, constant boolean identities, full-day date boundaries, cursor OR correlation, indexed range unions, normalized compound-key de-duplication, and compound-primary-key ordering fallback.
 
-The tests are designed to become green only when the corresponding implementation defects are fixed in a follow-up change. Keeping reproduction and repair separate demonstrates that each regression test detects the pre-existing behavior rather than merely validating the eventual implementation.
+Future regression work should preserve the same two-step discipline when practical: first prove that a test detects the pre-existing defect, then apply the repair. Do not leave an intentional-failure statement in maintained current-version documentation after the repair is merged.

@@ -10,6 +10,8 @@ dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj --configu
 
 These tests cover expression translation, schema generation and validation, serialization boundaries, chunked-stream bookkeeping, result validation, and a snapshot of the public .NET API. The API snapshot catches accidental additions, removals, and signature changes.
 
+See [query planner diagnostics](query-planner-diagnostics.md) for the structured debug trace and the semantic-oracle pattern used by planner regressions.
+
 If a public API change is deliberate, review the complete diff first and then regenerate the snapshot explicitly:
 
 ```bash
