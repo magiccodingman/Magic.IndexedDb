@@ -1,7 +1,7 @@
 # Encryption at rest
 
 This design covers application-level encryption of IndexedDB data. The first milestone establishes the browser encryption primitive and its authenticated storage format. The API sketches below describe the intended integration.
-The browser prototype also includes an authenticated policy sentinel and codecs for field and record protection. These internal modules are awaiting integration with Magic's ordinary storage paths.
+The browser prototype also includes an authenticated policy sentinel and codecs for field and record protection. The browser storage module routes configured protected stores through these codecs for ordinary CRUD and query calls. The typed C# registration, unlock, projection and patch APIs are pending.
 
 ## Existing paths
 
@@ -51,7 +51,7 @@ A production API must supply the account-bound database descriptor to both the q
 | Full entity or protected projection | Recognizable locked error, including empty result sets | Decrypt automatically |
 | Explicit public projection | Allowed with public predicates and ordering | Same query plan |
 | Public partial update | Allowed if primary key is unchanged and patch touches public members only | Preserve ciphertext byte for byte |
-| Full writes and protected patches | Recognizable locked error | Encrypt before storage |
+| Full writes, deletes and protected patches | Recognizable locked error | Encrypt before storage |
 | Protected predicates and sorts | Recognizable locked error | Reject with a recognizable unsupported-query error until hybrid execution exists |
 
 Projection needs an explicit persisted-member selection so the storage boundary can avoid materializing protected fields. A typed projection must never hand back a partially populated entity that a caller could write over the real value. Map the same property paths as the expression translator, including nested paths descending through a protected property. Keep existing index and cursor behavior for public predicates. Raw ciphertext must never reach the existing expression evaluator as a substitute for the logical value.

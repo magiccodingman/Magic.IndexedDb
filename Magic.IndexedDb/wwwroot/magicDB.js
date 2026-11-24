@@ -3,6 +3,8 @@
 /// <reference types="./dexie/dexie.d.ts" />
 import Dexie from "./dexie/dexie.js";
 import { magicQueryAsync, magicQueryYield } from "./magicLinqToIndexedDb.js";
+import { createProtectedStorage, protectedDatabasePrefix } from "./utilities/protectedStorage.js";
+import { encryptionMetadataStore } from "./utilities/encryptionPolicy.js";
 import { debugLog } from "./utilities/utilityHelpers.js";
 /**
  * @typedef {Object} DatabasesItem
@@ -22,11 +24,66 @@ import { debugLog } from "./utilities/utilityHelpers.js";
 //}
 
 let databases = new Map(); // Change array to a Map
+const protectedDatabases = new Map();
+
+function rejectUnconfiguredProtectedDatabase(name) {
+    if (name.startsWith(protectedDatabasePrefix) && !protectedDatabases.has(name)) {
+        throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: The protected database is not configured.");
+    }
+}
+
+function protectedTable(database, store) {
+    rejectUnconfiguredProtectedDatabase(database);
+    if (protectedDatabases.has(database) && store === encryptionMetadataStore) {
+        throw new Error("Magic encryption metadata is reserved.");
+    }
+    return protectedDatabases.get(database)?.forTable(store);
+}
+
+export function unlockProtectedDatabase(name, keyId, key, initialize = false) {
+    rejectUnconfiguredProtectedDatabase(name);
+    const storage = protectedDatabases.get(name);
+    if (!storage) throw new Error("The database does not have a Magic encryption policy.");
+    return storage.unlock(keyId, key, initialize);
+}
+
+export function isProtectedDatabaseUnlocked(name) {
+    return protectedDatabases.get(name)?.isUnlocked() ?? false;
+}
+
+export function lockProtectedDatabase(name) {
+    protectedDatabases.get(name)?.lock();
+}
+
+export function releaseProtectedDatabase(name) {
+    const protection = protectedDatabases.get(name);
+    if (!protection) return;
+    protection.dispose();
+    protectedDatabases.delete(name);
+    databases.get(name).close();
+    databases.delete(name);
+}
+
+export function patchPublicRecord(name, store, key, changes) {
+    const table = protectedTable(name, store);
+    if (!table) throw new Error("A public patch requires a protected table.");
+    return table.patch(key, changes);
+}
+
+export async function projectPublicRecords(name, store, predicate, additions, forceCursor, fields) {
+    const table = protectedTable(name, store);
+    if (!table) throw new Error("A public projection requires a protected table.");
+    const rows = [];
+    for await (const row of table.query(predicate, additions, forceCursor, fields)) rows.push(row);
+    return rows;
+}
 
 export async function openDb(dbName) {
     if (!dbName || typeof dbName !== "string") {
         throw new Error("openDb: Invalid database name.");
     }
+
+    rejectUnconfiguredProtectedDatabase(dbName);
 
     if (databases.has(dbName)) {
         const existingDb = databases.get(dbName);
@@ -45,7 +102,9 @@ export async function openDb(dbName) {
 
 export async function closeDb(dbName) {
     const db = databases.get(dbName);
+    lockProtectedDatabase(dbName);
     if (db?.isOpen()) db.close();
+    if (protectedDatabases.has(dbName)) return;
     databases.delete(dbName);
 }
 
@@ -88,13 +147,23 @@ export function createDb(dbStore) {
     
     const dbName = dbStore.name;
 
-    if (isDbOpen(dbName)) {
+    const encryption = dbStore.encryption;
+    const existingProtection = protectedDatabases.get(dbName);
+    if (encryption) {
+        if (!dbName.startsWith(protectedDatabasePrefix) ||
+            typeof encryption.account !== "string" || !encryption.account) {
+            throw new Error("Magic encrypted databases require a reserved name and account.");
+        }
+        if (existingProtection) throw new Error("This protected database is already configured.");
+    } else if (dbName.startsWith(protectedDatabasePrefix)) {
+        throw new Error("Protected Magic database names require a storage policy.");
+    } else if (isDbOpen(dbName)) {
         return;
     }
 
 
     const db = new Dexie(dbName);
-    const stores = {};
+    const stores = Object.create(null);
 
     for (let i = 0; i < dbStore.storeSchemas.length; i++) {
         const schema = dbStore.storeSchemas[i];
@@ -147,10 +216,24 @@ export function createDb(dbStore) {
 
     debugLog("Dexie Store Definition:", stores);
 
+    const protection = encryption
+        ? createProtectedStorage(db, encryption.account, dbStore.storeSchemas)
+        : null;
+    if (protection) stores[encryptionMetadataStore] = "";
     db.version(dbStore.version).stores(stores);
+    if (protection) protectedDatabases.set(dbName, protection);
 
     // Store the database in the Map (overwriting if it already exists)
     databases.set(dbName, db);
+
+    if (protection) {
+        return db.open().then(() => undefined, error => {
+            protectedDatabases.delete(dbName);
+            databases.delete(dbName);
+            protection.dispose();
+            throw error;
+        });
+    }
 
     db.open().catch(error => {
         console.error(`Failed to open IndexedDB for "${dbName}":`, error);
@@ -163,7 +246,7 @@ export function createDb(dbStore) {
  * @param {Array.<{ name: string, storeSchemas: StoreSchema[] }>} dbStores - List of database configurations.
  */
 export function createDatabases(dbStores) {
-    dbStores.forEach(dbStore => createDb(dbStore));
+    return Promise.all(dbStores.map(dbStore => createDb(dbStore)));
 }
 
 
@@ -177,6 +260,7 @@ export async function countTable(dbName, storeName) {
  */
 export function closeAll() {
     databases.forEach((db, dbName) => {
+        lockProtectedDatabase(dbName);
         if (db.isOpen?.()) db.close();
         debugLog(`Database ${dbName} closed.`);
     });
@@ -188,6 +272,14 @@ export function closeAll() {
 export async function deleteDb(dbName) {
     if (!dbName || typeof dbName !== "string") {
         console.error("deleteDb: Invalid database name.");
+        return;
+    }
+
+    rejectUnconfiguredProtectedDatabase(dbName);
+    if (protectedDatabases.has(dbName)) {
+        const registered = databases.get(dbName);
+        releaseProtectedDatabase(dbName);
+        await registered.delete();
         return;
     }
 
@@ -347,6 +439,8 @@ async function formatKey(dbName, storeName, keyData) {
  * Adds a single item, dynamically determining primary key structure.
  */
 export async function addItem(item) {
+    const protection = protectedTable(item.dbName, item.storeName);
+    if (protection) return protection.write([item.record], (table, [row]) => table.add(row));
     const table = await getTable(item.dbName, item.storeName);
     const key = await formatKey(item.dbName, item.storeName, item.record);
 
@@ -360,6 +454,8 @@ export async function addItem(item) {
  * Bulk adds multiple items.
  */
 export async function bulkAddItem(dbName, storeName, items) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) return protection.write(items, (table, rows) => table.bulkAdd(rows));
     const table = await getTable(dbName, storeName);
 
     const formattedItems = await Promise.all(items.map(async item => ({
@@ -376,6 +472,8 @@ export async function bulkAddItem(dbName, storeName, items) {
  * Inserts or updates a single item.
  */
 export async function putItem(item) {
+    const protection = protectedTable(item.dbName, item.storeName);
+    if (protection) return protection.write([item.record], (table, [row]) => table.put(row));
     const table = await getTable(item.dbName, item.storeName);
     const key = await formatKey(item.dbName, item.storeName, item.record);
 
@@ -390,6 +488,13 @@ export async function bulkPutItems(items) {
     if (!items.length) return;
 
     const { dbName, storeName } = items[0];
+    const protection = protectedTable(dbName, storeName);
+    if (items.some(item => item.dbName.startsWith(protectedDatabasePrefix))) {
+        requireOneProtectedTarget(items, dbName, storeName);
+    }
+    if (protection) {
+        return protection.write(items.map(item => item.record), (table, rows) => table.bulkPut(rows));
+    }
     const table = await getTable(dbName, storeName);
 
     const formattedItems = await Promise.all(items.map(async item => {
@@ -408,6 +513,8 @@ export async function bulkPutItems(items) {
  * Updates an item using the correct primary key format.
  */
 export async function updateItem(item) {
+    const protection = protectedTable(item.dbName, item.storeName);
+    if (protection) return protection.write([item.record], (table, [row]) => table.update(protection.key(row), row));
     const table = await getTable(item.dbName, item.storeName);
     const key = await formatKey(item.dbName, item.storeName, item.record);
 
@@ -417,7 +524,23 @@ export async function updateItem(item) {
 /**
  * Bulk updates items, ensuring keys are properly formatted.
  */
+function requireOneProtectedTarget(items, database, store) {
+    if (items.some(item => item.dbName !== database || item.storeName !== store)) {
+        throw new Error("A protected batch must target one database and store.");
+    }
+}
+
 export async function bulkUpdateItem(items) {
+    if (!items.length) return 0;
+    const { dbName, storeName } = items[0];
+    const protection = protectedTable(dbName, storeName);
+    if (items.some(item => item.dbName.startsWith(protectedDatabasePrefix))) {
+        requireOneProtectedTarget(items, dbName, storeName);
+    }
+    if (protection) {
+        await protection.write(items.map(item => item.record), (table, rows) => table.bulkPut(rows));
+        return items.length;
+    }
     const table = await getTable(items[0].dbName, items[0].storeName);
     try {
         const formattedItems = await Promise.all(items.map(async item => ({
@@ -454,6 +577,12 @@ async function getKeyArrayForDelete(dbName, storeName, keyData) {
  * Deletes multiple items, supporting single and compound keys.
  */
 export async function bulkDelete(dbName, storeName, items) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) {
+        const keys = await Promise.all(items.map(item => getKeyArrayForDelete(dbName, storeName, item)));
+        await protection.mutate(table => table.bulkDelete(keys));
+        return items.length;
+    }
     const table = await getTable(dbName, storeName);
     try {
         const formattedKeys = await Promise.all(
@@ -476,6 +605,8 @@ export async function bulkDelete(dbName, storeName, items) {
  * Deletes a single item.
  */
 export async function deleteItem(item) {
+    const protection = protectedTable(item.dbName, item.storeName);
+    if (protection) return protection.mutate(table => table.delete(protection.key(item.record)));
     const table = await getTable(item.dbName, item.storeName);
     const key = await formatKey(item.dbName, item.storeName, item.record);
     await table.delete(key);
@@ -483,16 +614,22 @@ export async function deleteItem(item) {
 
 
 export async function clear(dbName, storeName) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) return protection.mutate(table => table.clear());
     const table = await getTable(dbName, storeName);
     await table.clear();
 }
 
 export async function findItem(dbName, storeName, keyValue) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) return protection.read(keyValue);
     const table = await getTable(dbName, storeName);
     return await table.get(keyValue);
 }
 
 export async function toArray(dbName, storeName) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) return collectProtectedQuery(protection.query());
     const table = await getTable(dbName, storeName);
     return await table.toArray();
 }
@@ -504,7 +641,16 @@ export async function getStorageEstimate() {
     return { quota: 0, usage: 0 };
 }
 
+async function collectProtectedQuery(iterator) {
+    const results = [];
+    for await (const row of iterator) results.push(row);
+    return results;
+}
+
 async function getTable(dbName, storeName) {
+    if (protectedDatabases.has(dbName) && storeName === encryptionMetadataStore) {
+        throw new Error("Magic encryption metadata is reserved.");
+    }
     let db = await openDb(dbName);
     let table = db.table(storeName);
     return table;
@@ -515,8 +661,10 @@ async function getTable(dbName, storeName) {
  * Automatically retrieves the Dexie instance from your manager using dbName.
  */
 export async function wrapperMagicQueryAsync(dbName, storeName, nestedOrFilter, queryAdditions, forceCursor = false) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) return collectProtectedQuery(protection.query(nestedOrFilter, queryAdditions, forceCursor));
     const db = await openDb(dbName); // Get the Dexie instance from your manager
-    let table = db.table(storeName);
+    const table = db.table(storeName);
     return await magicQueryAsync(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }
 
@@ -525,7 +673,12 @@ export async function wrapperMagicQueryAsync(dbName, storeName, nestedOrFilter, 
  * Automatically retrieves the Dexie instance from your manager using dbName.
  */
 export async function* wrapperMagicQueryYield(dbName, storeName, nestedOrFilter, queryAdditions = [], forceCursor = false) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) {
+        yield* protection.query(nestedOrFilter, queryAdditions, forceCursor);
+        return;
+    }
     const db = await openDb(dbName); // Get the Dexie instance from your manager
-    let table = db.table(storeName);
+    const table = db.table(storeName);
     yield* magicQueryYield(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }

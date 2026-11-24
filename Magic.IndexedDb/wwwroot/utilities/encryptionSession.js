@@ -6,6 +6,10 @@ export class EncryptionSession {
     #pending;
     #disposed = false;
 
+    get isUnlocked() {
+        return this.#key !== undefined;
+    }
+
     ensureUnlocked(acquireVerifiedKey) {
         if (this.#disposed) {
             return Promise.reject(new Error("Magic encryption session was disposed."));
@@ -50,10 +54,13 @@ export class EncryptionSession {
             throw new Error("Magic encryption session is locked.");
         }
 
-        const result = await operation(key.value);
-        if (this.#key !== key) {
-            throw new Error("Magic encryption session was locked during the operation.");
-        }
+        const assertCurrent = () => {
+            if (this.#key !== key) {
+                throw new Error("Magic encryption session was locked during the operation.");
+            }
+        };
+        const result = await operation(key.value, assertCurrent);
+        assertCurrent();
         return result;
     }
 
