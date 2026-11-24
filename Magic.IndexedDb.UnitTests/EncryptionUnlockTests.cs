@@ -28,6 +28,18 @@ public sealed class EncryptionUnlockTests
         }, browser.Invocations.ToArray());
     }
 
+    [TestMethod]
+    public void AccountAndDatabaseBindStorageWhileEachScopeGetsItsOwnRoute()
+    {
+        var first = new EncryptionConfiguration(new("records", "account", "key"));
+        var second = new EncryptionConfiguration(new("records", "account", "key"));
+        var other = new EncryptionConfiguration(new("records", "other account", "key"));
+
+        Assert.AreEqual(first.PhysicalName, second.PhysicalName);
+        Assert.AreNotEqual(first.Route, second.Route);
+        Assert.AreNotEqual(first.PhysicalName, other.PhysicalName);
+    }
+
     private sealed class DelayedProvider : IMagicEncryptionKeyProvider
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

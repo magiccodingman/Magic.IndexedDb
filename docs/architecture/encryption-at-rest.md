@@ -111,3 +111,35 @@ These timings use 256-character values, a preloaded key and binary envelopes. Br
 - [Indexed Database API 3.0](https://www.w3.org/TR/IndexedDB/)
 - [NIST SP 800-38D](https://csrc.nist.gov/pubs/sp/800/38/d/final)
 - [HHS Security Rule summary](https://www.hhs.gov/hipaa/for-professionals/security/laws-regulations/index.html)
+
+## Published typed WebAssembly benchmark
+
+Run a Release browser test build and publish the example WASM app. Then run
+`node E2eTest/benchmarks/encryption-wasm.mjs <published-wwwroot>`. This benchmark
+uses the same typed model and public index in both modes, and invokes ordinary
+Magic APIs. Its fixture key is public and exists solely to test the integration.
+
+The desktop Chromium 151 medians below are from ten fresh-context pairs after
+one warm-up pair on Linux with an AMD Ryzen 9 7950X3D. Each table had 1,000 rows
+with one 256-character value. The run also verified that a full page reload
+starts locked and that explicit re-unlock recovers the persisted data.
+
+| Operation | Plain | Protected |
+| --- | ---: | ---: |
+| 25 sequential typed writes | 64.60 ms | 65.95 ms |
+| 1,000-row typed batch write | 136.25 ms | 144.35 ms |
+| 25 sequential typed point reads | 139.05 ms | 138.50 ms |
+| Typed public index read of 100 rows | 29.05 ms | 33.25 ms |
+| Typed full read of 1,000 rows | 151.95 ms | 145.55 ms |
+
+Provisioning with the already available synthetic key took a median of 4.55 ms
+after database setup. These are desktop observations. The negative differences
+for point reads and scans reflect run-to-run variability. They do not imply
+that encryption speeds up those operations. User interaction, authentication,
+remote key access, and browser page load are outside these measurements.
+
+Published WebAssembly was exercised with the default Release publish settings.
+No AOT performance claim is made. Protected data is isolated in a new physical
+namespace. The current version leaves plaintext sources in place and requires
+application-managed export, protected import through typed writes, verification,
+and cleanup as separate steps.

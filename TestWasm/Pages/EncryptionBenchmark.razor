@@ -1,0 +1,111 @@
+@page "/encryption-benchmark"
+@using System.Diagnostics
+@using System.Text.Json
+@using Magic.IndexedDb
+@using TestWasm.Models
+@inject IMagicIndexedDb Magic
+@inject IMagicIndexedDbEncryption Encryption
+
+<h1>Magic encryption benchmark</h1>
+<pre id="encryption-result">@result</pre>
+
+@code {
+    [SupplyParameterFromQuery] public string? Mode { get; set; }
+    [SupplyParameterFromQuery] public bool Reload { get; set; }
+    private string result = "Running";
+    private const int RowCount = 1000;
+    private const int PointCount = 25;
+    private static readonly string Payload = new('x', 256);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            result = JsonSerializer.Serialize(await RunAsync());
+        }
+        catch (Exception error)
+        {
+            result = error.ToString();
+        }
+        StateHasChanged();
+    }
+
+    private async Task<Dictionary<string, double>> RunAsync()
+    {
+        var timings = new Dictionary<string, double>();
+        var start = Stopwatch.StartNew();
+        var encrypted = Mode == "protected";
+        var query = encrypted
+            ? await Magic.Query<EncryptionBenchmarkRecord>(row => row.Databases.ProtectedSelection)
+            : await Magic.Query<EncryptionBenchmarkRecord>();
+        var database = EncryptionBenchmarkRepository.Protected;
+        timings["querySetupMs"] = start.Elapsed.TotalMilliseconds;
+
+        if (Reload)
+        {
+            try
+            {
+                await query.ToListAsync();
+                throw new InvalidOperationException("Reload unexpectedly retained the key.");
+            }
+            catch (MagicEncryptionLockedException)
+            {
+            }
+            var publicRows = await query.SelectPublicAsync(row => row.Id);
+            if (publicRows.Count != RowCount ||
+                !await Encryption.EnsureUnlockedAsync(database) ||
+                (await query.FirstOrDefaultAsync(row => row.Id == 1))?.Payload != Payload)
+                throw new InvalidOperationException("Reload verification failed.");
+
+            timings["reloadPassed"] = 1;
+            return timings;
+        }
+
+        if (encrypted)
+        {
+            start.Restart();
+            if (!await Encryption.InitializeAsync(database))
+                throw new InvalidOperationException("The fixture key was unavailable.");
+            timings["provisionMs"] = start.Elapsed.TotalMilliseconds;
+        }
+
+        var rows = Enumerable.Range(1, RowCount).Select(id =>
+            new EncryptionBenchmarkRecord { Id = id, Group = id % 10, Payload = Payload }).ToArray();
+
+        start.Restart();
+        foreach (var record in rows.Take(PointCount))
+            await query.AddAsync(record);
+        timings["pointWriteMs"] = start.Elapsed.TotalMilliseconds;
+
+        await query.ClearTable();
+        start.Restart();
+        await query.AddRangeAsync(rows);
+        timings["bulkWriteMs"] = start.Elapsed.TotalMilliseconds;
+
+        start.Restart();
+        foreach (int id in Enumerable.Range(1, PointCount))
+        {
+            var row = await query.FirstOrDefaultAsync(record => record.Id == id);
+            if (row?.Payload != Payload)
+                throw new InvalidOperationException("Point read returned the wrong record.");
+        }
+        timings["pointReadMs"] = start.Elapsed.TotalMilliseconds;
+
+        start.Restart();
+        var indexed = await query.Where(record => record.Group == 0).ToListAsync();
+        timings["indexReadMs"] = start.Elapsed.TotalMilliseconds;
+        if (indexed.Count != RowCount / 10 || indexed.Any(row => row.Payload != Payload))
+            throw new InvalidOperationException("Indexed read returned invalid records.");
+
+        start.Restart();
+        var all = await query.ToListAsync();
+        timings["scanMs"] = start.Elapsed.TotalMilliseconds;
+        if (all.Count != RowCount || all.Any(row => row.Payload != Payload))
+            throw new InvalidOperationException("Full scan returned invalid records.");
+
+        return timings;
+    }
+}

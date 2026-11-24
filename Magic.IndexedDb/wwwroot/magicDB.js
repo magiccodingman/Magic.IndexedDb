@@ -79,6 +79,12 @@ export async function projectPublicRecords(name, store, predicate, additions, fo
 }
 
 export async function openDb(dbName) {
+    const db = await getDb(dbName);
+    // The management API does not hand out an unguarded protected Dexie handle.
+    return protectedDatabases.has(dbName) ? undefined : db;
+}
+
+async function getDb(dbName) {
     if (!dbName || typeof dbName !== "string") {
         throw new Error("openDb: Invalid database name.");
     }
@@ -655,7 +661,7 @@ async function getTable(dbName, storeName) {
     if (protectedDatabases.has(dbName) && storeName === encryptionMetadataStore) {
         throw new Error("Magic encryption metadata is reserved.");
     }
-    let db = await openDb(dbName);
+    let db = await getDb(dbName);
     let table = db.table(storeName);
     return table;
 }
@@ -667,7 +673,7 @@ async function getTable(dbName, storeName) {
 export async function wrapperMagicQueryAsync(dbName, storeName, nestedOrFilter, queryAdditions, forceCursor = false) {
     const protection = protectedTable(dbName, storeName);
     if (protection) return collectProtectedQuery(protection.query(nestedOrFilter, queryAdditions, forceCursor));
-    const db = await openDb(dbName); // Get the Dexie instance from your manager
+    const db = await getDb(dbName); // Get the Dexie instance from your manager
     const table = db.table(storeName);
     return await magicQueryAsync(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }
@@ -682,7 +688,7 @@ export async function* wrapperMagicQueryYield(dbName, storeName, nestedOrFilter,
         yield* protection.query(nestedOrFilter, queryAdditions, forceCursor);
         return;
     }
-    const db = await openDb(dbName); // Get the Dexie instance from your manager
+    const db = await getDb(dbName); // Get the Dexie instance from your manager
     const table = db.table(storeName);
     yield* magicQueryYield(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }

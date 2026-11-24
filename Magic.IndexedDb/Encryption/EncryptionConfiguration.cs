@@ -42,6 +42,20 @@ internal sealed class EncryptionConfiguration
                 return entry.JsPropertyName;
             }).ToArray());
 
+    private string[]? GetExposedFields(Type table, string tableName)
+    {
+        if (!_recordPolicies.TryGetValue(tableName, out var exposed))
+            return null;
+
+        var mappedNames = PropertyMappingCache.GetTypeOfTProperties(table).propertyEntries.Values
+            .Where(entry => !entry.NotMapped && entry.Property.GetIndexParameters().Length == 0)
+            .Select(entry => entry.JsPropertyName).ToHashSet(StringComparer.Ordinal);
+        if (exposed.Any(name => !mappedNames.Contains(name)))
+            throw new InvalidOperationException($"Magic record policy for '{tableName}' exposes an unknown persisted property.");
+
+        return exposed;
+    }
+
     public JsonElement CreateDatabase(IEnumerable<(Type Type, StoreSchema Schema)> schemas)
     {
         var rows = schemas.Select(entry => new
@@ -53,7 +67,7 @@ internal sealed class EncryptionConfiguration
             entry.Schema.UniqueIndexes,
             entry.Schema.ColumnNamesInCompoundIndex,
             EncryptedFields = ProtectedFields(entry.Type),
-            ExposedFields = _recordPolicies.GetValueOrDefault(entry.Schema.TableName)
+            ExposedFields = GetExposedFields(entry.Type, entry.Schema.TableName)
         }).ToArray();
 
         if (_recordPolicies.Keys.Any(table => !rows.Any(row => row.TableName == table)))
