@@ -43,6 +43,8 @@ try {
     const base = `http://127.0.0.1:${server.address().port}/encryption-benchmark`;
     let userAgent;
     let reloadVerified = false;
+    let navigationVerified = false;
+    let separateTabVerified = false;
 
     const getResult = async page => {
         const target = page.locator("#encryption-result");
@@ -67,6 +69,18 @@ try {
                 const timing = await getResult(page);
                 if (round > 0) samples[mode].push(timing);
                 if (round === 0 && mode === "protected") {
+                    await page.evaluate(() => Blazor.navigateTo("/counter"));
+                    await page.getByRole("heading", { name: "Counter" }).waitFor();
+                    await page.evaluate(() => Blazor.navigateTo("/encryption-benchmark?mode=protected&Navigated=true"));
+                    assert.equal((await getResult(page)).navigationPassed, 1);
+                    navigationVerified = true;
+
+                    const separateTab = await context.newPage();
+                    await separateTab.goto(`${base}?mode=protected&Reload=true`);
+                    assert.equal((await getResult(separateTab)).reloadPassed, 1);
+                    separateTabVerified = true;
+                    await separateTab.close();
+
                     await page.goto(`${base}?mode=protected&Reload=true`);
                     assert.equal((await getResult(page)).reloadPassed, 1);
                     reloadVerified = true;
@@ -77,7 +91,7 @@ try {
         }
     }
     console.log(JSON.stringify({ engine, version: browser.version(), userAgent, rows: 1000,
-        pointOperations: 25, fieldCharacters: 256, measuredPairs: rounds - 1, reloadVerified, samples }, null, 2));
+        pointOperations: 25, fieldCharacters: 256, measuredPairs: rounds - 1, reloadVerified, navigationVerified, separateTabVerified, samples }, null, 2));
 } finally {
     await browser?.close();
     server.close();

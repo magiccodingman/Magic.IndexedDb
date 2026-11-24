@@ -12,6 +12,7 @@
 @code {
     [SupplyParameterFromQuery] public string? Mode { get; set; }
     [SupplyParameterFromQuery] public bool Reload { get; set; }
+    [SupplyParameterFromQuery] public bool Navigated { get; set; }
     private string result = "Running";
     private const int RowCount = 1000;
     private const int PointCount = 25;
@@ -43,6 +44,14 @@
             : await Magic.Query<EncryptionBenchmarkRecord>();
         var database = EncryptionBenchmarkRepository.Protected;
         timings["querySetupMs"] = start.Elapsed.TotalMilliseconds;
+
+        if (Navigated)
+        {
+            if ((await query.FirstOrDefaultAsync(row => row.Id == 1))?.Payload != Payload)
+                throw new InvalidOperationException("SPA navigation lost the unlocked session.");
+            timings["navigationPassed"] = 1;
+            return timings;
+        }
 
         if (Reload)
         {

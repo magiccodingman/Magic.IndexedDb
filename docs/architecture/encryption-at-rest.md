@@ -122,7 +122,9 @@ Magic APIs. Its fixture key is public and exists solely to test the integration.
 The desktop Chromium 151 medians below are from ten fresh-context pairs after
 one warm-up pair on Linux with an AMD Ryzen 9 7950X3D. Each table had 1,000 rows
 with one 256-character value. The run also verified that a full page reload
-starts locked and that explicit re-unlock recovers the persisted data.
+starts locked and that explicit re-unlock recovers the persisted data. A separate
+lifecycle run verified same-tab SPA navigation retains the key and a new tab
+starts locked.
 
 | Operation | Plain | Protected |
 | --- | ---: | ---: |
@@ -143,3 +145,22 @@ No AOT performance claim is made. Protected data is isolated in a new physical
 namespace. The current version leaves plaintext sources in place and requires
 application-managed export, protected import through typed writes, verification,
 and cleanup as separate steps.
+
+### Manual cutover for existing data
+
+1. Export the old plaintext source before enabling protection for its logical name.
+   Keep the export under the application's existing access and retention controls.
+   Adding `[MagicEncrypt]` makes the typed model refuse an unprotected query.
+2. Stop writers to the old namespace, including older clients and tabs. Provision
+   the empty protected target explicitly through `InitializeAsync`. Preserve stable
+   record keys and use a fresh protected namespace for incompatible policies.
+3. Read source rows outside IndexedDB write transactions and import them through
+   the protected Magic API. Use bounded batches and verify logical contents,
+   counts, and raw on-disk envelopes. Never put plaintext directly into the target.
+4. Keep external checkpoints keyed to the source and target if the copy must
+   resume. Check which primary keys committed before retrying. A failed protected
+   bulk write rolls back that transaction. It does not roll back previously
+   committed batches.
+5. Switch clients after verification. Enforce the application's rules for the
+   original database, exports, backups, and recovery keys. No automatic cleanup,
+   downgrade, cross-tab migration lock, or live key rotation is provided.
