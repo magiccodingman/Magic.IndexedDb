@@ -131,7 +131,7 @@ internal class MagicQueryExtensions<T> :
         );
     }
 
-    private FilterNode GetCollectedBinaryJsonExpressions()
+    internal FilterNode GetCollectedBinaryJsonExpressions()
     {
         Expression<Func<T, bool>> preprocessedPredicate = PreprocessPredicate();
 

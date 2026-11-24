@@ -61,6 +61,20 @@ public static class ServiceCollectionExtensions
         return Register(services, jsMessageSizeBytes, isDebug, tables, repositories);
     }
 
+    /// <summary>Registers account-bound encryption policies and an application-supplied key provider.</summary>
+    public static IServiceCollection AddMagicIndexedDbEncryption<TProvider>(this IServiceCollection services,
+        Func<IServiceProvider, IEnumerable<MagicEncryptionOptions>> configure)
+        where TProvider : class, IMagicEncryptionKeyProvider
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        services.AddScoped<IMagicEncryptionKeyProvider, TProvider>();
+        services.AddScoped(sp => configure(sp).Select(options => new EncryptionConfiguration(options))
+            .ToDictionary(config => config.Request.DatabaseName, StringComparer.Ordinal));
+        services.AddScoped<IMagicIndexedDbEncryption>(sp =>
+            (IMagicIndexedDbEncryption)sp.GetRequiredService<IMagicIndexedDb>());
+        return services;
+    }
+
     private static Type[] ValidateSchemaTypes(IEnumerable<Type> types, string parameterName,
         Func<Type, bool> isValidType, string expectedType)
     {
@@ -95,7 +109,8 @@ public static class ServiceCollectionExtensions
         Type[]? tableTypes = null, Type[]? repositoryTypes = null)
     {
         services.AddScoped<IMagicIndexedDb>(sp =>
-            new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes, isDebug, tableTypes, repositoryTypes));
+            new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes, isDebug, tableTypes, repositoryTypes,
+                sp.GetService<Dictionary<string, EncryptionConfiguration>>(), sp.GetService<IMagicEncryptionKeyProvider>()));
 
         if (isDebug)
         {

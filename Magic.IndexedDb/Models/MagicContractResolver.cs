@@ -27,19 +27,8 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         if (IsDictionaryType(typeToConvert))
             return (T?)DeserializePassthrough(ref reader, typeToConvert, options);
 
-        // ✅ Explicitly check if the type is `JsonElement`
         if (typeToConvert == typeof(JsonElement))
-        {
-            JsonElement element = JsonSerializer.Deserialize<JsonElement>(ref reader); // Extract JsonElement
-
-            // ✅ Re-run null check for JsonElement
-            if (IsSimpleJsonNull(element))
-                return default;
-
-            // ✅ Re-run primitive check for JsonElement
-            if (IsSimpleJsonElement(element))
-                return (T?)(object)element; // 🚀 Directly cast JsonElement to T
-        }
+            return (T)(object)ReadJsonElement(ref reader);
 
         // ✅ Handle root-level arrays correctly
         if (reader.TokenType == JsonTokenType.StartArray)
@@ -109,18 +98,6 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             }
         }
         return obj;
-    }
-
-    private bool IsSimpleJsonElement(JsonElement element)
-    {
-        return element.ValueKind == JsonValueKind.String ||
-               element.ValueKind == JsonValueKind.Number ||
-               element.ValueKind == JsonValueKind.True ||
-               element.ValueKind == JsonValueKind.False;
-    }
-    private bool IsSimpleJsonNull(JsonElement element)
-    {
-        return element.ValueKind == JsonValueKind.Null;
     }
 
     /// <summary>
@@ -216,6 +193,9 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
     private object? ReadValue(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
     {
+        if (type == typeof(JsonElement))
+            return ReadJsonElement(ref reader);
+
         if (reader.TokenType == JsonTokenType.Null)
             return null;
 
@@ -295,11 +275,23 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             $"Collection type {collectionType.FullName} cannot be restored from a JSON array.");
     }
 
+    private static JsonElement ReadJsonElement(ref Utf8JsonReader reader)
+    {
+        using var document = JsonDocument.ParseValue(ref reader);
+        return document.RootElement.Clone();
+    }
+
     public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
     {
         if (value == null)
         {
             writer.WriteNullValue();
+            return;
+        }
+
+        if (value is JsonElement element)
+        {
+            element.WriteTo(writer);
             return;
         }
 

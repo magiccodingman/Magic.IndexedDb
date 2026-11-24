@@ -1,7 +1,7 @@
 # Encryption at rest
 
-This design covers application-level encryption of IndexedDB data. The first milestone establishes the browser encryption primitive and its authenticated storage format. The API sketches below describe the intended integration.
-The browser prototype also includes an authenticated policy sentinel and codecs for field and record protection. The browser storage module routes configured protected stores through these codecs for ordinary CRUD and query calls. The typed C# registration, unlock, projection and patch APIs are pending.
+This design covers application-level encryption of IndexedDB data. The draft implements the browser protection path and opt-in C# API. Automatic migration, key rotation, and protected LINQ evaluation are future integration phases.
+The browser prototype also includes an authenticated policy sentinel and codecs for field and record protection. The browser storage module routes configured protected stores through these codecs for ordinary CRUD and query calls. The C# API configures account-bound databases, maps annotated fields, and exposes unlock, public projection and public patch operations.
 
 ## Existing paths
 
@@ -20,29 +20,36 @@ Enforce encryption in the browser storage boundary using the effective persisted
 
 Authentication, authorization, WebAuthn, MFA, device enrollment, session expiration, PIN policy, key recovery and regulatory compliance belong to the application. A consumer can use WebAuthn PRF or another mechanism to unwrap a random data key and hand that key to Magic.
 
-## Developer experience sketch
+## Developer experience
 
-An application can configure one asynchronous provider in DI. The provider can look up the account's wrapped data key, unwrap it using an application-selected mechanism, and return it with the requested key ID. Password providers derive or unwrap the data key before returning it. The provider never needs to send a password or WebAuthn assertion to the database library. Interactive providers should distinguish an unavailable interaction from an incorrect key.
+Register Magic as usual, then configure protected database policies and an asynchronous key provider:
 
 ```csharp
-// Proposed surface
-services.AddMagicIndexedDbEncryption<AppKeyProvider>();
-
-public sealed class CaseNoteTable // Table mapping omitted from this sketch.
-{
-    public Guid Id { get; set; }
-    [MagicEncrypt] public string Note { get; set; } = "";
-}
-
-// Only routes that need protected data ask for an unlock.
-var result = await encryption.EnsureUnlockedAsync(database, cancellationToken);
-if (result == MagicUnlockResult.Unlocked)
-{
-    var rows = await (await magicDb.Query<CaseNoteTable>()).ToListAsync();
-}
+services.AddMagicBlazorDB(BlazorInteropMode.WASM, isDebug: false);
+services.AddMagicIndexedDbEncryption<AppKeyProvider>(services =>
+[
+    new MagicEncryptionOptions("CaseNotes", GetAccountScope(services), "notes-key-v1")
+]);
 ```
 
-A production API must supply the account-bound database descriptor to both the query and unlock paths. The account is a routing identity. The consuming app authenticates it and supplies the associated key. Lock is local to the app instance. A consumer that needs coordinated sign-out across tabs must signal each app context and invoke lock there. Page disposal should clear only keys owned by that instance.
+`AppKeyProvider` implements `IMagicEncryptionKeyProvider`. Return `MagicEncryptionKey.FromBytes(dataKey)` for a 32-byte data key or `MagicEncryptionKey.FromBrowserKey(reference)` for a browser-local AES-GCM key. Return null when no key is available. The app can unwrap its wrapped key after passkey or server authentication. It owns credential interaction, recovery and key custody.
+
+Annotate a property on an existing Magic table with `[MagicEncrypt]`. Annotated models require a protected database configuration. For secure-by-default record protection, supply a `RecordPolicies` entry for the persisted table name. Its allowlist contains persisted property names, including the primary key and each native index. All other properties are encrypted, including ones added later. Using the attribute on sensitive members also guards against accidental omission of encryption registration.
+
+Inject `IMagicIndexedDbEncryption`. Call `InitializeAsync(database)` only during explicit provisioning of an empty protected database. Normal page initialization can call `EnsureUnlockedAsync(database)` when application policy allows it. Both return false if the provider supplies no key. Regular queries never invoke the provider.
+
+```csharp
+if (await encryption.EnsureUnlockedAsync(database, cancellationToken))
+{
+    var query = await magicDb.Query<CaseNote>();
+    var notes = await query.ToListAsync();
+}
+await encryption.LockAsync(database);
+```
+
+For a locked view, use `SelectPublicAsync(record => record.Title)` on the query or its staged public predicates. It returns the selected values. Use `PatchPublicAsync(new CaseNote { Id = id, Title = title }, record => record.Title)` for one public member. It sends the record key and that value. A full locked read throws `MagicEncryptionLockedException`.
+
+The options bind the account when the Magic service scope is resolved. For an account switch, lock and dispose the old scope and resolve both services from the new account scope. This includes creating explicit app scopes for account switches in standalone WASM. Existing query objects remain bound to the old scope and cannot silently target a different account.
 
 ## Query and write behavior
 

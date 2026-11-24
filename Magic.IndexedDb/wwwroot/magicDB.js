@@ -151,7 +151,10 @@ export function createDb(dbStore) {
     const existingProtection = protectedDatabases.get(dbName);
     if (encryption) {
         if (!dbName.startsWith(protectedDatabasePrefix) ||
-            typeof encryption.account !== "string" || !encryption.account) {
+            typeof encryption.account !== "string" || !encryption.account ||
+            (encryption.physicalName != null &&
+                (!encryption.physicalName.startsWith(protectedDatabasePrefix) ||
+                    !dbName.startsWith(encryption.physicalName + ":")))) {
             throw new Error("Magic encrypted databases require a reserved name and account.");
         }
         if (existingProtection) throw new Error("This protected database is already configured.");
@@ -162,7 +165,7 @@ export function createDb(dbStore) {
     }
 
 
-    const db = new Dexie(dbName);
+    const db = new Dexie(encryption?.physicalName ?? dbName);
     const stores = Object.create(null);
 
     for (let i = 0; i < dbStore.storeSchemas.length; i++) {
@@ -260,7 +263,7 @@ export async function countTable(dbName, storeName) {
  */
 export function closeAll() {
     databases.forEach((db, dbName) => {
-        lockProtectedDatabase(dbName);
+        if (protectedDatabases.has(dbName)) return;
         if (db.isOpen?.()) db.close();
         debugLog(`Database ${dbName} closed.`);
     });
@@ -304,6 +307,7 @@ export async function deleteDb(dbName) {
 }
 
 export async function doesDbExist(dbName) {
+    if (protectedDatabases.has(dbName)) dbName = databases.get(dbName).name;
     if (!dbName || typeof dbName !== "string") {
         console.error("doesDbExist: Invalid database name.");
         return false;

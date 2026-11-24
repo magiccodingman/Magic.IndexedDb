@@ -4,6 +4,7 @@ using Microsoft.JSInterop;
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Extensions;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Magic.IndexedDb.LinqTranslation.Interfaces;
 using Magic.IndexedDb.LinqTranslation.Models;
 
@@ -16,16 +17,21 @@ internal class IndexedDbManager
 {
     private readonly IJSObjectReference _jsModule;  // Shared JS module
     private readonly long _jsMessageSizeBytes;
+    private readonly IReadOnlyDictionary<string, string>? _protectedRoutes;
+
+    private string Route(string database) => _protectedRoutes?.GetValueOrDefault(database) ?? database;
 
     /// <summary>
     /// Ctor
     /// </summary>
     /// <param name="dbStore"></param>
     /// <param name="jsRuntime"></param>
-    internal IndexedDbManager(IJSObjectReference jsModule, long jsMessageSizeBytes)
+    internal IndexedDbManager(IJSObjectReference jsModule, long jsMessageSizeBytes,
+        IReadOnlyDictionary<string, string>? protectedRoutes = null)
     {
         _jsModule = jsModule; // Use shared JS module reference
         _jsMessageSizeBytes = jsMessageSizeBytes;
+        _protectedRoutes = protectedRoutes;
     }
 
     //public string DbName => _dbStore.Name;
@@ -42,7 +48,7 @@ internal class IndexedDbManager
             throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
         }
         return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
-            IndexedDbFunctions.DELETE_DB, dbName);
+            IndexedDbFunctions.DELETE_DB, Route(dbName));
     }
 
     internal Task CloseDbAsync(string dbName)
@@ -52,7 +58,7 @@ internal class IndexedDbManager
             throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
         }
         return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath,
-            IndexedDbFunctions.CLOSE_DB, dbName);
+            IndexedDbFunctions.CLOSE_DB, Route(dbName));
     }
 
     internal Task OpenDbAsync(string dbName)
@@ -62,7 +68,7 @@ internal class IndexedDbManager
             throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
         }
         return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath,
-            IndexedDbFunctions.OPEN_DB, dbName);
+            IndexedDbFunctions.OPEN_DB, Route(dbName));
     }
 
     internal Task<bool> DoesDbExist(string dbName)
@@ -72,7 +78,7 @@ internal class IndexedDbManager
             throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
         }
         return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeDefaultJsAsync<bool>(Cache.MagicDbJsImportPath,
-            IndexedDbFunctions.DOES_DB_EXIST, dbName);
+            IndexedDbFunctions.DOES_DB_EXIST, Route(dbName));
     }
 
     internal Task<bool> IsDbOpen(string dbName)
@@ -82,7 +88,7 @@ internal class IndexedDbManager
             throw new ArgumentException("dbName cannot be null or empty", nameof(dbName));
         }
         return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeDefaultJsAsync<bool>(Cache.MagicDbJsImportPath,
-            IndexedDbFunctions.IS_DB_CLosed, dbName);
+            IndexedDbFunctions.IS_DB_CLosed, Route(dbName));
     }
 
     internal async Task<TKey> AddAsync<T, TKey>(T record, string dbName, CancellationToken cancellationToken = default) where T : class
@@ -91,7 +97,7 @@ internal class IndexedDbManager
 
         StoreRecord<T?> RecordToSend = new StoreRecord<T?>()
         {
-            DbName = dbName,
+            DbName = Route(dbName),
             StoreName = schemaName,
             Record = record
         };
@@ -115,7 +121,7 @@ internal class IndexedDbManager
         // TODO: https://github.com/magiccodingman/Magic.IndexedDb/issues/9
 
         return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync(Cache.MagicDbJsImportPath, IndexedDbFunctions.BULKADD_ITEM, cancellationToken,
-            new ITypedArgument[] { new TypedArgument<string>(dbName),
+            new ITypedArgument[] { new TypedArgument<string>(Route(dbName)),
                 new TypedArgument<string>(storeName),
                 new TypedArgument<IEnumerable<T>>(recordsToBulkAdd) });
     }
@@ -133,7 +139,7 @@ internal class IndexedDbManager
         UpdateRecord<T> record = new UpdateRecord<T>()
         {
             Key = primaryKeyValue,
-            DbName = dbName,
+            DbName = Route(dbName),
             StoreName = schemaName,
             Record = item
         };
@@ -146,7 +152,7 @@ internal class IndexedDbManager
     {
         return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeDefaultJsAsync<int>(Cache.MagicDbJsImportPath,
             IndexedDbFunctions.COUNT_TABLE,
-            dbName, schemaName
+            Route(dbName), schemaName
         );
     }
 
@@ -165,7 +171,7 @@ internal class IndexedDbManager
             return new UpdateRecord<T>()
             {
                 Key = primaryKeyValue,
-                DbName = dbName,
+                DbName = Route(dbName),
                 StoreName = schemaName,
                 Record = item
             };
@@ -203,7 +209,7 @@ internal class IndexedDbManager
         //    return default;
 
         var args = new ITypedArgument[] {
-            new TypedArgument<string>(query.DatabaseName),
+            new TypedArgument<string>(Route(query.DatabaseName)),
             new TypedArgument<string>(query.SchemaName),
             new TypedArgument<FilterNode>(nestedOrFilter),
             new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
@@ -233,7 +239,7 @@ internal class IndexedDbManager
     {
 
         var args = new ITypedArgument[] {
-            new TypedArgument<string>(query.DatabaseName),
+            new TypedArgument<string>(Route(query.DatabaseName)),
             new TypedArgument<string>(query.SchemaName),
             new TypedArgument<FilterNode>(nestedOrFilter),
             new TypedArgument<List<StoredMagicQuery>?>(query?.StoredMagicQueries),
@@ -247,6 +253,31 @@ internal class IndexedDbManager
         }
     }
 
+    internal async Task<JsonElement[]> ProjectPublicAsync<T>(MagicQuery<T> query, FilterNode predicate,
+        string member, CancellationToken token) where T : class
+    {
+        var args = new ITypedArgument[]
+        {
+            new TypedArgument<string>(Route(query.DatabaseName)),
+            new TypedArgument<string>(query.SchemaName),
+            new TypedArgument<FilterNode>(predicate),
+            new TypedArgument<List<StoredMagicQuery>>(query.StoredMagicQueries),
+            new TypedArgument<bool>(query.ForceCursorMode),
+            new TypedArgument<string[]>([member])
+        };
+        return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<JsonElement[]>(
+            Cache.MagicDbJsImportPath, "projectPublicRecords", token, args) ?? [];
+    }
+
+    internal Task<int> PatchPublicAsync<T>(MagicQuery<T> query, object key, JsonElement changes,
+        CancellationToken token) where T : class =>
+        new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<int>(
+            Cache.MagicDbJsImportPath, "patchPublicRecord", token,
+            new TypedArgument<string>(Route(query.DatabaseName)),
+            new TypedArgument<string>(query.SchemaName),
+            new TypedArgument<JsonElement>(JsonSerializer.SerializeToElement(key)),
+            new TypedArgument<JsonElement>(changes));
+
     internal async Task DeleteAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
     {
         string schemaName = SchemaHelper.GetTableName<T>();
@@ -256,7 +287,7 @@ internal class IndexedDbManager
         UpdateRecord<T> record = new UpdateRecord<T>()
         {
             Key = primaryKeyValue,
-            DbName = dbName,
+            DbName = Route(dbName),
             StoreName = schemaName,
             Record = item
         };
@@ -278,7 +309,7 @@ internal class IndexedDbManager
         });
 
         var args = new ITypedArgument[] {
-            new TypedArgument<string>(dbName),
+            new TypedArgument<string>(Route(dbName)),
             new TypedArgument<string>(schemaName),
             new TypedArgument<IEnumerable<object>?>(keys) };
 
@@ -297,7 +328,7 @@ internal class IndexedDbManager
     internal Task ClearTableAsync(string storeName, string dbName)
     {
         return new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallInvokeVoidDefaultJsAsync(Cache.MagicDbJsImportPath, 
-            IndexedDbFunctions.CLEAR_TABLE, dbName, storeName);
+            IndexedDbFunctions.CLEAR_TABLE, Route(dbName), storeName);
     }
 
 
