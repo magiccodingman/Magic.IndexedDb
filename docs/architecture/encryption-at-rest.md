@@ -1,6 +1,7 @@
 # Encryption at rest
 
 This design covers application-level encryption of IndexedDB data. The first milestone establishes the browser encryption primitive and its authenticated storage format. The API sketches below describe the intended integration.
+The browser prototype also includes an authenticated policy sentinel and codecs for field and record protection. These internal modules are awaiting integration with Magic's ordinary storage paths.
 
 ## Existing paths
 
