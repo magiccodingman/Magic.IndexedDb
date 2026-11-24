@@ -1,18 +1,14 @@
 # Magic IndexedDB documentation
 
-Magic IndexedDB brings a LINQ-style query provider to IndexedDB for Blazor. It translates C# expression trees into an IndexedDB-aware query plan, uses indexes and compound indexes when it can, and falls back to its cursor engine when the requested operation cannot be expressed as an indexed lookup.
+Magic IndexedDB is a typed IndexedDB library for Blazor with a LINQ-style query API. It translates supported C# predicates into browser queries, uses indexes when possible, and falls back to cursor filtering when necessary.
 
-Magic IndexedDB remains on its version 2 release line. The current codebase targets .NET 10; applications that must remain on .NET 8 should use an earlier compatible package release.
+The current version targets .NET 10. If your application still targets .NET 8, use an earlier compatible package.
 
-## Why it exists
+Magic does not load an entire table into .NET just to apply a filter. Query planning and filtering happen in the browser, close to IndexedDB. This is especially useful for compound indexes, larger datasets, pagination, and predicates that combine `&&` and `||`.
 
-A thin IndexedDB wrapper can offer methods that look like LINQ while still loading a large collection before filtering it. Magic IndexedDB instead treats the expression as query intent: it parses the predicate, partitions compatible branches, compresses index operations, and asks IndexedDB for the narrowest result it can produce.
+IndexedDB is not SQL, so some query chains work differently from ordinary LINQ. The guides explain those differences where you are likely to encounter them.
 
-That distinction matters for complex AND/OR predicates, compound indexes, pagination, and browser memory. When an operation cannot use an index, Magic's cursor engine evaluates it in the browser and, when selection additions require it, retains only the key and ordering metadata needed before fetching final records.
-
-The engine uses Dexie.js for mature IndexedDB access while keeping query translation, optimization, serialization, and the C# fluent contract in Magic IndexedDB. Its universal predicate representation is also the architectural foundation for possible future wrappers in other languages.
-
-Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ordering, cursor, and schema-evolution guides is part of using the engine effectively.
+Start with the four pages below. The guides and reference pages are there when you need to go deeper.
 
 ## Start here
 
@@ -35,6 +31,10 @@ Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ord
 - [Public API reference](reference/public-api.md)
 - [Schema attributes and constructors](reference/schema-attributes.md)
 - [Query expression reference](reference/query-expressions.md)
+- [Adding, updating, and deleting records](reference/writes-and-transactions.md)
+- [Serialization](reference/serialization.md)
+- [Errors and cancellation](reference/errors-and-cancellation.md)
+- [Browser storage and multiple tabs](reference/browser-support-and-storage.md)
 
 ## Architecture
 
@@ -43,16 +43,18 @@ Like LINQ to SQL, LINQ to IndexedDB has provider-specific rules. Reading the ord
 
 ## Contributing
 
-- [Testing and continuous integration](contributing/testing.md)
+- [Testing Magic IndexedDB](contributing/testing.md)
+- [Query planner diagnostics](contributing/query-planner-diagnostics.md)
 
 ## Upgrading and legacy versions
 
 - [.NET 10 upgrade notes](upgrading/dotnet-10.md)
 - [Version 1 documentation](../MagicIndexDbWiki/Version-1.0-Legacy.md)
 
-## Important current-release status
+## A few things to know
 
-- Automated schema migrations are still under construction. Treat schema changes as explicit application work and test them against existing browser data.
+- Magic does not currently migrate existing data when a schema changes. Plan schema changes with the [schema evolution guide](guides/schema-evolution.md).
+- You cannot call `OrderBy` after `Where`. Use `Cursor(predicate).OrderBy(...)`, or load the filtered records and sort them in .NET.
 - `ToListAsync()` returns a materialized result with the requested query ordering applied.
-- `AsAsyncEnumerable()` prioritizes progressive delivery and does not promise final arrival order. Materialize and sort afterward when order is part of your application contract.
-- The C# API is the supported integration surface. The universal predicate representation is documented for contributors and future wrappers, but the JavaScript modules are currently internal package implementation details.
+- `AsAsyncEnumerable()` delivers records progressively, so records from different query branches may arrive out of order. Buffer and sort them if order matters.
+- Application code should use the C# API. The JavaScript query modules are implementation details.

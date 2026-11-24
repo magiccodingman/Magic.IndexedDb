@@ -17,7 +17,7 @@ IMagicQuery<Person> employees = await MagicDb.Query<Person>(
     person => person.Databases.Employee);
 ```
 
-The older raw `IndexedDbSet` and name/schema override query paths are not part of the supported `IMagicIndexedDb` surface. Build normal application code around the two typed overloads above.
+Use these two typed overloads in application code. Older methods that accept raw database or schema overrides are obsolete and are not exposed by `IMagicIndexedDb`.
 
 ## Manage one database
 
@@ -41,7 +41,7 @@ Delete a database only when permanent data loss is intended:
 await database.DeleteAsync();
 ```
 
-`DeleteAsync()` removes the browser database and all of its object stores and records. A future query may create a new empty database from the current schema.
+`DeleteAsync()` requests removal of the browser database and all of its object stores and records. A future query may create a new empty database from the current schema. Other tabs can block deletion, and the current browser helper does not return a detailed deletion result, so call `DoesExistAsync()` afterward when confirmation matters.
 
 The current API does not expose a public multi-database overload, parameterless `Database()`, `CloseAll`, or `DeleteAll`. Call the single-database API for each explicit database your application owns if such coordination is required.
 
@@ -66,6 +66,8 @@ double quotaMiB = storage.QuotaInMegabytes;
 ```
 
 The values come from the browser's storage estimate and should be treated as an estimate, not as a reservation or guaranteed capacity.
+
+When the browser cannot provide an estimate, Magic returns zero values. Storage belongs to the current site and browser profile, and the browser or user can clear it. See [browser storage and multiple tabs](../reference/browser-support-and-storage.md) for more detail.
 
 ## Disposal
 

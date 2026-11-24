@@ -2,6 +2,8 @@
 
 After [registering the service](installation.md) and [defining a table](schema.md), obtain an `IMagicQuery<T>` for that table. The query object is both the entry point for querying and the table-scoped CRUD API.
 
+The lifecycle example below is appropriate for standalone Blazor WebAssembly. In a prerendered server application, start IndexedDB work only after the component becomes interactive because JavaScript interop is unavailable during prerendering.
+
 ```razor
 @page "/people"
 @using Magic.IndexedDb
@@ -36,6 +38,8 @@ await table.AddRangeAsync(people, cancellationToken);
 
 For an auto-incrementing key, leave the new record's key at its default value. A unique-index violation or invalid key is reported by the browser operation.
 
+`AddAsync` and `AddRangeAsync` do not return generated keys or write an auto-generated key back into the supplied object. Re-query a newly inserted row before using that row with `UpdateAsync` or `DeleteAsync` when your code needs the generated primary key.
+
 ## Read
 
 ```csharp
@@ -64,7 +68,7 @@ int updated = await table.UpdateAsync(person, cancellationToken);
 int updatedMany = await table.UpdateRangeAsync(people, cancellationToken);
 ```
 
-The integer result is the number reported by the underlying bulk operation.
+`UpdateAsync` returns `0` when the key does not exist and `1` when it updates a record. `UpdateRangeAsync` uses upsert behavior and returns the size of the batch. See [adding, updating, and deleting records](../reference/writes-and-transactions.md) for the differences between single and bulk updates.
 
 ## Delete
 
@@ -74,6 +78,8 @@ int deletedMany = await table.DeleteRangeAsync(people, cancellationToken);
 ```
 
 Delete operations also use each object's primary key.
+
+`DeleteRangeAsync` reports the number of requested keys after success, not the number proven to have existed. Range writes are not documented as all-or-nothing operations.
 
 ## Clear a table
 
@@ -101,3 +107,4 @@ Use streaming when progressive processing and lower peak result memory matter mo
 - Learn the full [query syntax](../guides/querying.md).
 - Understand [`Where` versus `Cursor`](../guides/where-vs-cursor.md).
 - Read the rules for [ordering and pagination](../guides/ordering-and-pagination.md).
+- Review [write and transaction semantics](../reference/writes-and-transactions.md) before building retries or batch workflows.

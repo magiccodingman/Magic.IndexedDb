@@ -1,13 +1,13 @@
 # Moving version 2 projects to .NET 10
 
-Magic IndexedDB remains on its version 2 release line. Moving the project to .NET 10 is a target-framework update, not a new engine generation. The established query and database syntax remains in place while object materialization, JSON transport, streaming, and browser-resource behavior receive compatibility and reliability corrections.
+The .NET 10 package keeps the version 2 query and database API. Most applications only need to update their target framework and package version, but a few serialization and constructor details are worth checking.
 
-## Runtime compatibility
+## Before upgrading
 
 - The current package targets `net10.0`.
 - Applications staying on .NET 8 should use an earlier compatible package release.
-- Normal consumer syntax for `AddMagicBlazorDB`, `Query<T>()`, database operations, and query composition remains recognizable.
-- `ITypedArgument.Serialize()`, `SerializeToJsonElement()`, and `SerializeToJsonString()` remain public for compatibility.
+- Registration, `Query<T>()`, database operations, and query composition keep the same shape.
+- `ITypedArgument.Serialize()`, `SerializeToJsonElement()`, and `SerializeToJsonString()` remain available.
 
 ## Constructor materialization
 
@@ -43,7 +43,7 @@ Constructor selection follows this order:
 
 Only one `[MagicConstructor]` is allowed per type. Multiple Magic or JSON constructor annotations produce a `MagicConstructorException`. Constructor parameter matching is case-insensitive, optional defaults are honored, and writable JSON properties not consumed by the constructor are populated afterward.
 
-The observable convention change is for an unannotated type that has both a public parameterless constructor and one or more parameterized constructors: the current materializer chooses the parameterless constructor. Add `[MagicConstructor]` when the parameterized constructor is the intended persistence contract.
+One convention has changed: when an unannotated type has both a public parameterless constructor and one or more parameterized constructors, Magic now chooses the parameterless constructor. Add `[MagicConstructor]` when it should choose a parameterized constructor instead.
 
 Read [schema attributes and constructors](../reference/schema-attributes.md) for shared and separate JSON/Magic examples.
 
@@ -75,15 +75,16 @@ builder.Services.AddMagicBlazorDB(
 - Closing all cached connections internally closes the actual Dexie instances.
 - Multi-database creation passes each complete store definition to database creation.
 - The bundled Dexie source map is valid BOM-free JSON.
+- String `==` and supported `Equals` expressions retain case-sensitive C# equality semantics.
+- Negated equality, string equality, and stored collection containment use the `NotEqual`, `Equal`, and `Contains` operations.
+- Empty captured membership matches no rows; supported empty `Any` and `All` expressions retain false and true respectively.
+- Mixed constant boolean expressions preserve normal AND/OR identities.
+- `.Date` inequalities use full-day boundaries, including nullable not-equal comparisons.
+- Compound-index selection never discards residual predicates; a semantics-safe cursor fallback evaluates the complete branch when necessary.
+- Ordering by one component of a compound primary key falls back to a cursor unless the component also has a standalone index.
 
-## Migration and ordering status
+## Schema changes and streamed ordering
 
-The automated migration protocol is still under construction. Magic IndexedDB does not promise automatic schema migration; test schema changes against realistic existing browser data. See [schema evolution](../guides/schema-evolution.md).
+Magic does not currently migrate existing records when a schema changes. Test changes against data created by the previous application version. See [schema evolution](../guides/schema-evolution.md).
 
-Materialized queries apply their requested ordering. Progressive `AsAsyncEnumerable()` delivery does not promise arrival order; if final order is part of the application contract, use materialization or explicitly sort the yielded values afterward.
-
-## Verification
-
-The repository includes a .NET 10 unit-test project covering constructor precedence, immutable and hybrid models, public serialization API preservation, escaped strings, entity and collection dictionaries, nested collections, collection shapes, numeric and named enums, safe enum query casts, and the earlier JavaScript envelope.
-
-Browser end-to-end coverage also exercises escaped and nested records, dictionary properties, numeric and named enum filters, falsey zero counts, and yield streaming.
+Materialized queries apply their requested ordering. `AsAsyncEnumerable()` can yield records from separate query branches out of order, so use materialization or sort the streamed values when order matters.

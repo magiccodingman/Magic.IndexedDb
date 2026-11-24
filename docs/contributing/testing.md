@@ -1,33 +1,33 @@
 # Testing Magic IndexedDB
 
-Magic IndexedDB crosses C#, JavaScript interop, query planning, serialization, streaming, IndexedDB, and browser-specific behavior. The test system therefore has two required layers: deterministic .NET contract tests and browser integration tests against the actual Blazor application.
+Magic IndexedDB has .NET tests for deterministic library behavior and browser tests for anything that depends on JavaScript, IndexedDB, Blazor interop, or streaming.
 
-## Run the .NET tests
+## .NET tests
 
 ```bash
 dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj --configuration Release
 ```
 
-These tests cover expression translation, schema generation and validation, serialization boundaries, chunked-stream bookkeeping, result validation, and a snapshot of the public .NET API. The API snapshot catches accidental additions, removals, and signature changes.
+These tests cover expression translation, schema generation, serialization, streaming bookkeeping, result validation, documentation links, and the public .NET API.
 
-If a public API change is deliberate, review the complete diff first and then regenerate the snapshot explicitly:
+The public API is stored in `Magic.IndexedDb.UnitTests/PublicApiBaseline.txt`. If an API change is deliberate, review the diff and regenerate the file with:
 
 ```bash
 UPDATE_PUBLIC_API_BASELINE=1 dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj --configuration Release --filter PublicApiMatchesApprovedBaseline
 ```
 
-Commit the reviewed `Magic.IndexedDb.UnitTests/PublicApiBaseline.txt` change with the implementation.
+Commit the updated baseline with the API change.
 
-## Run the browser tests
+## Browser tests
 
-Build the tests before installing Playwright so its generated installer is available:
+Build the test project before installing Playwright:
 
 ```bash
 dotnet build E2eTest/E2eTest.csproj --configuration Release
 pwsh E2eTest/bin/Release/net10.0/playwright.ps1 install --with-deps chromium firefox webkit
 ```
 
-Run one browser at a time:
+Then run the suite in any browser you need:
 
 ```bash
 dotnet test E2eTest/E2eTest.csproj --configuration Release --no-build -- Playwright.BrowserName=chromium Playwright.LaunchOptions.Headless=true
@@ -35,38 +35,16 @@ dotnet test E2eTest/E2eTest.csproj --configuration Release --no-build -- Playwri
 dotnet test E2eTest/E2eTest.csproj --configuration Release --no-build -- Playwright.BrowserName=webkit Playwright.LaunchOptions.Headless=true
 ```
 
-The suite validates CRUD and range operations, database lifecycle and isolation, query expressions, pagination and exact materialized ordering, compound keys, enum and dictionary serialization, constrained multi-chunk streaming, cancellation, concurrent streams, and quota access.
+The browser suite covers database operations, query behavior, ordering and pagination, compound keys, serialization, streaming, cancellation, concurrent streams, and storage estimates.
 
-## Continuous integration
+CI runs both the .NET and browser suites. The workflow files under `.github/workflows/` are the source of truth for the exact jobs used by the repository.
 
-Every pull request runs:
+## When adding tests
 
-- `Core validation`
-- `Chrome integration`
-- `Firefox integration`
-- `Linux WebKit integration`
-- `macOS WebKit integration`
+- Use .NET tests for translation, validation, and other deterministic behavior.
+- Use browser tests when the result depends on IndexedDB, JavaScript, interop, or streaming.
+- Compare ordered results item by item when testing ordering or pagination.
+- Add a focused test for a bug so the same behavior cannot quietly return.
+- Treat a public API baseline change as part of the API review, not as a routine test update.
 
-Pushes to `master` run the same workflows again. A push to `release` starts `publish-nuget.yml`, which calls both validation workflows and does not build or publish the NuGet package until every validation job succeeds. This makes the release run a final independent gate even when the same commit passed on `master`.
-
-The publishing job declares the GitHub Actions environment `release`. NuGet's trusted-publishing policy must use the same environment value so the job's OIDC identity matches the policy. The protected `release` branch controls when the workflow runs; it is separate from the Actions environment claim used during the NuGet token exchange.
-
-Core validation packages the library before the unit-test build so the package check starts without cached build manifests. Validation and release publishing use the same `.github/scripts/pack-nuget.sh` entry point.
-
-Release versions are based on the checked-in stable version line and the versions already present on NuGet. The workflow publishes one patch above whichever matching version is newer. Failed or retried workflow runs therefore do not consume or skip package versions. Version calculation fails safely if NuGet's version index cannot be read or validated.
-
-The version-selection regression tests can be run locally:
-
-```bash
-bash .github/scripts/test-calculate-package-version.sh
-```
-
-The macOS WebKit job is valuable coverage for Apple's browser engine, but Playwright's WebKit build is not the branded Safari application and is not an iPhone or iPad device. Real Safari and iOS device coverage requires a separate device service or owned Apple test hardware; it should be added when credentials and a stable device-testing provider are available.
-
-## Test design rules
-
-- Test public behavior and compatibility contracts, not incidental implementation details.
-- Compare ordered results positionally whenever ordering or pagination is under test.
-- Keep unit tests deterministic and use browser tests for behavior that depends on JavaScript, IndexedDB, Blazor interop, or streaming.
-- Add a regression test before or with every bug fix.
-- Treat a public API snapshot update as an intentional compatibility decision, never routine test maintenance.
+The [query planner diagnostics](query-planner-diagnostics.md) page explains how to inspect the browser planner when a query returns the wrong records or chooses an unexpected path.

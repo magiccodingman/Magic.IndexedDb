@@ -74,6 +74,10 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
         Assert.AreEqual("OK", await this.RunTestPageMethodAsync(page => page.RangeCrud));
 
     [TestMethod]
+    public async Task WriteContractSemanticsTest() =>
+        Assert.AreEqual("OK", await this.RunTestPageMethodAsync(page => page.WriteContractSemantics));
+
+    [TestMethod]
     public async Task ClearAndPopulatedCountTest() =>
         Assert.AreEqual("OK", await this.RunTestPageMethodAsync(page => page.ClearAndPopulatedCount));
 

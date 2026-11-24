@@ -14,7 +14,7 @@ List<Person> results = await people
 
 Using `Where` does not guarantee indexed execution. It preserves the opportunity for indexed execution.
 
-## Use `Cursor` intentionally
+## Use `Cursor` for scans
 
 ```csharp
 List<Person> results = await people
@@ -48,6 +48,6 @@ Both paths support materialized and progressive execution. Both preserve the pre
 
 ## Decision rule
 
-Start with `Where`. Add the indexes that match common selective lookups. Choose `Cursor` when the operation is known to be cursor-bound or when you explicitly need its query surface.
+Start with `Where`. Add indexes for common selective lookups. Choose `Cursor` when the query needs a scan or uses a cursor-only feature.
 
 Do not change every query containing one cursor-bound branch to `Cursor` automatically. A `Where` expression containing OR branches may still let Magic execute compatible branches through indexes and reserve cursor evaluation for the remainder, provided the overall query additions allow that plan.

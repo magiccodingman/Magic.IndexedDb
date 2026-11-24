@@ -56,41 +56,37 @@ public static class SchemaHelper
         }
     }
 
-    public static List<IndexedDbSet> GetAllIndexedDbSets()
+    public static List<IndexedDbSet> GetAllIndexedDbSets() =>
+        GetIndexedDbSets(GetAllMagicRepositories()!);
+
+    internal static IEnumerable<FieldInfo> GetIndexedDbSetFields(Type repositoryType) =>
+        repositoryType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)
+            .Where(field => field.FieldType == typeof(IndexedDbSet));
+
+    internal static List<IndexedDbSet> GetIndexedDbSets(IEnumerable<Type> repositoryTypes)
     {
         var result = new List<IndexedDbSet>();
 
-        var repoTypes = GetAllMagicRepositories();
-        if (repoTypes == null || repoTypes.Count == 0)
-            return result;
-
-        foreach (var type in repoTypes)
+        foreach (var type in repositoryTypes)
         {
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
-
-            foreach (var field in fields)
+            foreach (var field in GetIndexedDbSetFields(type))
             {
-                if (field.FieldType == typeof(IndexedDbSet))
+                object? instance = null;
+                if (!field.IsStatic)
                 {
-                    // Handle static or instance field
-                    object? instance = null;
-                    if (!field.IsStatic)
+                    try
                     {
-                        try
-                        {
-                            instance = Activator.CreateInstance(type);
-                        }
-                        catch
-                        {
-                            continue; // Can't create instance, skip
-                        }
+                        instance = Activator.CreateInstance(type);
                     }
+                    catch
+                    {
+                        continue; // Can't create instance, skip
+                    }
+                }
 
-                    var value = field.GetValue(instance);
-                    if (value is IndexedDbSet set)
-                    {
-                        result.Add(set);
-                    }
+                if (field.GetValue(instance) is IndexedDbSet set)
+                {
+                    result.Add(set);
                 }
             }
         }
@@ -165,12 +161,12 @@ public static class SchemaHelper
     /// <summary>
     /// Retrieves all schemas for a given database name.
     /// </summary>
-    public static List<StoreSchema> GetAllSchemas(string? databaseName = null)
+    public static List<StoreSchema> GetAllSchemas(string? databaseName = null) =>
+        GetSchemas(GetAllMagicTables()!);
+
+    internal static List<StoreSchema> GetSchemas(IEnumerable<Type> magicTables)
     {
         var schemas = new List<StoreSchema>();
-
-        // 🔹 Retrieve all valid magic tables
-        var magicTables = GetAllMagicTables();
 
         foreach (var type in magicTables)
         {

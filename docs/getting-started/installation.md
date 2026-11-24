@@ -1,6 +1,6 @@
 # Installation
 
-Magic IndexedDB remains on its version 2 release line. The current codebase targets .NET 10 and is intended for Blazor applications running in a browser. Applications staying on .NET 8 should use an earlier compatible package release.
+Magic IndexedDB 2 targets .NET 10 and runs in Blazor applications in the browser. If your application still targets .NET 8, use an earlier compatible package.
 
 ## Install the package
 

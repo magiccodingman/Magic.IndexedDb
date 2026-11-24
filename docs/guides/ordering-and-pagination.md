@@ -1,6 +1,6 @@
 # Ordering and pagination
 
-Ordering is part of the query plan, but IndexedDB is not an in-memory LINQ provider. The available index paths, cursor fallback, de-duplication, and progressive delivery all affect how ordering can be executed.
+IndexedDB does not order data like an in-memory LINQ collection. Whether Magic can use an index, needs a cursor, or streams several query branches affects how and when ordering is applied.
 
 ## Ordering a materialized query
 
@@ -22,13 +22,39 @@ List<Person> newest = await people
     .ToListAsync();
 ```
 
-The current fluent API exposes one explicit `OrderBy` or `OrderByDescending`; it is not the full `IOrderedQueryable<T>` surface and does not expose `ThenBy`.
+You can use one `OrderBy` or `OrderByDescending`. There is no `ThenBy` in the browser query API; use .NET sorting after materialization when you need a second key.
+
+## Filtering and ordering
+
+`Where(...)` returns `IMagicQueryStaging<T>`, which does not expose `OrderBy`. Choose one of these explicit patterns when a filtered result also needs ordering:
+
+```csharp
+// Browser cursor filtering and ordering.
+List<Person> orderedMatches = await people
+    .Cursor(person => person.IsActive)
+    .OrderBy(person => person.LastName)
+    .ToListAsync();
+```
+
+```csharp
+// Preserve Where planning, then order the materialized result in .NET.
+List<Person> matches = await people
+    .Where(person => person.IsActive)
+    .ToListAsync();
+
+List<Person> orderedMatches = matches
+    .OrderBy(person => person.LastName)
+    .ThenBy(person => person.Id)
+    .ToList();
+```
+
+Do not generate `people.Where(...).OrderBy(...)`; that chain is not present on the current staged interface.
 
 ## Progressive results
 
-`AsAsyncEnumerable()` prioritizes yielding records progressively. It does not promise that arrival order is the final requested order when work is split across execution paths.
+`AsAsyncEnumerable()` yields records as they arrive. When a query uses more than one execution path, that arrival order may not match the requested sort order.
 
-If final order is part of the application contract, either use `ToListAsync()` or explicitly materialize and sort the streamed values:
+When order matters, use `ToListAsync()` or buffer and sort the streamed values:
 
 ```csharp
 List<Person> buffered = [];
@@ -48,7 +74,7 @@ List<Person> ordered = buffered
 
 ## `Take` and `Skip`
 
-Magic IndexedDB's fluent contract requires `Take` before `Skip`:
+Magic IndexedDB requires `Take` before `Skip`:
 
 ```csharp
 List<Person> page = await people
@@ -58,7 +84,9 @@ List<Person> page = await people
     .ToListAsync();
 ```
 
-In application terms, this represents the familiar pagination intent: skip `offset` rows and return `pageSize` rows. The method order is intentionally reversed because of the way the IndexedDB/Dexie path composes its limit and offset operations. The staged interfaces prevent calling `Take` after `Skip`.
+This still means “skip `offset` rows and return `pageSize` rows.” The method order is reversed because IndexedDB applies the limit and offset in that order. The staged interfaces prevent calling `Take` after `Skip`.
+
+Use a positive count for `Take` and `TakeLast`, and a non-negative offset for `Skip`. Avoid zero and negative counts; different query paths do not currently handle them consistently.
 
 For page-number pagination:
 
@@ -84,6 +112,12 @@ List<Person> lastFive = await people
 ```
 
 Magic may transform `TakeLast` using reverse traversal and a limit when the order/index path allows it. Otherwise, the cursor engine applies the requested semantics.
+
+## Compound primary keys and ordering
+
+One component of a compound primary key is not a standalone IndexedDB index. `OrderBy` or `OrderByDescending` on such a component uses a semantics-safe cursor path unless that property also has a real ordinary or unique index. A simple single-field primary key and a declared standalone index remain eligible for indexed ordering.
+
+Add `[MagicIndex]` to a compound-key component only when independent indexed filtering or ordering is an intentional part of the schema. Adding an index to an already deployed database is a schema change and requires the planning described in [schema evolution](schema-evolution.md).
 
 ## Stable cursor ordering
 

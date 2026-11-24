@@ -4,7 +4,7 @@ Magic IndexedDB is a translator and planner, not an implementation of `IQueryabl
 
 ## 1. Expression translation
 
-The C# wrapper receives an `Expression<Func<T, bool>>`. `UniversalExpressionBuilder<T>` maps supported binary expressions, method calls, nullable member access, dates, enums, and logical composition into a `FilterNode` tree.
+The C# wrapper receives an `Expression<Func<T, bool>>`. `PredicateVisitor<T>` first expands supported captured `Any`/`All` shapes, including their empty-sequence truth values. `UniversalExpressionBuilder<T>` then maps supported binary expressions, method calls, nullable member access, dates, enums, constants, and logical composition into a `FilterNode` tree.
 
 Persisted property mappings are resolved at this stage, so `[MagicName]` affects the property names sent to JavaScript.
 
@@ -29,7 +29,7 @@ The planner builds index metadata from the Dexie table and classifies predicate 
 - Compound-index queries
 - Cursor conditions
 
-An AND group stays indexed only when its conditions can be represented by a compatible native or compound index path. OR alternatives may become independent query branches. Query additions such as take, skip, first, last, and ordering can require a combined cursor plan so that an addition applies once to the full logical result.
+An AND group stays indexed only when its conditions can be represented by a compatible native or compound index path. A compound index is only a candidate producer: if the branch contains a residual predicate that the compound index does not cover, the current planner sends the complete branch to the cursor instead of dropping that predicate. OR alternatives may become independent query branches. Query additions such as take, skip, first, last, and ordering can require a combined cursor plan so that an addition applies once to the full logical result.
 
 Calling `Cursor(...)` sets forced-cursor mode and bypasses index partitioning for that query.
 
@@ -53,17 +53,19 @@ There are two principal paths:
 - Without pagination/first/last additions, matching full records are collected directly.
 - When additions require selection or ordering, the engine collects the primary key and only the fields needed for filtering/order metadata, applies the additions, and then fetches the selected full records by primary key.
 
-Rows missing a property required by the cursor predicate are skipped because the predicate cannot be evaluated reliably for that row. This makes additive schema compatibility an application concern; it is not a substitute for migrations.
+The cursor skips a row when it cannot evaluate the predicate because a required property is missing. If a new property will be queried, older records may need to be backfilled first.
 
-`StableOrdering()` suppresses inferred indexed predicate fields in cursor metadata ordering and uses the cursor's stable scan order. The current fluent surface does not combine `StableOrdering()` with an explicit `OrderBy` in the same cursor chain.
+`StableOrdering()` leaves inferred indexed predicate fields out of cursor ordering and uses the stable scan order instead. It cannot be combined with `OrderBy` in the same cursor chain.
+
+One field inside a compound primary key is not independently orderable merely because it participates in that compound key. Ordering by such a component uses the cursor unless a standalone ordinary or unique index exists for the property.
 
 ## 7. Result transport
 
-`ToListAsync()` collects the query into a materialized list and applies the requested materialized ordering contract.
+`ToListAsync()` collects the query into a list and applies the requested ordering.
 
-`AsAsyncEnumerable()` uses the streamed interop path. The .NET consumer drains chunks while JavaScript produces them, and duplicate primary keys are filtered by the engine. Progressive delivery does not promise final arrival order across query paths.
+`AsAsyncEnumerable()` uses the streaming path. .NET drains chunks while JavaScript produces them, and the engine removes duplicate primary keys. Records from separate query paths can arrive out of order.
 
-The internal interop envelope is versioned. The current transport sends arguments as raw JSON elements rather than JSON strings nested inside JSON, preserving falsey values and avoiding extra parsing. The JavaScript reader retains support for the earlier envelope.
+The interop envelope has its own version. Arguments are sent as raw JSON elements rather than JSON strings inside JSON, which preserves values such as `0`, `false`, and `null` and avoids another parsing step. The JavaScript reader can also read the older envelope.
 
 ## Performance implications
 
