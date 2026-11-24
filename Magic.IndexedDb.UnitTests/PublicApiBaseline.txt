@@ -286,7 +286,9 @@ class Magic.IndexedDb.SchemaAnnotations.MagicNotMappedAttribute : System.Attribu
   ctor Magic.IndexedDb.SchemaAnnotations.MagicNotMappedAttribute()
 static class Magic.IndexedDb.ServiceCollectionExtensions
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Magic.IndexedDb.BlazorInteropMode interoptMode, System.Boolean isDebug)
+  method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Magic.IndexedDb.BlazorInteropMode interoptMode, System.Boolean isDebug, System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<System.Type> repositoryTypes)
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Int64 jsMessageSizeBytes, System.Boolean isDebug)
+  method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Int64 jsMessageSizeBytes, System.Boolean isDebug, System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<System.Type> repositoryTypes)
 class Magic.IndexedDb.StoreRecord<T>
   ctor Magic.IndexedDb.StoreRecord<T>()
   property System.String DbName { get; set; }

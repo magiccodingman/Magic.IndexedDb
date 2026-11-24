@@ -15,7 +15,7 @@ public sealed class IndexedDbContext : IMagicRepository
 }
 ```
 
-Magic IndexedDB discovers `IMagicRepository` implementations and their static `IndexedDbSet` fields through assembly scanning.
+By default, Magic IndexedDB discovers `IMagicRepository` implementations and their `IndexedDbSet` fields through assembly scanning.
 
 ## Create a table
 
@@ -93,6 +93,22 @@ IMagicQuery<Person> employeeQuery =
 `Query<T>()` uses `GetDefaultDatabase()`. The selector overload should point to one of the table's declared `Databases` fields. The selector is a strongly typed database choice, not an authorization boundary; Magic does not use it to enforce which callers may access a database.
 
 Magic currently creates every discovered table in every discovered `IndexedDbSet`. The table's `Databases` property gives you strongly typed choices when querying, but it does not remove that table from the other Magic databases. See [browser storage and multiple tabs](../reference/browser-support-and-storage.md#which-tables-are-created).
+
+## Register schema types explicitly
+
+To skip assembly-wide schema discovery, pass your complete list of table and repository types to `AddMagicBlazorDB`:
+
+```csharp
+builder.Services.AddMagicBlazorDB(
+    BlazorInteropMode.WASM,
+    builder.HostEnvironment.IsDevelopment(),
+    tableTypes: [typeof(Person)],
+    repositoryTypes: [typeof(IndexedDbContext)]);
+```
+
+Each list must contain at least one distinct, concrete type. Tables implement `IMagicTable<>` and have a public parameterless constructor. Repositories implement `IMagicRepository` and expose at least one `IndexedDbSet` field. Static fields work without a repository constructor. Instance fields require a public parameterless constructor.
+
+Magic reads schema metadata from the listed types and creates every listed table in every database declared by the listed repositories. When switching an existing app to explicit registration, include all the tables and repositories the app uses.
 
 ## Primary keys
 

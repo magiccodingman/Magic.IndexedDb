@@ -15,7 +15,9 @@ internal class MagicDbFactory : IMagicIndexedDb, IAsyncDisposable
     private readonly long _jsMessageSizeBytes;
     public long JsMessageSizeBytes => _jsMessageSizeBytes;
 
-    public MagicDbFactory(IJSRuntime jSRuntime, long jsMessageSizeBytes, bool isDebug)
+    public MagicDbFactory(
+        IJSRuntime jSRuntime, long jsMessageSizeBytes, bool isDebug,
+        Type[]? tableTypes = null, Type[]? repositoryTypes = null)
     {
         _jsMessageSizeBytes = jsMessageSizeBytes;
         this._jsModule = new(async () =>
@@ -31,11 +33,15 @@ internal class MagicDbFactory : IMagicIndexedDb, IAsyncDisposable
             {
                 var jsModule = await this._jsModule.Value;
 
-                var dbSchemas = SchemaHelper.GetAllSchemas();
+                var dbSchemas = tableTypes is null
+                    ? SchemaHelper.GetAllSchemas()
+                    : SchemaHelper.GetSchemas(tableTypes);
                 // Create & Open the database (formerly in IndexedDbManager)
                 var manager = new IndexedDbManager(jsModule, _jsMessageSizeBytes);
 
-                var dbSets = SchemaHelper.GetAllIndexedDbSets();
+                var dbSets = repositoryTypes is null
+                    ? SchemaHelper.GetAllIndexedDbSets()
+                    : SchemaHelper.GetIndexedDbSets(repositoryTypes);
 
                 if (dbSets != null)
                 {
