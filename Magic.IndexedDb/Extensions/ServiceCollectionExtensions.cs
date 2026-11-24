@@ -72,8 +72,17 @@ public static class ServiceCollectionExtensions
             .ToDictionary(config => config.Request.DatabaseName, StringComparer.Ordinal));
         services.AddScoped<IMagicIndexedDbEncryption>(sp =>
             (IMagicIndexedDbEncryption)sp.GetRequiredService<IMagicIndexedDb>());
+        services.AddScoped<IMagicIndexedDbEncryptionLifecycle>(sp =>
+            (IMagicIndexedDbEncryptionLifecycle)sp.GetRequiredService<IMagicIndexedDb>());
+        services.AddScoped<IMagicEncryptionContexts>(sp =>
+            new MagicEncryptionContexts((MagicDbFactory)sp.GetRequiredService<IMagicIndexedDb>()));
         return services;
     }
+
+    /// <summary>Registers an application key provider for runtime account activation.</summary>
+    public static IServiceCollection AddMagicIndexedDbEncryption<TProvider>(this IServiceCollection services)
+        where TProvider : class, IMagicEncryptionKeyProvider =>
+        services.AddMagicIndexedDbEncryption<TProvider>(_ => []);
 
     private static Type[] ValidateSchemaTypes(IEnumerable<Type> types, string parameterName,
         Func<Type, bool> isValidType, string expectedType)

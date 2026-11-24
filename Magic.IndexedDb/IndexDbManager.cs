@@ -19,7 +19,13 @@ internal class IndexedDbManager
     private readonly long _jsMessageSizeBytes;
     private readonly IReadOnlyDictionary<string, string>? _protectedRoutes;
 
-    private string Route(string database) => _protectedRoutes?.GetValueOrDefault(database) ?? database;
+    private readonly CancellationToken _lifetime;
+
+    private string Route(string database)
+    {
+        _lifetime.ThrowIfCancellationRequested();
+        return _protectedRoutes?.GetValueOrDefault(database) ?? database;
+    }
 
     /// <summary>
     /// Ctor
@@ -27,11 +33,12 @@ internal class IndexedDbManager
     /// <param name="dbStore"></param>
     /// <param name="jsRuntime"></param>
     internal IndexedDbManager(IJSObjectReference jsModule, long jsMessageSizeBytes,
-        IReadOnlyDictionary<string, string>? protectedRoutes = null)
+        IReadOnlyDictionary<string, string>? protectedRoutes = null, CancellationToken lifetime = default)
     {
         _jsModule = jsModule; // Use shared JS module reference
         _jsMessageSizeBytes = jsMessageSizeBytes;
         _protectedRoutes = protectedRoutes;
+        _lifetime = lifetime;
     }
 
     //public string DbName => _dbStore.Name;
@@ -216,9 +223,10 @@ internal class IndexedDbManager
             new TypedArgument<bool>(query?.ForceCursorMode??false),
         };
 
-        return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<IEnumerable<T>>
-        (Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_ASYNC, cancellationToken,
-            args);
+        var rows = await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<IEnumerable<T>>(
+            Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_ASYNC, cancellationToken, args);
+        _lifetime.ThrowIfCancellationRequested();
+        return rows;
     }
 
     /// <summary>
@@ -249,6 +257,7 @@ internal class IndexedDbManager
         // Yield results **as they arrive** from JS
         await foreach (var item in new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallYieldJsAsync<T>(Cache.MagicDbJsImportPath, IndexedDbFunctions.MAGIC_QUERY_YIELD, cancellationToken, args))
         {
+            _lifetime.ThrowIfCancellationRequested();
             yield return item; // Stream each item immediately
         }
     }
@@ -265,8 +274,10 @@ internal class IndexedDbManager
             new TypedArgument<bool>(query.ForceCursorMode),
             new TypedArgument<string[]>([member])
         };
-        return await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<JsonElement[]>(
-            Cache.MagicDbJsImportPath, "projectPublicRecords", token, args) ?? [];
+        var rows = await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<JsonElement[]>(
+            Cache.MagicDbJsImportPath, "projectPublicRecords", token, args);
+        _lifetime.ThrowIfCancellationRequested();
+        return rows ?? [];
     }
 
     internal Task<int> PatchPublicAsync<T>(MagicQuery<T> query, object key, JsonElement changes,

@@ -42,18 +42,30 @@ internal sealed class EncryptionConfiguration
                 return entry.JsPropertyName;
             }).ToArray());
 
+    public static bool RequiresProtection(Type type) =>
+        type.IsDefined(typeof(MagicEncryptRecordAttribute), inherit: true) || ProtectedFields(type).Length > 0;
+
     private string[]? GetExposedFields(Type table, string tableName)
     {
-        if (!_recordPolicies.TryGetValue(tableName, out var exposed))
+        _recordPolicies.TryGetValue(tableName, out var configured);
+        var annotation = table.GetCustomAttribute<MagicEncryptRecordAttribute>(inherit: true);
+        if (configured is null && annotation is null)
             return null;
 
-        var mappedNames = PropertyMappingCache.GetTypeOfTProperties(table).propertyEntries.Values
-            .Where(entry => !entry.NotMapped && entry.Property.GetIndexParameters().Length == 0)
-            .Select(entry => entry.JsPropertyName).ToHashSet(StringComparer.Ordinal);
-        if (exposed.Any(name => !mappedNames.Contains(name)))
+        var mapped = PropertyMappingCache.GetTypeOfTProperties(table).propertyEntries.Values
+            .Where(entry => !entry.NotMapped && entry.Property.GetIndexParameters().Length == 0).ToArray();
+        var annotated = annotation?.ExposedProperties.Select(property => mapped
+            .SingleOrDefault(entry => entry.CsharpPropertyName == property).Property is { } member
+                ? PropertyMappingCache.GetJsPropertyName(member, table)
+                : throw new InvalidOperationException($"Magic record policy for '{tableName}' names an unknown CLR property."))
+            .ToArray();
+        if (configured is not null && configured.Any(name => !mapped.Any(entry => entry.JsPropertyName == name)))
             throw new InvalidOperationException($"Magic record policy for '{tableName}' exposes an unknown persisted property.");
+        if (annotated is not null && configured is not null &&
+            !annotated.ToHashSet(StringComparer.Ordinal).SetEquals(configured))
+            throw new InvalidOperationException($"Magic record policy for '{tableName}' conflicts with its model annotation.");
 
-        return exposed;
+        return annotated ?? configured;
     }
 
     public JsonElement CreateDatabase(IEnumerable<(Type Type, StoreSchema Schema)> schemas)

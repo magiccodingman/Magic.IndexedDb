@@ -11,6 +11,9 @@ import { chromium, firefox, webkit } from "../bin/Release/net10.0/.playwright/pa
 const root = path.resolve(process.argv[2]);
 const engine = process.argv[3] ?? "chromium";
 const rounds = Number(process.argv[4] ?? 11);
+const rows = Number(process.argv[5] ?? 1000);
+const fieldCharacters = Number(process.argv[6] ?? 256);
+const workload = `Rows=${rows}&Characters=${fieldCharacters}`;
 const types = {
     ".css": "text/css", ".html": "text/html", ".js": "text/javascript", ".json": "application/json",
     ".wasm": "application/wasm", ".dat": "application/octet-stream"
@@ -64,24 +67,25 @@ try {
                 await context.route("https://fonts.googleapis.com/**", route => route.abort());
                 const page = await context.newPage();
                 page.on("pageerror", error => process.stderr.write(`${error}\n`));
-                await page.goto(`${base}?mode=${mode}`);
+                await page.goto(`${base}?mode=${mode}&${workload}`);
                 userAgent ??= await page.evaluate(() => navigator.userAgent);
                 const timing = await getResult(page);
                 if (round > 0) samples[mode].push(timing);
                 if (round === 0 && mode === "protected") {
                     await page.evaluate(() => Blazor.navigateTo("/counter"));
                     await page.getByRole("heading", { name: "Counter" }).waitFor();
-                    await page.evaluate(() => Blazor.navigateTo("/encryption-benchmark?mode=protected&Navigated=true"));
+                    await page.evaluate(parameters => Blazor.navigateTo(
+                        "/encryption-benchmark?mode=protected&Navigated=true&" + parameters), workload);
                     assert.equal((await getResult(page)).navigationPassed, 1);
                     navigationVerified = true;
 
                     const separateTab = await context.newPage();
-                    await separateTab.goto(`${base}?mode=protected&Reload=true`);
+                    await separateTab.goto(`${base}?mode=protected&Reload=true&${workload}`);
                     assert.equal((await getResult(separateTab)).reloadPassed, 1);
                     separateTabVerified = true;
                     await separateTab.close();
 
-                    await page.goto(`${base}?mode=protected&Reload=true`);
+                    await page.goto(`${base}?mode=protected&Reload=true&${workload}`);
                     assert.equal((await getResult(page)).reloadPassed, 1);
                     reloadVerified = true;
                 }
@@ -90,8 +94,8 @@ try {
             }
         }
     }
-    console.log(JSON.stringify({ engine, version: browser.version(), userAgent, rows: 1000,
-        pointOperations: 25, fieldCharacters: 256, measuredPairs: rounds - 1, reloadVerified, navigationVerified, separateTabVerified, samples }, null, 2));
+    console.log(JSON.stringify({ engine, version: browser.version(), userAgent, rows,
+        pointOperations: 25, fieldCharacters, measuredPairs: rounds - 1, reloadVerified, navigationVerified, separateTabVerified, samples }, null, 2));
 } finally {
     await browser?.close();
     server.close();

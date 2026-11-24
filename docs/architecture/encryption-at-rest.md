@@ -164,3 +164,113 @@ and cleanup as separate steps.
 5. Switch clients after verification. Enforce the application's rules for the
    original database, exports, backups, and recovery keys. No automatic cleanup,
    downgrade, cross-tab migration lock, or live key rotation is provided.
+
+## Hardening review
+
+### Trusting the persisted policy
+
+A connection must authenticate its policy sentinel with the data key before
+it can access any store in the protected physical database. An earlier build
+accepted locked public operations based solely on the current configuration.
+The browser regression reproduces a second connection treating a previously
+encrypted member as public and writing plaintext over its envelope.
+
+A connection now retains the exact authenticated sentinel envelope in memory.
+Reads require a matching envelope. Public projections check again before
+returning their materialized results. Mutations check the sentinel inside the
+same IndexedDB transaction as the mutation, including explicitly public
+patches. Stores without member protection in a protected database still pass
+through the policy gate. Native store and index creation runs only for a new
+database. Opening an existing database cannot add indexes based on a stale
+policy.
+
+After an authenticated connection locks, explicitly public reads and patches
+remain available while the exact sentinel is present. A reload, another tab,
+or a newly activated context requires initial verification even for public
+operations. Missing or changed metadata fails closed. If verification of a
+stored envelope fails, the library cannot distinguish a wrong key from
+tampering with that envelope.
+
+### Runtime accounts and vault lifecycle
+
+Register Magic and its provider before authentication. Inject
+`IMagicEncryptionContexts` alongside the ordinary plaintext service.
+
+```csharp
+services.AddMagicBlazorDB(BlazorInteropMode.WASM, isDebug: false);
+services.AddMagicIndexedDbEncryption<AppKeyProvider>();
+
+// After the application resolves a verified account and organization.
+var active = await contexts.ActivateAsync(
+    [new("CaseNotes", stableOrganizationAndAccountScope, "notes-key-v1")]);
+var state = await active.Encryption.GetStateAsync(notesDatabase);
+var result = await active.Encryption.UnlockDetailedAsync(notesDatabase);
+var notes = await active.Database.Query<CaseNote>();
+
+// Sign-out or account change.
+await contexts.DeactivateAsync();
+```
+
+Activation replaces the previous protected context. Its old query handles
+are invalidated and its browser routes and keys are released. The plaintext
+service is independent. One activation can hold multiple configured vaults.
+The application supplies stable, collision-free account identifiers that
+incorporate organization or tenant boundaries where required.
+
+To intentionally discard a vault, call `await contexts.DestroyAsync(notesDatabase)`.
+This invalidates the old context and deletes only the specified physical vault.
+Activate again and call `InitializeAsync` to reprovision it. The app decides
+whether it may discard unsynchronized work. A blocked native deletion can
+wait for another tab or external connection to close. Other Magic connections
+invalidate their protected routes on a browser version change.
+
+Use `[MagicEncryptRecord(nameof(Id), nameof(PublicCategory))]` to make record
+protection mandatory for a model. The attribute uses CLR property names and
+resolves mappings. Configured allowlists use persisted names. If both are
+provided, they must agree. Include every primary key and native index in the
+allowlist. New members of annotated records are encrypted by default.
+
+`UnlockDetailedAsync` distinguishes unlocked, already unlocked, interaction
+required, cancelled, unavailable key, invalid key, uninitialized vault and
+policy mismatch. The application can refresh state with `GetStateAsync` after
+its own lifecycle events. There is no push notification API in this revision.
+
+### Lock and concurrency guarantees
+
+A lock cancels the provider request where possible and invalidates pending
+unlock attempts. Ordinary unlock and explicit initialization are distinct
+requests. The browser stops new protected operations and checks the session
+before committing a prepared write or advancing a protected stream.
+Already-committed writes and plaintext already returned to application code
+cannot be recalled. Cancellation of one caller does not cancel a still-shared
+unlock. On context invalidation the managed query path also drops queued
+results from the old context.
+
+The library wipes its temporary managed raw-key interop copy. The provider
+owns its original bytes and any opaque JS reference it returns. The library
+imports raw bytes into a non-extractable browser key, and releases its
+reference on lock. The app still owns copies it keeps, provider-issued
+references, application caches, cross-tab sign-out, and browser/OS memory.
+General query trace diagnostics should contain structural metadata. Runtime
+console messages omit row values and predicate argument objects.
+
+### Isolated hybrid LINQ follow-up
+
+1. Add planner metadata that classifies leaves and order keys by whether
+   they require decryption. For each OR branch, derive only necessary public
+   indexed conditions. A branch without a useful public condition needs a
+   scan. Candidate filters must never exclude a valid match.
+2. Acquire candidate primary keys or ciphertext in bounded cursor batches.
+   Deduplicate by the canonical IndexedDB key. Outside the native read
+   transaction, decrypt under one account and policy lease and evaluate the
+   original expression tree. Reject unsupported comparators explicitly.
+3. Apply projection, counts, ordering, stable primary-key tie breaks and
+   pagination after residual evaluation. Never apply a candidate-level
+   offset or limit that can change final results. Expose streaming where
+   semantic ordering permits it, and document the materialization required
+   for a full protected sort.
+4. Test parity against the unencrypted planner for compound indexed
+   conditions, AND/OR overlaps, null and missing properties, ordering ties,
+   counts, pagination, cancellation and locking during a stream. Benchmark
+   candidate reduction and the full-scan fallback separately. Keep the
+   unencrypted planner path untouched.

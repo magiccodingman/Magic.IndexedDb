@@ -3,7 +3,7 @@
 /// <reference types="./dexie/dexie.d.ts" />
 import Dexie from "./dexie/dexie.js";
 import { magicQueryAsync, magicQueryYield } from "./magicLinqToIndexedDb.js";
-import { createProtectedStorage, protectedDatabasePrefix } from "./utilities/protectedStorage.js";
+import { createProtectedStorage, ensureProtectedSchema, protectedDatabasePrefix } from "./utilities/protectedStorage.js";
 import { encryptionMetadataStore } from "./utilities/encryptionPolicy.js";
 import { debugLog } from "./utilities/utilityHelpers.js";
 /**
@@ -51,6 +51,10 @@ export function isProtectedDatabaseUnlocked(name) {
     return protectedDatabases.get(name)?.isUnlocked() ?? false;
 }
 
+export function getProtectedDatabaseState(name) {
+    return protectedDatabases.get(name)?.state() ?? "Inactive";
+}
+
 export function lockProtectedDatabase(name) {
     protectedDatabases.get(name)?.lock();
 }
@@ -62,6 +66,16 @@ export function releaseProtectedDatabase(name) {
     protectedDatabases.delete(name);
     databases.get(name).close();
     databases.delete(name);
+}
+
+export async function destroyProtectedDatabase(physicalName) {
+    if (!physicalName.startsWith(protectedDatabasePrefix)) {
+        throw new Error("A protected database name is required.");
+    }
+    for (const [name, db] of databases) {
+        if (db.name === physicalName && protectedDatabases.has(name)) releaseProtectedDatabase(name);
+    }
+    await Dexie.delete(physicalName);
 }
 
 export function patchPublicRecord(name, store, key, changes) {
@@ -228,15 +242,18 @@ export function createDb(dbStore) {
     const protection = encryption
         ? createProtectedStorage(db, encryption.account, dbStore.storeSchemas)
         : null;
-    if (protection) stores[encryptionMetadataStore] = "";
-    db.version(dbStore.version).stores(stores);
-    if (protection) protectedDatabases.set(dbName, protection);
+    if (protection) {
+        protectedDatabases.set(dbName, protection);
+        db.on("versionchange", () => releaseProtectedDatabase(dbName));
+    } else {
+        db.version(dbStore.version).stores(stores);
+    }
 
     // Store the database in the Map (overwriting if it already exists)
     databases.set(dbName, db);
 
     if (protection) {
-        return db.open().then(() => undefined, error => {
+        return ensureProtectedSchema(db.name, dbStore.storeSchemas).then(() => db.open()).then(() => undefined, error => {
             protectedDatabases.delete(dbName);
             databases.delete(dbName);
             protection.dispose();
@@ -260,6 +277,8 @@ export function createDatabases(dbStores) {
 
 
 export async function countTable(dbName, storeName) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) return protection.count();
     const table = await getTable(dbName, storeName);
     return await table.count();
 }

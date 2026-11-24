@@ -14,9 +14,10 @@
     [SupplyParameterFromQuery] public bool Reload { get; set; }
     [SupplyParameterFromQuery] public bool Navigated { get; set; }
     private string result = "Running";
-    private const int RowCount = 1000;
+    [SupplyParameterFromQuery] public int Rows { get; set; } = 1000;
+    [SupplyParameterFromQuery] public int Characters { get; set; } = 256;
     private const int PointCount = 25;
-    private static readonly string Payload = new('x', 256);
+
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -36,6 +37,9 @@
 
     private async Task<Dictionary<string, double>> RunAsync()
     {
+        if (Rows < 100 || Rows > 20000 || Rows % 10 != 0 || Characters < 1 || Characters > 8192)
+            throw new ArgumentOutOfRangeException(nameof(Rows), "Use 100-20,000 rows in multiples of 10 and 1-8,192 characters.");
+        var payload = new string('x', Characters);
         var timings = new Dictionary<string, double>();
         var start = Stopwatch.StartNew();
         var encrypted = Mode == "protected";
@@ -47,7 +51,7 @@
 
         if (Navigated)
         {
-            if ((await query.FirstOrDefaultAsync(row => row.Id == 1))?.Payload != Payload)
+            if ((await query.FirstOrDefaultAsync(row => row.Id == 1))?.Payload != payload)
                 throw new InvalidOperationException("SPA navigation lost the unlocked session.");
             timings["navigationPassed"] = 1;
             return timings;
@@ -63,11 +67,12 @@
             catch (MagicEncryptionLockedException)
             {
             }
-            var publicRows = await query.SelectPublicAsync(row => row.Id);
-            if (publicRows.Count != RowCount ||
-                !await Encryption.EnsureUnlockedAsync(database) ||
-                (await query.FirstOrDefaultAsync(row => row.Id == 1))?.Payload != Payload)
+            if (!await Encryption.EnsureUnlockedAsync(database) ||
+                (await query.FirstOrDefaultAsync(row => row.Id == 1))?.Payload != payload)
                 throw new InvalidOperationException("Reload verification failed.");
+            await Encryption.LockAsync(database);
+            if ((await query.SelectPublicAsync(row => row.Id)).Count != Rows)
+                throw new InvalidOperationException("Verified locked projection failed.");
 
             timings["reloadPassed"] = 1;
             return timings;
@@ -81,8 +86,8 @@
             timings["provisionMs"] = start.Elapsed.TotalMilliseconds;
         }
 
-        var rows = Enumerable.Range(1, RowCount).Select(id =>
-            new EncryptionBenchmarkRecord { Id = id, Group = id % 10, Payload = Payload }).ToArray();
+        var rows = Enumerable.Range(1, Rows).Select(id =>
+            new EncryptionBenchmarkRecord { Id = id, Group = id % 10, Payload = payload }).ToArray();
 
         start.Restart();
         foreach (var record in rows.Take(PointCount))
@@ -98,7 +103,7 @@
         foreach (int id in Enumerable.Range(1, PointCount))
         {
             var row = await query.FirstOrDefaultAsync(record => record.Id == id);
-            if (row?.Payload != Payload)
+            if (row?.Payload != payload)
                 throw new InvalidOperationException("Point read returned the wrong record.");
         }
         timings["pointReadMs"] = start.Elapsed.TotalMilliseconds;
@@ -106,13 +111,13 @@
         start.Restart();
         var indexed = await query.Where(record => record.Group == 0).ToListAsync();
         timings["indexReadMs"] = start.Elapsed.TotalMilliseconds;
-        if (indexed.Count != RowCount / 10 || indexed.Any(row => row.Payload != Payload))
+        if (indexed.Count != Rows / 10 || indexed.Any(row => row.Payload != payload))
             throw new InvalidOperationException("Indexed read returned invalid records.");
 
         start.Restart();
         var all = await query.ToListAsync();
         timings["scanMs"] = start.Elapsed.TotalMilliseconds;
-        if (all.Count != RowCount || all.Any(row => row.Payload != Payload))
+        if (all.Count != Rows || all.Any(row => row.Payload != payload))
             throw new InvalidOperationException("Full scan returned invalid records.");
 
         return timings;

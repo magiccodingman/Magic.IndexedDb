@@ -28,10 +28,11 @@ export async function sealRecord(record, policy, key, keyId, context) {
     }
 
     const publicMembers = selectMembers(record, name => !policy.fields.has(name));
-    const protectedMembers = await Promise.all(Array.from(policy.fields, async member => {
+    const protectedMembers = [];
+    for (const member of policy.fields) {
         const value = Object.hasOwn(record, member) ? [record[member]] : [];
-        return [member, await encryptValue(value, key, keyId, { ...context, member })];
-    }));
+        protectedMembers.push([member, await encryptValue(value, key, keyId, { ...context, member })]);
+    }
     return { ...publicMembers, ...Object.fromEntries(protectedMembers) };
 }
 

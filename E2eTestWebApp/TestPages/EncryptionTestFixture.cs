@@ -25,6 +25,18 @@ public sealed class EncryptionTestRecord : MagicTableTool<EncryptionTestRecord>,
     public List<IMagicCompoundIndex> GetCompoundIndexes() => [];
 }
 
+[MagicEncryptRecord(nameof(Id))]
+public sealed class EncryptionRequiredRecord : MagicTableTool<EncryptionRequiredRecord>, IMagicTable<EncryptionTestRepository>
+{
+    public string Id { get; set; } = "";
+    public string NewlyAdded { get; set; } = "";
+    public EncryptionTestRepository Databases { get; } = new();
+    public IndexedDbSet GetDefaultDatabase() => EncryptionTestRepository.Database;
+    public string GetTableName() => nameof(EncryptionRequiredRecord);
+    public IMagicCompoundKey GetKeys() => CreatePrimaryKey(record => record.Id, autoIncrement: false);
+    public List<IMagicCompoundIndex> GetCompoundIndexes() => [];
+}
+
 public sealed class FixtureEncryptionKeyProvider(IJSRuntime runtime) : IMagicEncryptionKeyProvider, IAsyncDisposable
 {
     private IJSObjectReference? _browserKey;

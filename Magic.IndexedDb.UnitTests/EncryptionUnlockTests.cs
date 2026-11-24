@@ -40,6 +40,28 @@ public sealed class EncryptionUnlockTests
         Assert.AreNotEqual(first.PhysicalName, other.PhysicalName);
     }
 
+    [TestMethod]
+    public async Task InitializationDoesNotShareOrdinaryUnlockResult()
+    {
+        var config = new EncryptionConfiguration(new("records", "account", "test-key"));
+        var provider = new DelayedProvider();
+        var browser = new RecordingBrowser { RequireInitialization = true };
+        var unlock = new EncryptionUnlock(config, provider);
+        var key = Enumerable.Repeat((byte)7, 32).ToArray();
+        Task<IJSObjectReference> Module() => Task.FromResult<IJSObjectReference>(browser);
+
+        var ordinary = unlock.UnlockAsync(Module, initialize: false, default);
+        await provider.Started.Task;
+        var initialize = unlock.UnlockAsync(Module, initialize: true, default);
+        provider.Key.SetResult(MagicEncryptionKey.FromBytes(key));
+
+        await Assert.ThrowsAsync<JSException>(() => ordinary);
+        Assert.IsTrue(await initialize);
+        Assert.AreEqual(2, provider.Requests);
+        Assert.IsTrue(key.All(value => value == 7), "The provider retains ownership of its original key.");
+        Assert.IsTrue(browser.LastInteropKey!.All(value => value == 0), "Magic wipes its completed interop copy.");
+    }
+
     private sealed class DelayedProvider : IMagicEncryptionKeyProvider
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -57,10 +79,20 @@ public sealed class EncryptionUnlockTests
     private sealed class RecordingBrowser : IJSObjectReference
     {
         public List<string> Invocations { get; } = [];
+        public bool RequireInitialization { get; init; }
+        public byte[]? LastInteropKey { get; private set; }
         public ValueTask<T> InvokeAsync<T>(string identifier, object?[]? args) => InvokeAsync<T>(identifier, default, args);
         public ValueTask<T> InvokeAsync<T>(string identifier, CancellationToken cancellationToken, object?[]? args)
         {
-            Invocations.Add((string)args![2]!);
+            string method = (string)args![2]!;
+            Invocations.Add(method);
+            if (method == "unlockProtectedDatabase")
+            {
+                var parameters = (object?[])args[3]!;
+                LastInteropKey = (byte[])parameters[2]!;
+                if (RequireInitialization && parameters[3] is false)
+                    return ValueTask.FromException<T>(new JSException("MAGIC_ENCRYPTION_UNINITIALIZED: Missing policy."));
+            }
             return ValueTask.FromResult((T)(object)!(Invocations[^1] == "isProtectedDatabaseUnlocked"));
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

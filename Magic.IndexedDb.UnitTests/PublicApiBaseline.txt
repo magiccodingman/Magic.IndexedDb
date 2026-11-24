@@ -115,6 +115,10 @@ interface Magic.IndexedDb.IMagicCursorStage<T> : Magic.IndexedDb.IMagicExecute<T
   method Magic.IndexedDb.IMagicCursorSkip<T> Skip(System.Int32 amount)
   method System.Threading.Tasks.Task<T> FirstOrDefaultAsync()
   method System.Threading.Tasks.Task<T> LastOrDefaultAsync()
+interface Magic.IndexedDb.IMagicEncryptionContexts
+  method System.Threading.Tasks.Task DeactivateAsync()
+  method System.Threading.Tasks.Task DestroyAsync(Magic.IndexedDb.IndexedDbSet database)
+  method System.Threading.Tasks.Task<Magic.IndexedDb.MagicEncryptionContext> ActivateAsync(System.Collections.Generic.IEnumerable<Magic.IndexedDb.MagicEncryptionOptions> databases)
 interface Magic.IndexedDb.IMagicEncryptionKeyProvider
   method System.Threading.Tasks.ValueTask<Magic.IndexedDb.MagicEncryptionKey> GetKeyAsync(Magic.IndexedDb.MagicEncryptionKeyRequest request, System.Threading.CancellationToken cancellationToken)
 interface Magic.IndexedDb.IMagicExecute<T>
@@ -129,6 +133,9 @@ interface Magic.IndexedDb.IMagicIndexedDbEncryption
   method System.Threading.Tasks.Task LockAsync(Magic.IndexedDb.IndexedDbSet database)
   method System.Threading.Tasks.Task<System.Boolean> EnsureUnlockedAsync(Magic.IndexedDb.IndexedDbSet database, System.Threading.CancellationToken cancellationToken = null)
   method System.Threading.Tasks.Task<System.Boolean> InitializeAsync(Magic.IndexedDb.IndexedDbSet database, System.Threading.CancellationToken cancellationToken = null)
+interface Magic.IndexedDb.IMagicIndexedDbEncryptionLifecycle : Magic.IndexedDb.IMagicIndexedDbEncryption
+  method System.Threading.Tasks.Task<Magic.IndexedDb.MagicEncryptionState> GetStateAsync(Magic.IndexedDb.IndexedDbSet database, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<Magic.IndexedDb.MagicUnlockResult> UnlockDetailedAsync(Magic.IndexedDb.IndexedDbSet database, System.Boolean initialize = false, System.Threading.CancellationToken cancellationToken = null)
 interface Magic.IndexedDb.IMagicQuery<T> : Magic.IndexedDb.IMagicExecute<T>
   method Magic.IndexedDb.IMagicCursor<T> Cursor(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
   method Magic.IndexedDb.IMagicQueryFinal<T> Skip(System.Int32 amount)
@@ -217,6 +224,18 @@ enum Magic.IndexedDb.LinqTranslation.Models.FilterNodeType : System.IComparable,
 static class Magic.IndexedDb.MagicEncryptedQueryExtensions
   method static System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TValue>> SelectPublicAsync<T, TValue>(Magic.IndexedDb.IMagicExecute<T> source, System.Linq.Expressions.Expression<System.Func<T, TValue>> member, System.Threading.CancellationToken cancellationToken = null)
   method static System.Threading.Tasks.Task<System.Int32> PatchPublicAsync<T, TValue>(Magic.IndexedDb.IMagicQuery<T> source, T recordWithKey, System.Linq.Expressions.Expression<System.Func<T, TValue>> member, System.Threading.CancellationToken cancellationToken = null)
+class Magic.IndexedDb.MagicEncryptionContext : System.IEquatable<Magic.IndexedDb.MagicEncryptionContext>
+  ctor Magic.IndexedDb.MagicEncryptionContext(Magic.IndexedDb.IMagicIndexedDb Database, Magic.IndexedDb.IMagicIndexedDbEncryptionLifecycle Encryption)
+  method Magic.IndexedDb.MagicEncryptionContext <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.MagicEncryptionContext other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(out Magic.IndexedDb.IMagicIndexedDb Database, out Magic.IndexedDb.IMagicIndexedDbEncryptionLifecycle Encryption)
+  property Magic.IndexedDb.IMagicIndexedDb Database { get; set; }
+  property Magic.IndexedDb.IMagicIndexedDbEncryptionLifecycle Encryption { get; set; }
+class Magic.IndexedDb.MagicEncryptionInteractionRequiredException : System.InvalidOperationException, System.Runtime.Serialization.ISerializable
+  ctor Magic.IndexedDb.MagicEncryptionInteractionRequiredException()
 class Magic.IndexedDb.MagicEncryptionKey
   method static Magic.IndexedDb.MagicEncryptionKey FromBrowserKey(Microsoft.JSInterop.IJSObjectReference key)
   method static Magic.IndexedDb.MagicEncryptionKey FromBytes(System.Byte[] key)
@@ -244,11 +263,28 @@ class Magic.IndexedDb.MagicEncryptionOptions : System.IEquatable<Magic.IndexedDb
   property System.String AccountScope { get; set; }
   property System.String DatabaseName { get; set; }
   property System.String KeyId { get; set; }
+enum Magic.IndexedDb.MagicEncryptionState : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int32 value__
+  field static Magic.IndexedDb.MagicEncryptionState Inactive = 4
+  field static Magic.IndexedDb.MagicEncryptionState Locked = 1
+  field static Magic.IndexedDb.MagicEncryptionState PolicyMismatch = 3
+  field static Magic.IndexedDb.MagicEncryptionState Uninitialized = 0
+  field static Magic.IndexedDb.MagicEncryptionState Unlocked = 2
 class Magic.IndexedDb.MagicTableTool<T>
   ctor Magic.IndexedDb.MagicTableTool<T>()
 class Magic.IndexedDb.MagicUniqueIndexAttribute : Magic.IndexedDb.Interfaces.IColumnNamed, System.Attribute
   ctor Magic.IndexedDb.MagicUniqueIndexAttribute(System.String columnName = null)
   property System.String ColumnName { get; }
+enum Magic.IndexedDb.MagicUnlockResult : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int32 value__
+  field static Magic.IndexedDb.MagicUnlockResult AlreadyUnlocked = 1
+  field static Magic.IndexedDb.MagicUnlockResult Cancelled = 3
+  field static Magic.IndexedDb.MagicUnlockResult InteractionRequired = 2
+  field static Magic.IndexedDb.MagicUnlockResult InvalidKey = 5
+  field static Magic.IndexedDb.MagicUnlockResult KeyUnavailable = 4
+  field static Magic.IndexedDb.MagicUnlockResult PolicyMismatch = 7
+  field static Magic.IndexedDb.MagicUnlockResult Uninitialized = 6
+  field static Magic.IndexedDb.MagicUnlockResult Unlocked = 0
 class Magic.IndexedDb.Models.IndexFilterValue
   ctor Magic.IndexedDb.Models.IndexFilterValue(System.String indexName, System.Object filterValue)
   property System.Object FilterValue { get; set; }
@@ -314,6 +350,9 @@ class Magic.IndexedDb.SchemaAnnotations.MagicConstructorAttribute : System.Attri
   ctor Magic.IndexedDb.SchemaAnnotations.MagicConstructorAttribute()
 class Magic.IndexedDb.SchemaAnnotations.MagicEncryptAttribute : System.Attribute
   ctor Magic.IndexedDb.SchemaAnnotations.MagicEncryptAttribute()
+class Magic.IndexedDb.SchemaAnnotations.MagicEncryptRecordAttribute : System.Attribute
+  ctor Magic.IndexedDb.SchemaAnnotations.MagicEncryptRecordAttribute(System.String[] exposedProperties)
+  property System.Collections.Generic.IReadOnlyList<System.String> ExposedProperties { get; }
 class Magic.IndexedDb.SchemaAnnotations.MagicIndexAttribute : Magic.IndexedDb.Interfaces.IColumnNamed, System.Attribute
   ctor Magic.IndexedDb.SchemaAnnotations.MagicIndexAttribute(System.String columnName = null)
   property System.String ColumnName { get; }
@@ -327,6 +366,7 @@ static class Magic.IndexedDb.ServiceCollectionExtensions
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Magic.IndexedDb.BlazorInteropMode interoptMode, System.Boolean isDebug, System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<System.Type> repositoryTypes)
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Int64 jsMessageSizeBytes, System.Boolean isDebug)
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Int64 jsMessageSizeBytes, System.Boolean isDebug, System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<System.Type> repositoryTypes)
+  method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicIndexedDbEncryption<TProvider>(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicIndexedDbEncryption<TProvider>(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Func<System.IServiceProvider, System.Collections.Generic.IEnumerable<Magic.IndexedDb.MagicEncryptionOptions>> configure)
 class Magic.IndexedDb.StoreRecord<T>
   ctor Magic.IndexedDb.StoreRecord<T>()

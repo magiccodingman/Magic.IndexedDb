@@ -8,9 +8,11 @@ export function setDebugMode(enabled) {
     debugMode = enabled === true;
 }
 
-export function debugLog(...args) {
-    if (debugMode) {
-        console.log("[DEBUG]", ...args);
+export function debugLog(message) {
+    // Detailed planner diagnostics use the structured trace. Runtime records and
+    // predicate operands must not be copied to the browser console.
+    if (debugMode && typeof message === "string") {
+        console.log("[DEBUG]", message);
     }
 }
 

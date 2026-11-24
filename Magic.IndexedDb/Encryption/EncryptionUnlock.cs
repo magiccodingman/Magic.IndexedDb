@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.JSInterop;
 
 namespace Magic.IndexedDb;
@@ -9,14 +10,20 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
     private Task _lockOperation = Task.CompletedTask;
     private Attempt? _attempt;
     private bool _disposed;
+    private long _epoch;
 
     private sealed class Attempt
     {
+        public bool Initialize { get; init; }
         public CancellationTokenSource Cancellation { get; } = new();
-        public TaskCompletionSource<bool> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<MagicUnlockResult> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    public Task<bool> UnlockAsync(Func<Task<IJSObjectReference>> getModule, bool initialize, CancellationToken cancellationToken)
+    public async Task<bool> UnlockAsync(Func<Task<IJSObjectReference>> getModule, bool initialize, CancellationToken cancellationToken) =>
+        await UnlockCoreAsync(getModule, initialize, cancellationToken) is MagicUnlockResult.Unlocked or MagicUnlockResult.AlreadyUnlocked;
+
+    public Task<MagicUnlockResult> UnlockCoreAsync(Func<Task<IJSObjectReference>> getModule, bool initialize,
+        CancellationToken cancellationToken, long? epoch = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Attempt attempt;
@@ -24,14 +31,32 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (epoch.HasValue && epoch.Value != _epoch)
+                return Task.FromCanceled<MagicUnlockResult>(new CancellationToken(canceled: true));
             if (_attempt is not null && !_attempt.Result.Task.IsCompleted)
-                return _attempt.Result.Task.WaitAsync(cancellationToken);
+                return _attempt.Initialize == initialize
+                    ? _attempt.Result.Task.WaitAsync(cancellationToken)
+                    : WaitForDifferentAttemptAsync(_attempt.Result.Task, getModule, initialize, cancellationToken, _epoch);
 
-            _attempt = attempt = new();
+            _attempt = attempt = new() { Initialize = initialize };
             previousLock = _lockOperation;
         }
         _ = RunUnlockAsync(getModule, initialize, attempt, previousLock);
         return attempt.Result.Task.WaitAsync(cancellationToken);
+    }
+
+    private async Task<MagicUnlockResult> WaitForDifferentAttemptAsync(Task<MagicUnlockResult> previous,
+        Func<Task<IJSObjectReference>> getModule, bool initialize, CancellationToken cancellationToken, long epoch)
+    {
+        try
+        {
+            await previous.WaitAsync(cancellationToken);
+        }
+        catch (JSException error) when (initialize && error.Message.Contains("MAGIC_ENCRYPTION_UNINITIALIZED:", StringComparison.Ordinal))
+        {
+            // A pending ordinary unlock cannot provision the vault on behalf of this explicit request.
+        }
+        return await UnlockCoreAsync(getModule, initialize, cancellationToken, epoch);
     }
 
     private async Task RunUnlockAsync(Func<Task<IJSObjectReference>> getModule, bool initialize, Attempt attempt, Task previousLock)
@@ -45,7 +70,7 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
             if (await InvokeAsync<bool>(module, "isProtectedDatabaseUnlocked", false, configuration.Route))
             {
                 token.ThrowIfCancellationRequested();
-                attempt.Result.TrySetResult(true);
+                attempt.Result.TrySetResult(MagicUnlockResult.AlreadyUnlocked);
                 return;
             }
 
@@ -55,11 +80,21 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
             {
                 token.ThrowIfCancellationRequested();
                 if (key is not null)
-                    await InvokeAsync<bool>(module, "unlockProtectedDatabase", true,
-                        configuration.Route, configuration.Request.KeyId, key.Material, initialize);
+                {
+                    var temporary = (key.Material as byte[])?.ToArray();
+                    try
+                    {
+                        await InvokeAsync<bool>(module, "unlockProtectedDatabase", true,
+                            configuration.Route, configuration.Request.KeyId, temporary ?? key.Material, initialize);
+                    }
+                    finally
+                    {
+                        if (temporary is not null) CryptographicOperations.ZeroMemory(temporary);
+                    }
+                }
 
                 token.ThrowIfCancellationRequested();
-                attempt.Result.TrySetResult(key is not null);
+                attempt.Result.TrySetResult(key is null ? MagicUnlockResult.KeyUnavailable : MagicUnlockResult.Unlocked);
             }
             finally
             {
@@ -92,6 +127,7 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
                 return _lockOperation;
 
             _disposed = dispose;
+            _epoch++;
             var previous = _attempt;
             _attempt = null;
             previous?.Result.TrySetCanceled();

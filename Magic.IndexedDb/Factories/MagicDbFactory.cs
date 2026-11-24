@@ -7,7 +7,7 @@ using Magic.IndexedDb.LinqTranslation.Interfaces;
 
 namespace Magic.IndexedDb.Factories;
 
-internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsyncDisposable
+internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecycle, IAsyncDisposable
 {        
     // null value indicates that the factory is disposed
     Lazy<Task<IJSObjectReference>>? _jsModule;
@@ -16,14 +16,27 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
     private readonly Dictionary<string, EncryptionConfiguration> _encryption;
     private readonly Dictionary<string, EncryptionUnlock> _unlocks;
     private IReadOnlyDictionary<string, Type>? _encryptedSchemaTypes;
+    private readonly IJSRuntime _runtime;
+    private readonly bool _isDebug;
+    private readonly Type[]? _tableTypes;
+    private readonly Type[]? _repositoryTypes;
+    private readonly IMagicEncryptionKeyProvider? _keyProvider;
+    private readonly bool _protectedOnly;
+    private readonly CancellationTokenSource _lifetime = new();
     public long JsMessageSizeBytes => _jsMessageSizeBytes;
 
     public MagicDbFactory(
         IJSRuntime jSRuntime, long jsMessageSizeBytes, bool isDebug,
         Type[]? tableTypes = null, Type[]? repositoryTypes = null,
-        Dictionary<string, EncryptionConfiguration>? encryption = null, IMagicEncryptionKeyProvider? keyProvider = null)
+        Dictionary<string, EncryptionConfiguration>? encryption = null, IMagicEncryptionKeyProvider? keyProvider = null, bool protectedOnly = false)
     {
         _jsMessageSizeBytes = jsMessageSizeBytes;
+        _runtime = jSRuntime;
+        _isDebug = isDebug;
+        _tableTypes = tableTypes;
+        _repositoryTypes = repositoryTypes;
+        _keyProvider = keyProvider;
+        _protectedOnly = protectedOnly;
         _encryption = encryption ?? new(StringComparer.Ordinal);
         _unlocks = _encryption.ToDictionary(pair => pair.Key,
             pair => new EncryptionUnlock(pair.Value, keyProvider!), StringComparer.Ordinal);
@@ -36,18 +49,20 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
             },
             isThreadSafe: true);
 
+        var moduleLoader = this._jsModule;
         this._magicJsManager = new(async () =>
             {
-                var jsModule = await this._jsModule.Value;
+                var jsModule = await moduleLoader.Value;
+                _lifetime.Token.ThrowIfCancellationRequested();
 
                 var types = tableTypes ?? SchemaHelper.GetAllMagicTables()!.ToArray();
                 var schemas = types.Select(type => (Type: type, Schema: SchemaHelper.GetStoreSchema(type))).ToArray();
                 if (_encryption.Count > 0)
                     _encryptedSchemaTypes = schemas.ToDictionary(entry => entry.Schema.TableName, entry => entry.Type, StringComparer.Ordinal);
-                var plainSchemas = schemas.Where(entry => EncryptionConfiguration.ProtectedFields(entry.Type).Length == 0)
+                var plainSchemas = schemas.Where(entry => !EncryptionConfiguration.RequiresProtection(entry.Type))
                     .Select(entry => entry.Schema).ToList();
                 var manager = new IndexedDbManager(jsModule, _jsMessageSizeBytes,
-                    _encryption.ToDictionary(pair => pair.Key, pair => pair.Value.Route, StringComparer.Ordinal));
+                    _encryption.ToDictionary(pair => pair.Key, pair => pair.Value.Route, StringComparer.Ordinal), _lifetime.Token);
 
                 var dbSets = repositoryTypes is null
                     ? SchemaHelper.GetAllIndexedDbSets()
@@ -58,6 +73,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
 
                 foreach (var name in names)
                 {
+                    _lifetime.Token.ThrowIfCancellationRequested();
                     if (_encryption.TryGetValue(name, out var configuration))
                     {
                         await EncryptionUnlock.InvokeAsync<bool>(jsModule, IndexedDbFunctions.CREATE_LEGACY, true,
@@ -65,6 +81,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
                         continue;
                     }
 
+                    if (_protectedOnly) continue;
                     await new MagicJsInvoke(jsModule, _jsMessageSizeBytes).CallJsAsync(Cache.MagicDbJsImportPath,
                         IndexedDbFunctions.CREATE_LEGACY, default,
                         new TypedArgument<DbStore>(new DbStore()
@@ -79,10 +96,31 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
             isThreadSafe: true);
     }
 
+    internal MagicDbFactory CreateProtectedContext(Dictionary<string, EncryptionConfiguration> configurations) =>
+        new(_runtime, _jsMessageSizeBytes, _isDebug, _tableTypes, _repositoryTypes,
+            configurations, _keyProvider, protectedOnly: true);
+
+    internal async Task DestroyProtectedDatabaseAsync(IndexedDbSet database)
+    {
+        var unlock = GetUnlock(database);
+        var configuration = _encryption[database.DatabaseName];
+        var js = _jsModule;
+        ObjectDisposedException.ThrowIf(js is null, this);
+        _lifetime.Cancel();
+        await unlock.LockAsync(() => js.Value, dispose: true);
+        if (_magicJsManager.IsValueCreated)
+        {
+            try { await _magicJsManager.Value; }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        }
+        await EncryptionUnlock.InvokeAsync<bool>(await js.Value, "destroyProtectedDatabase", true, configuration.PhysicalName);
+    }
+
     public async ValueTask DisposeAsync()
     {
         var js = _jsModule;
         _jsModule = null;
+        _lifetime.Cancel();
 
         if (js is null || !js.IsValueCreated)
             return;
@@ -111,7 +149,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
                     return module;
                 }, dispose: true).WaitAsync(timeout.Token);
 
-            if (_unlocks.Count == 0)
+            if (_unlocks.Count == 0 && !_protectedOnly)
                 await module.InvokeVoidAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token);
         }
         catch
@@ -196,7 +234,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
     {
         ObjectDisposedException.ThrowIf(this._jsModule is null, this);
 
-        if (!_encryption.ContainsKey(databaseNameOverride) && EncryptionConfiguration.ProtectedFields(typeof(T)).Length > 0)
+        if (!_encryption.ContainsKey(databaseNameOverride) && (_protectedOnly || EncryptionConfiguration.RequiresProtection(typeof(T))))
             throw new InvalidOperationException("The model has protected members and requires a Magic encryption policy.");
 
         var dbManager = await this._magicJsManager.Value;
@@ -224,6 +262,49 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
         }, initialize, cancellationToken);
     }
 
+    public async Task<MagicEncryptionState> GetStateAsync(IndexedDbSet database, CancellationToken cancellationToken = default)
+    {
+        var js = _jsModule;
+        if (js is null || !_encryption.TryGetValue(database.DatabaseName, out var configuration))
+            return MagicEncryptionState.Inactive;
+
+        var module = await js.Value.WaitAsync(cancellationToken);
+        await _magicJsManager.Value.WaitAsync(cancellationToken);
+        var state = await EncryptionUnlock.InvokeAsync<string>(
+            module, "getProtectedDatabaseState", false, configuration.Route).AsTask().WaitAsync(cancellationToken);
+        return Enum.Parse<MagicEncryptionState>(state);
+    }
+
+    public async Task<MagicUnlockResult> UnlockDetailedAsync(IndexedDbSet database, bool initialize = false,
+        CancellationToken cancellationToken = default)
+    {
+        var js = _jsModule;
+        ObjectDisposedException.ThrowIf(js is null, this);
+        try
+        {
+            return await GetUnlock(database).UnlockCoreAsync(async () =>
+            {
+                var module = await js.Value;
+                await _magicJsManager.Value;
+                return module;
+            }, initialize, cancellationToken);
+        }
+        catch (MagicEncryptionInteractionRequiredException) { return MagicUnlockResult.InteractionRequired; }
+        catch (OperationCanceledException) { return MagicUnlockResult.Cancelled; }
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_UNINITIALIZED:", StringComparison.Ordinal))
+        {
+            return MagicUnlockResult.Uninitialized;
+        }
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_INVALID_KEY:", StringComparison.Ordinal))
+        {
+            return MagicUnlockResult.InvalidKey;
+        }
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_POLICY_MISMATCH:", StringComparison.Ordinal))
+        {
+            return MagicUnlockResult.PolicyMismatch;
+        }
+    }
+
     public Task LockAsync(IndexedDbSet database)
     {
         var js = _jsModule;
@@ -243,6 +324,8 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryption, IAsy
     {
         ObjectDisposedException.ThrowIf(this._jsModule is null, this);
 
+        if (_protectedOnly && !_encryption.ContainsKey(indexedDbSet.DatabaseName))
+            throw new InvalidOperationException("The database is outside this protected context.");
         var dbManager = await this._magicJsManager.Value;
         return dbManager.Database(dbManager, indexedDbSet);
     }
