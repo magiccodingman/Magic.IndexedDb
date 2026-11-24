@@ -276,3 +276,35 @@ console messages omit row values and predicate argument objects.
    counts, pagination, cancellation and locking during a stream. Benchmark
    candidate reduction and the full-scan fallback separately. Keep the
    unencrypted planner path untouched.
+
+### Larger published WASM and AOT measurements
+
+Desktop Chromium 151 on Linux and a Ryzen 9 7950X3D. The same workload
+uses 3,000 rows and a 2,048-character value. Bulk encryption schedules up to 32
+records at a time, then persists the prepared batch in one transaction.
+The runner alternates fresh contexts, excludes one warm-up pair, and
+checks navigation, reload and a separate tab. Interpreted WASM used five
+measured pairs and AOT used three. Medians are in milliseconds.
+
+| Operation | Interpreted plain | Interpreted protected | AOT plain | AOT protected |
+| --- | ---: | ---: | ---: | ---: |
+| 25 sequential writes | 71.9 | 81.0 | 40.2 | 45.5 |
+| 3,000-row batch write | 564.9 | 666.0 | 381.2 | 504.1 |
+| 25 sequential point reads | 135.9 | 141.5 | 64.0 | 69.4 |
+| Indexed read of 300 rows | 121.2 | 117.5 | 50.0 | 51.8 |
+| Full read of 3,000 rows | 745.6 | 720.4 | 344.3 | 352.7 |
+
+Use `dotnet publish TestWasm -c Release -p:RunAOTCompilation=true` for
+the AOT application, then pass `chromium 4 3000 2048` after the published
+`wwwroot` argument to the benchmark runner. The AOT run used the hardening
+build before the final context-revocation follow-up, which does not change the
+workload's CRUD route. The benchmark's first AOT attempt discovered two test
+models named `Person`. The sample now registers its intended tables explicitly.
+These end-to-end runs include browser transport, C# serialization and storage
+rather than isolating cryptographic cost. Lower protected interpreted read
+medians are observations from these runs.
+
+Local verification passed 69 .NET unit and contract tests and 156 browser
+tests per browser engine on Chromium, Firefox, and Linux WebKit. Focused
+security cases live in `OpenTestEncryption.cs`; cancellation and key ownership
+unit cases live in `EncryptionUnlockTests.cs`.
