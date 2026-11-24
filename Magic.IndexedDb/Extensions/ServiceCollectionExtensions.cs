@@ -1,4 +1,5 @@
 ﻿using Magic.IndexedDb.Factories;
+using Magic.IndexedDb.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 
@@ -27,15 +28,78 @@ public static class ServiceCollectionExtensions
         return services.AddMagicBlazorDB((long)interoptMode, isDebug);
     }
 
-    public static IServiceCollection AddMagicBlazorDB(this IServiceCollection services, 
-        long jsMessageSizeBytes, bool isDebug)
+    public static IServiceCollection AddMagicBlazorDB(this IServiceCollection services,
+        long jsMessageSizeBytes, bool isDebug) =>
+        Register(services, jsMessageSizeBytes, isDebug);
+
+    /// <summary>Registers Magic using only the supplied table and repository types for schema discovery.</summary>
+    public static IServiceCollection AddMagicBlazorDB(this IServiceCollection services,
+        BlazorInteropMode interoptMode, bool isDebug, IEnumerable<Type> tableTypes, IEnumerable<Type> repositoryTypes) =>
+        services.AddMagicBlazorDB((long)interoptMode, isDebug, tableTypes, repositoryTypes);
+
+    /// <summary>Registers Magic using only the supplied table and repository types for schema discovery.</summary>
+    public static IServiceCollection AddMagicBlazorDB(this IServiceCollection services,
+        long jsMessageSizeBytes, bool isDebug, IEnumerable<Type> tableTypes, IEnumerable<Type> repositoryTypes)
+    {
+        var tables = ValidateSchemaTypes(tableTypes, nameof(tableTypes),
+            type => SchemaHelper.ImplementsIMagicTable(type) && type.GetConstructor(Type.EmptyTypes) is not null,
+            "an IMagicTable<> implementation with a public parameterless constructor");
+        var repositories = ValidateSchemaTypes(repositoryTypes, nameof(repositoryTypes),
+            SchemaHelper.ImplementsIMagicRepository, "an IMagicRepository implementation");
+
+        foreach (var repository in repositories)
+        {
+            var canCreateInstance = repository.GetConstructor(Type.EmptyTypes) is not null;
+            if (!SchemaHelper.GetIndexedDbSetFields(repository).Any(field => field.IsStatic || canCreateInstance))
+            {
+                throw new ArgumentException(
+                    $"Repository '{repository}' must declare an IndexedDbSet field. Instance fields require a public parameterless constructor.",
+                    nameof(repositoryTypes));
+            }
+        }
+
+        return Register(services, jsMessageSizeBytes, isDebug, tables, repositories);
+    }
+
+    private static Type[] ValidateSchemaTypes(IEnumerable<Type> types, string parameterName,
+        Func<Type, bool> isValidType, string expectedType)
+    {
+        ArgumentNullException.ThrowIfNull(types, parameterName);
+
+        var snapshot = types.ToArray();
+        if (snapshot.Length == 0)
+        {
+            throw new ArgumentException("Register at least one type.", parameterName);
+        }
+
+        var seen = new HashSet<Type>();
+        foreach (var type in snapshot)
+        {
+            if (type is null || !type.IsClass || type.IsAbstract || type.ContainsGenericParameters || !isValidType(type))
+            {
+                throw new ArgumentException(
+                    $"'{type?.ToString() ?? "null"}' must be a concrete, closed class that is {expectedType}.",
+                    parameterName);
+            }
+
+            if (!seen.Add(type))
+            {
+                throw new ArgumentException($"Type '{type}' was registered more than once.", parameterName);
+            }
+        }
+
+        return snapshot;
+    }
+
+    private static IServiceCollection Register(IServiceCollection services, long jsMessageSizeBytes, bool isDebug,
+        Type[]? tableTypes = null, Type[]? repositoryTypes = null)
     {
         services.AddScoped<IMagicIndexedDb>(sp =>
-            new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes, isDebug));
+            new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes, isDebug, tableTypes, repositoryTypes));
 
         if (isDebug)
         {
-            Magic.IndexedDb.Helpers.MagicValidator.ValidateTables();
+            MagicValidator.ValidateTables(tableTypes?.ToList());
         }
 
         return services;
