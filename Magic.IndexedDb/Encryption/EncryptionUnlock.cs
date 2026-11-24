@@ -123,7 +123,7 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
     {
         lock (_sync)
         {
-            if (_disposed)
+            if (_disposed && (!dispose || !_lockOperation.IsFaulted))
                 return _lockOperation;
 
             _disposed = dispose;
@@ -147,7 +147,7 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
         {
             await previousLock;
         }
-        catch (JSException)
+        catch (Exception error) when (error is JSException or OperationCanceledException)
         {
             // Retry if a previous browser invocation failed.
         }

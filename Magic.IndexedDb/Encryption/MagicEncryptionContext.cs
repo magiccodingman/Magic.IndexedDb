@@ -81,8 +81,8 @@ internal sealed class MagicEncryptionContexts(MagicDbFactory factory) : IMagicEn
     private async Task DeactivateCoreAsync()
     {
         var previous = _active;
-        _active = null;
         if (previous is not null)
-            await previous.DisposeAsync();
+            await previous.DeactivateProtectedContextAsync();
+        _active = null;
     }
 }

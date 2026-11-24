@@ -105,7 +105,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         var unlock = GetUnlock(database);
         var configuration = _encryption[database.DatabaseName];
         var js = _jsModule;
-        ObjectDisposedException.ThrowIf(js is null, this);
+        ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
         _lifetime.Cancel();
         await unlock.LockAsync(() => js.Value, dispose: true);
         if (_magicJsManager.IsValueCreated)
@@ -116,21 +116,29 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         await EncryptionUnlock.InvokeAsync<bool>(await js.Value, "destroyProtectedDatabase", true, configuration.PhysicalName);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync() => DisposeCoreAsync(requireBrowserRelease: false);
+
+    internal ValueTask DeactivateProtectedContextAsync() => DisposeCoreAsync(requireBrowserRelease: true);
+
+    private async ValueTask DisposeCoreAsync(bool requireBrowserRelease)
     {
         var js = _jsModule;
-        _jsModule = null;
         _lifetime.Cancel();
+        if (!requireBrowserRelease)
+            _jsModule = null;
 
         if (js is null || !js.IsValueCreated)
+        {
+            _jsModule = null;
             return;
+        }
 
         IJSObjectReference module;
         try
         {
             module = await js.Value;
         }
-        catch
+        catch when (!requireBrowserRelease)
         {
             return;
         }
@@ -138,25 +146,26 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            foreach (var unlock in _unlocks.Values)
-                await unlock.LockAsync(async () =>
+            var releases = _unlocks.Values.Select(unlock => unlock.LockAsync(async () =>
+            {
+                if (_magicJsManager.IsValueCreated)
                 {
-                    if (_magicJsManager.IsValueCreated)
-                    {
-                        try { await _magicJsManager.Value; }
-                        catch { /* Release any routes that were created before the failure. */ }
-                    }
-                    return module;
-                }, dispose: true).WaitAsync(timeout.Token);
+                    try { await _magicJsManager.Value; }
+                    catch { /* Release any routes that were created before the failure. */ }
+                }
+                return module;
+            }, dispose: true));
+            await Task.WhenAll(releases).WaitAsync(timeout.Token);
 
             if (_unlocks.Count == 0 && !_protectedOnly)
                 await module.InvokeVoidAsync(IndexedDbFunctions.CLOSE_ALL, timeout.Token);
         }
-        catch
+        catch when (!requireBrowserRelease)
         {
-            // do nothing
+            // Disposal from the DI container may run after a browser disconnect.
         }
 
+        _jsModule = null;
         try
         {
             await module.DisposeAsync();
@@ -172,7 +181,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     /// </summary>
     public async Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(this._jsModule is null, this);
+        ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
 
         var jsModule = await this._jsModule.Value;
         var magicUtility = new MagicUtilities(jsModule, _jsMessageSizeBytes);
@@ -182,7 +191,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     public async ValueTask<IMagicQuery<T>> Query<T>(IndexedDbSet indexedDbSet)
         where T : class, IMagicTableBase, new()
     {
-        ObjectDisposedException.ThrowIf(this._jsModule is null, this);
+        ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
 
         // Get database name and schema name
         string databaseName = indexedDbSet.DatabaseName;
@@ -196,7 +205,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         Func<T, IndexedDbSet> dbSetSelector)
         where T : class, IMagicTableBase, new()
     {
-        ObjectDisposedException.ThrowIf(this._jsModule is null, this);
+        ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
 
         // Create an instance of T to access `DbSets`
         var modelInstance = new T();
@@ -219,7 +228,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     public async ValueTask<IMagicQuery<T>> Query<T>() 
         where T : class, IMagicTableBase, new()
     {
-        ObjectDisposedException.ThrowIf(this._jsModule is null, this);
+        ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
 
         string databaseName = SchemaHelper.GetDefaultDatabaseName<T>();
         string schemaName = SchemaHelper.GetTableName<T>();
@@ -232,7 +241,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     public async ValueTask<IMagicQuery<T>> QueryOverride<T>(string databaseNameOverride, string schemaNameOverride) 
         where T: class, IMagicTableBase, new ()
     {
-        ObjectDisposedException.ThrowIf(this._jsModule is null, this);
+        ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
 
         if (!_encryption.ContainsKey(databaseNameOverride) && (_protectedOnly || EncryptionConfiguration.RequiresProtection(typeof(T))))
             throw new InvalidOperationException("The model has protected members and requires a Magic encryption policy.");
@@ -253,7 +262,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     private Task<bool> UnlockAsync(IndexedDbSet database, bool initialize, CancellationToken cancellationToken)
     {
         var js = _jsModule;
-        ObjectDisposedException.ThrowIf(js is null, this);
+        ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
         return GetUnlock(database).UnlockAsync(async () =>
         {
             var module = await js.Value;
@@ -265,7 +274,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     public async Task<MagicEncryptionState> GetStateAsync(IndexedDbSet database, CancellationToken cancellationToken = default)
     {
         var js = _jsModule;
-        if (js is null || !_encryption.TryGetValue(database.DatabaseName, out var configuration))
+        if (js is null || _lifetime.IsCancellationRequested || !_encryption.TryGetValue(database.DatabaseName, out var configuration))
             return MagicEncryptionState.Inactive;
 
         var module = await js.Value.WaitAsync(cancellationToken);
@@ -279,7 +288,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         CancellationToken cancellationToken = default)
     {
         var js = _jsModule;
-        ObjectDisposedException.ThrowIf(js is null, this);
+        ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
         try
         {
             return await GetUnlock(database).UnlockCoreAsync(async () =>
@@ -308,7 +317,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     public Task LockAsync(IndexedDbSet database)
     {
         var js = _jsModule;
-        ObjectDisposedException.ThrowIf(js is null, this);
+        ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
         return GetUnlock(database).LockAsync(() => js.Value);
     }
 
@@ -322,7 +331,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
 
     public async ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet)
     {
-        ObjectDisposedException.ThrowIf(this._jsModule is null, this);
+        ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
 
         if (_protectedOnly && !_encryption.ContainsKey(indexedDbSet.DatabaseName))
             throw new InvalidOperationException("The database is outside this protected context.");

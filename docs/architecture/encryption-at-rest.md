@@ -212,7 +212,9 @@ await contexts.DeactivateAsync();
 ```
 
 Activation replaces the previous protected context. Its old query handles
-are invalidated and its browser routes and keys are released. The plaintext
+are invalidated and its browser routes and keys are released. If browser
+release cannot be confirmed, activation fails and the previous release can be
+retried rather than activating another account over it. The plaintext
 service is independent. One activation can hold multiple configured vaults.
 The application supplies stable, collision-free account identifiers that
 incorporate organization or tenant boundaries where required.

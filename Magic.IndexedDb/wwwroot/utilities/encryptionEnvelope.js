@@ -12,7 +12,7 @@ export async function importEncryptionKey(bytes) {
     return crypto.subtle.importKey("raw", bytes, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
-function assertKey(key) {
+export function assertEncryptionKey(key) {
     if (!(key instanceof CryptoKey) || key.type !== "secret" ||
         key.algorithm.name !== "AES-GCM" || key.algorithm.length !== 256 ||
         !key.usages.includes("encrypt") || !key.usages.includes("decrypt")) {
@@ -39,7 +39,7 @@ function associatedData(context, keyId) {
 }
 
 export async function encryptValue(value, key, keyId, context) {
-    assertKey(key);
+    assertEncryptionKey(key);
     const additionalData = associatedData(context, keyId);
     const json = JSON.stringify(value);
     if (json === undefined) {
@@ -58,7 +58,7 @@ export async function encryptValue(value, key, keyId, context) {
 }
 
 export async function decryptValue(envelope, key, expectedKeyId, context) {
-    assertKey(key);
+    assertEncryptionKey(key);
     if (envelope?.version !== envelopeVersion || envelope.keyId !== expectedKeyId ||
         !(envelope.nonce instanceof Uint8Array) || envelope.nonce.byteLength !== nonceBytes ||
         !(envelope.ciphertext instanceof ArrayBuffer) || envelope.ciphertext.byteLength < tagBits / 8) {

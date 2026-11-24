@@ -12,7 +12,11 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 
 
-builder.Services.AddMagicBlazorDB(BlazorInteropMode.WASM, builder.HostEnvironment.IsDevelopment());
+// The sample and the shared test library both define a persisted Person table.
+builder.Services.AddMagicBlazorDB(BlazorInteropMode.WASM, builder.HostEnvironment.IsDevelopment(),
+    [typeof(Person), typeof(EncryptionBenchmarkRecord), typeof(TestBase.Models.Car),
+        typeof(TestBase.Models.CompositeRecord), typeof(TestBase.Models.ContractRecord)],
+    [typeof(TestWasm.Repository.IndexDbContext), typeof(EncryptionBenchmarkRepository)]);
 builder.Services.AddMagicIndexedDbEncryption<BenchmarkKeyProvider>(_ =>
 [
     new(EncryptionBenchmarkRepository.Protected.DatabaseName, "benchmark-fixture", "fixture",

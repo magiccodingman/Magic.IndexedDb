@@ -1,4 +1,4 @@
-import { importEncryptionKey } from "./encryptionEnvelope.js";
+import { assertEncryptionKey, importEncryptionKey } from "./encryptionEnvelope.js";
 import { assertPersistedEncryptionPolicy, verifyEncryptionPolicy, encryptionMetadataKey, encryptionMetadataStore } from "./encryptionPolicy.js";
 import { openRecord, sealRecord, encryptedRecordMember } from "./encryptionRecord.js";
 import { EncryptionSession } from "./encryptionSession.js";
@@ -103,26 +103,41 @@ export function createProtectedStorage(db, account, schemas) {
     const policyFingerprint = JSON.stringify(schemaFingerprint);
     let verified;
     let mismatch = false;
+    let disposed = false;
+    const assertLive = () => {
+        if (disposed) throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: This protected connection was released.");
+    };
     const assertPolicy = async () => {
-        if (!verified) {
+        assertLive();
+        const snapshot = verified;
+        if (!snapshot) {
             throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: Unlock this connection to authenticate its storage policy.");
         }
-        await assertPersistedEncryptionPolicy(db.table(encryptionMetadataStore), verified);
+        await assertPersistedEncryptionPolicy(db.table(encryptionMetadataStore), snapshot);
+        assertLive();
     };
 
     return {
         forTable: name => {
             const policy = policies.get(name);
             if (!policy) throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: The store is outside the configured storage policy.");
-            return new ProtectedTable(db, account, name, policy, session, assertPolicy);
+            return new ProtectedTable(db, account, name, policy, session, assertPolicy, assertLive);
         },
         unlock: (keyId, input, initialize) => session.ensureUnlocked(async signal => {
             await db.open();
             signal.throwIfAborted();
-            const key = input instanceof Uint8Array ? await importEncryptionKey(input) : input;
+            let key;
+            try {
+                key = input instanceof Uint8Array ? await importEncryptionKey(input) : input;
+                assertEncryptionKey(key);
+            } catch (cause) {
+                throw new Error("MAGIC_ENCRYPTION_INVALID_KEY: The provider did not supply a usable AES-GCM key.", { cause });
+            }
             try {
                 if (verified) await assertPolicy();
-                verified = await verifyEncryptionPolicy(db, { account, policyFingerprint, keyId, key, initialize, signal });
+                const snapshot = await verifyEncryptionPolicy(db, { account, policyFingerprint, keyId, key, initialize, signal });
+                signal.throwIfAborted();
+                verified = snapshot;
                 mismatch = false;
                 return { key, keyId };
             } catch (error) {
@@ -153,6 +168,7 @@ export function createProtectedStorage(db, account, schemas) {
         },
         lock: () => session.lock(),
         dispose: () => {
+            disposed = true;
             verified = undefined;
             session.dispose();
         }
@@ -160,13 +176,14 @@ export function createProtectedStorage(db, account, schemas) {
 }
 
 class ProtectedTable {
-    constructor(db, account, name, policy, session, assertPolicy) {
+    constructor(db, account, name, policy, session, assertPolicy, assertLive) {
         this.db = db;
         this.table = db.table(name);
         this.account = account;
         this.policy = policy;
         this.session = session;
         this.assertPolicy = assertPolicy;
+        this.assertLive = assertLive;
     }
 
     context(primaryKey) {
@@ -222,6 +239,7 @@ class ProtectedTable {
         await this.db.open();
         return this.db.transaction("rw", [this.table, this.db.table(encryptionMetadataStore)], async () => {
             await this.assertPolicy();
+            this.assertLive();
             assertCurrent();
             return operation(this.table);
         });
@@ -263,6 +281,7 @@ class ProtectedTable {
         await this.assertPolicy();
         for await (const row of magicQueryYield(this.db, this.table, predicate, additions, forceCursor)) {
             if (projection !== null) {
+                this.assertLive();
                 yield Object.fromEntries(projection.filter(name => Object.hasOwn(row, name)).map(name => [name, row[name]]));
                 continue;
             }
