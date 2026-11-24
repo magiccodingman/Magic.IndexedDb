@@ -56,7 +56,7 @@ export async function JsHandler(isVoid, modulePath, methodName, parameters) {
         const result = await module[methodName](...parameters);
         return isVoid ? true : result;
     } catch (error) {
-        console.error(`JsHandler error calling ${methodName} from ${modulePath}:`, error);
+        console.error("Magic IndexedDB invocation failed.");
         throw error;
     }
 }
@@ -126,7 +126,7 @@ export async function streamedJsHandler(streamRef, instanceId, dotNetHelper, max
                     // Notify Blazor that streaming is done
                     await dotNetHelper.invokeMethodAsync("ProcessJsChunk", instanceId, "STREAM_COMPLETE", -1, "", 0, 1);
                 } catch (error) {
-                    console.error("Streaming error:", error);
+                    console.error("Magic IndexedDB stream failed.");
                     throw error;
                 }
             }
@@ -147,7 +147,7 @@ export async function streamedJsHandler(streamRef, instanceId, dotNetHelper, max
         let encodedResponse = new TextEncoder().encode(responseJson);
         return new Uint8Array(encodedResponse);
     } catch (error) {
-        console.error("Error handling streamed JS:", error);
+        console.error("Magic IndexedDB streamed invocation failed.");
         throw error;
     }
 }

@@ -59,8 +59,7 @@ internal class MagicJsInvoke
         bool isVoid,
         params object[] args)
     {
-        var response = await _jsModule.InvokeAsync<T>("JsHandler", isVoid, modulePath, functionName, args);
-        return response;
+        return await InvokeBrowserAsync(_jsModule.InvokeAsync<T>("JsHandler", isVoid, modulePath, functionName, args));
     }
 
 
@@ -112,8 +111,8 @@ internal class MagicJsInvoke
         using var dotNetHelper = DotNetObjectReference.Create(this);
 
         // Send to JS
-        await using var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler",
-            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes);
+        await using var responseStreamRef = await InvokeBrowserAsync(_jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler",
+            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes));
 
         // 🚀 Convert the stream reference back to JSON in C#
         await using var responseStream = await responseStreamRef.OpenReadStreamAsync(long.MaxValue, token);
@@ -151,10 +150,9 @@ internal class MagicJsInvoke
 
         // Register before starting JavaScript so an immediate first chunk cannot race registration.
         MagicJsChunkProcessor.RegisterInstance(instanceId);
-        var producerTask = _jsModule.InvokeVoidAsync(
+        var producerTask = ObserveProducerAsync(_jsModule.InvokeVoidAsync(
             "streamedJsHandler", producerCancellation.Token,
-            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes)
-            .AsTask();
+            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes));
 
         bool isCompleted = false;
 
@@ -224,6 +222,30 @@ internal class MagicJsInvoke
             }
 
             MagicJsChunkProcessor.RemoveInstance(instanceId);
+        }
+    }
+
+    private static async ValueTask<T> InvokeBrowserAsync<T>(ValueTask<T> invocation)
+    {
+        try
+        {
+            return await invocation;
+        }
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_LOCKED:", StringComparison.Ordinal))
+        {
+            throw new MagicEncryptionLockedException(error);
+        }
+    }
+
+    private static async Task ObserveProducerAsync(ValueTask invocation)
+    {
+        try
+        {
+            await invocation;
+        }
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_LOCKED:", StringComparison.Ordinal))
+        {
+            throw new MagicEncryptionLockedException(error);
         }
     }
 

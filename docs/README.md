@@ -40,6 +40,7 @@ Start with the four pages below. The guides and reference pages are there when y
 
 - [How the query engine works](architecture/query-engine.md)
 - [Universal predicate language](architecture/universal-predicate-language.md)
+- [Encryption at rest design](architecture/encryption-at-rest.md)
 
 ## Contributing
 
