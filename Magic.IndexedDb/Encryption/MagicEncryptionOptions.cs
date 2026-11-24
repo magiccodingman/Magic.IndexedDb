@@ -47,6 +47,7 @@ public interface IMagicIndexedDbEncryption
     Task<bool> InitializeAsync(IndexedDbSet database, CancellationToken cancellationToken = default);
 
     /// <summary>Unlocks an existing database. False means the provider supplied no key.</summary>
+    /// <remarks>Cancelling the caller's token cancels its wait only. Call <see cref="LockAsync"/> to invalidate the pending attempt.</remarks>
     Task<bool> EnsureUnlockedAsync(IndexedDbSet database, CancellationToken cancellationToken = default);
 
     Task LockAsync(IndexedDbSet database);

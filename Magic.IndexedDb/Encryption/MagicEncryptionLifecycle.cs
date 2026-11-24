@@ -28,6 +28,8 @@ public sealed class MagicEncryptionInteractionRequiredException() : InvalidOpera
 public interface IMagicIndexedDbEncryptionLifecycle : IMagicIndexedDbEncryption
 {
     Task<MagicEncryptionState> GetStateAsync(IndexedDbSet database, CancellationToken cancellationToken = default);
+    /// <summary>Requests an unlock and reports the outcome of this caller's wait.</summary>
+    /// <remarks>A cancelled wait can leave the provider running. Call LockAsync to invalidate the pending attempt.</remarks>
     Task<MagicUnlockResult> UnlockDetailedAsync(IndexedDbSet database, bool initialize = false,
         CancellationToken cancellationToken = default);
 }

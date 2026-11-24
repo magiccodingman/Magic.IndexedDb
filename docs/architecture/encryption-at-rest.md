@@ -9,12 +9,12 @@ The factory creates Dexie stores from `StoreSchema`. The C# serializer maps prop
 
 Enforce encryption in the browser storage boundary using the effective persisted names. A C# converter alone would miss browser-side writes and would prevent the JavaScript planner from distinguishing a protected predicate from a predicate it can evaluate. Async Web Crypto calls should complete outside live IndexedDB write transactions. Prepare a batch before opening its transaction so an encryption failure cannot partially persist it.
 
-## Proposed public API
+## Public API
 
 - `[MagicEncrypt]` on a mapped property selects field encryption. Invalid combinations with ignored properties, keys or indexes fail schema validation.
 - A database policy selects explicit field protection or record protection. Record protection encrypts every serialized member except the explicit allowlist of exposed members. Applications storing sensitive records should use this policy because new members are protected automatically.
 - The existing `AddMagicBlazorDB` registration remains valid. Add a separate encryption registration that names protected databases and registers an asynchronous application key provider.
-- A separate scoped `IMagicIndexedDbEncryption` service can expose `EnsureUnlockedAsync(database, cancellationToken)`, `LockAsync(database)` and an observable lock state without changing existing implementations of `IMagicIndexedDb`. A provider request identifies the database, account scope and requested key ID. A provider result supplies a raw 32-byte key or a browser-local opaque AES-GCM key reference, or reports cancellation or interaction required. A protected query may use an explicitly configured opt-in unlock policy. The default requires an explicit unlock call.
+- `IMagicEncryptionContexts` activates an account-bound view of `IMagicIndexedDb` and its encryption lifecycle API. A provider request identifies the database, account scope and requested key ID. Providers can supply a raw 32-byte key or a browser-local opaque AES-GCM key reference. The app explicitly requests an unlock. Ordinary queries never call the provider.
 - Use a distinct physical browser database per protected logical database and account. Derive the physical namespace from stable, non-secret application identifiers. Existing query handles retain their account binding and are invalidated by account switch. Browser key ownership is scoped to the app instance. A reload or new tab starts locked.
 - Hold one in-flight unlock per scope. Lock increments a generation before clearing keys, cancels the provider where possible and prevents stale completion from installing a key. Recheck the generation after asynchronous crypto before yielding or scheduling a write. Writes already committed and results already materialized remain available to their consumers.
 
@@ -22,44 +22,59 @@ Authentication, authorization, WebAuthn, MFA, device enrollment, session expirat
 
 ## Developer experience
 
-Register Magic as usual, then configure protected database policies and an asynchronous key provider:
+Register Magic and the provider before the app knows the account. Inject
+`IMagicEncryptionContexts` and activate the protected context after the app
+authenticates the account and determines its organization or tenant.
 
 ```csharp
 services.AddMagicBlazorDB(BlazorInteropMode.WASM, isDebug: false);
-services.AddMagicIndexedDbEncryption<AppKeyProvider>(services =>
-[
-    new MagicEncryptionOptions("CaseNotes", GetAccountScope(services), "notes-key-v1")
-]);
+services.AddMagicIndexedDbEncryption<AppKeyProvider>();
 ```
-
-`AppKeyProvider` implements `IMagicEncryptionKeyProvider`. Return `MagicEncryptionKey.FromBytes(dataKey)` for a 32-byte data key or `MagicEncryptionKey.FromBrowserKey(reference)` for a browser-local AES-GCM key. Return null when no key is available. The app can unwrap its wrapped key after passkey or server authentication. It owns credential interaction, recovery and key custody.
-
-Annotate a property on an existing Magic table with `[MagicEncrypt]`. Annotated models require a protected database configuration. For secure-by-default record protection, supply a `RecordPolicies` entry for the persisted table name. Its allowlist contains persisted property names, including the primary key and each native index. All other properties are encrypted, including ones added later. Using the attribute on sensitive members also guards against accidental omission of encryption registration.
-
-Inject `IMagicIndexedDbEncryption`. Call `InitializeAsync(database)` only during explicit provisioning of an empty protected database. Normal page initialization can call `EnsureUnlockedAsync(database)` when application policy allows it. Both return false if the provider supplies no key. Regular queries never invoke the provider.
 
 ```csharp
-if (await encryption.EnsureUnlockedAsync(database, cancellationToken))
+var active = await contexts.ActivateAsync(
+    [new(database.DatabaseName, organizationAndAccountScope, "notes-key-v1")]);
+
+// For an existing vault. Explicitly provision a new empty vault with
+// active.Encryption.InitializeAsync(database) instead.
+if (await active.Encryption.EnsureUnlockedAsync(database, cancellationToken))
 {
-    var query = await magicDb.Query<CaseNote>();
+    var query = await active.Database.Query<CaseNote>();
     var notes = await query.ToListAsync();
 }
-await encryption.LockAsync(database);
 ```
 
-For a locked view, use `SelectPublicAsync(record => record.Title)` on the query or its staged public predicates. It returns the selected values. Use `PatchPublicAsync(new CaseNote { Id = id, Title = title }, record => record.Title)` for one public member. It sends the record key and that value. A full locked read throws `MagicEncryptionLockedException`.
+`AppKeyProvider` implements `IMagicEncryptionKeyProvider`. Return
+`MagicEncryptionKey.FromBytes(dataKey)`, `MagicEncryptionKey.FromBrowserKey(reference)`,
+or null when no key is available. The app owns credential interaction,
+recovery and key custody.
 
-The options bind the account when the Magic service scope is resolved. For an account switch, lock and dispose the old scope and resolve both services from the new account scope. This includes creating explicit app scopes for account switches in standalone WASM. Existing query objects remain bound to the old scope and cannot silently target a different account.
+Use `[MagicEncrypt]` on individual properties or
+`[MagicEncryptRecord(nameof(Id), nameof(Title))]` to require whole-record
+protection with explicitly public members. The allowlist includes every primary
+key and native index. A configuration-based `RecordPolicies` allowlist uses
+persisted names. If both record allowlists are supplied, they must agree.
+
+Use `ActivateAsync` again to switch accounts or `DeactivateAsync` on sign-out.
+Switching invalidates old protected query handles within the same DI scope.
+The registration overload that supplies policies at DI resolution is available
+for apps whose account is already known and fixed for that scope.
+
+After this same connection has authenticated the policy successfully, it can
+lock and still use `SelectPublicAsync(record => record.Title)` or
+`PatchPublicAsync(new CaseNote { Id = id, Title = title }, record => record.Title)`.
+The persisted policy must still match. A reload, another tab, or a fresh context
+requires its own policy authentication before public operations.
 
 ## Query and write behavior
 
-| Operation | Locked behavior | Initial unlocked behavior |
-| --- | --- | --- |
-| Full entity or protected projection | Recognizable locked error, including empty result sets | Decrypt automatically |
-| Explicit public projection | Allowed with public predicates and ordering | Same query plan |
-| Public partial update | Allowed if primary key is unchanged and patch touches public members only | Preserve ciphertext byte for byte |
-| Full writes, deletes and protected patches | Recognizable locked error | Encrypt before storage |
-| Protected predicates and sorts | Recognizable locked error | Reject with a recognizable unsupported-query error until hybrid execution exists |
+| Operation | Fresh connection without policy authentication | Locked after authenticating this connection | Unlocked with matching policy |
+| --- | --- | --- | --- |
+| Full entity read | Reject | `MagicEncryptionLockedException`, including for empty results | Decrypt automatically |
+| Explicit public projection | Reject | Allow public predicates and ordering while the policy matches | Same query plan |
+| Public partial update | Reject | Allow public members while the policy matches and the primary key stays unchanged | Preserve ciphertext byte for byte |
+| Full write or delete | Reject | `MagicEncryptionLockedException` | Encrypt protected data before storage, or delete the record |
+| Protected predicates and sorts | Reject | `MagicEncryptionLockedException` on full queries | Reject explicitly until hybrid LINQ is implemented |
 
 Projection needs an explicit persisted-member selection so the storage boundary can avoid materializing protected fields. A typed projection must never hand back a partially populated entity that a caller could write over the real value. Map the same property paths as the expression translator, including nested paths descending through a protected property. Keep existing index and cursor behavior for public predicates. Raw ciphertext must never reach the existing expression evaluator as a substitute for the logical value.
 
@@ -140,8 +155,7 @@ for point reads and scans reflect run-to-run variability. They do not imply
 that encryption speeds up those operations. User interaction, authentication,
 remote key access, and browser page load are outside these measurements.
 
-Published WebAssembly was exercised with the default Release publish settings.
-No AOT performance claim is made. Protected data is isolated in a new physical
+This earlier 1,000-row run used interpreted Release WASM. The [larger hardening measurements](#larger-published-wasm-and-aot-measurements) include both interpreted WASM and AOT. Protected data is isolated in a new physical
 namespace. The current version leaves plaintext sources in place and requires
 application-managed export, protected import through typed writes, verification,
 and cleanup as separate steps.
@@ -244,9 +258,27 @@ unlock attempts. Ordinary unlock and explicit initialization are distinct
 requests. The browser stops new protected operations and checks the session
 before committing a prepared write or advancing a protected stream.
 Already-committed writes and plaintext already returned to application code
-cannot be recalled. Cancellation of one caller does not cancel a still-shared
-unlock. On context invalidation the managed query path also drops queued
-results from the old context.
+cannot be recalled. A caller's cancellation token cancels only its wait, even if it was the only
+caller. The provider can finish later and unlock the vault. The convenience
+API reports caller cancellation by throwing `OperationCanceledException`.
+`UnlockDetailedAsync` returns `MagicUnlockResult.Cancelled` for that wait.
+On context invalidation the managed query path also drops queued results from
+the old context.
+
+If an application action means **cancel and stay locked**, explicitly await
+`LockAsync`. The lock invalidates the pending attempt even when the provider
+ignores cancellation and supplies a key later.
+
+```csharp
+// Capture the token when starting the action and retain its source in the UI.
+using var unlockWait = new CancellationTokenSource();
+var pending = active.Encryption.UnlockDetailedAsync(
+    database, cancellationToken: unlockWait.Token);
+
+// In the application's "Cancel and stay locked" action:
+unlockWait.Cancel();
+await active.Encryption.LockAsync(database);
+```
 
 The library wipes its temporary managed raw-key interop copy. The provider
 owns its original bytes and any opaque JS reference it returns. The library

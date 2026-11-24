@@ -6,6 +6,28 @@ namespace Magic.IndexedDb.UnitTests;
 public sealed class EncryptionUnlockTests
 {
     [TestMethod]
+    public async Task CancellingTheOnlyWaiterDoesNotCancelTheUnlockAttempt()
+    {
+        var config = new EncryptionConfiguration(new("records", "account", "test-key"));
+        var provider = new DelayedProvider();
+        var browser = new RecordingBrowser();
+        var unlock = new EncryptionUnlock(config, provider);
+        Task<IJSObjectReference> Module() => Task.FromResult<IJSObjectReference>(browser);
+        using var wait = new CancellationTokenSource();
+
+        var waiting = unlock.UnlockAsync(Module, initialize: false, wait.Token);
+        await provider.Started.Task;
+        wait.Cancel();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => waiting);
+        Assert.IsFalse(provider.AttemptToken.IsCancellationRequested);
+        Assert.IsFalse(browser.Unlocked.Task.IsCompleted);
+
+        provider.Key.SetResult(MagicEncryptionKey.FromBytes(new byte[32]));
+        await browser.Unlocked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(1, provider.Requests);
+    }
+
+    [TestMethod]
     public async Task LockInvalidatesSharedProviderEvenWhenItFinishesLate()
     {
         var config = new EncryptionConfiguration(new("records", "account", "test-key"));
@@ -13,16 +35,22 @@ public sealed class EncryptionUnlockTests
         var browser = new RecordingBrowser();
         var unlock = new EncryptionUnlock(config, provider);
 
-        var first = unlock.UnlockAsync(() => Task.FromResult<IJSObjectReference>(browser), false, default);
+        using var wait = new CancellationTokenSource();
+        var first = unlock.UnlockAsync(() => Task.FromResult<IJSObjectReference>(browser), false, wait.Token);
         await provider.Started.Task;
         var second = unlock.UnlockAsync(() => Task.FromResult<IJSObjectReference>(browser), false, default);
         Assert.AreEqual(1, provider.Requests);
 
-        await unlock.LockAsync(() => Task.FromResult<IJSObjectReference>(browser));
+        wait.Cancel();
         await Assert.ThrowsAsync<OperationCanceledException>(() => first);
+        Assert.IsFalse(provider.AttemptToken.IsCancellationRequested);
+
+        await unlock.LockAsync(() => Task.FromResult<IJSObjectReference>(browser));
+        Assert.IsTrue(provider.AttemptToken.IsCancellationRequested);
         await Assert.ThrowsAsync<OperationCanceledException>(() => second);
         provider.Key.SetResult(MagicEncryptionKey.FromBytes(new byte[32]));
         Assert.IsTrue(await unlock.UnlockAsync(() => Task.FromResult<IJSObjectReference>(browser), false, default));
+        Assert.AreEqual(2, provider.Requests, "Only the new attempt may unlock after the explicit lock.");
         CollectionAssert.AreEqual(new[] {
             "isProtectedDatabaseUnlocked", "lockProtectedDatabase", "isProtectedDatabaseUnlocked", "unlockProtectedDatabase"
         }, browser.Invocations.ToArray());
@@ -67,10 +95,12 @@ public sealed class EncryptionUnlockTests
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<MagicEncryptionKey?> Key { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Requests { get; private set; }
+        public CancellationToken AttemptToken { get; private set; }
 
         public ValueTask<MagicEncryptionKey?> GetKeyAsync(MagicEncryptionKeyRequest request, CancellationToken cancellationToken)
         {
             Requests++;
+            AttemptToken = cancellationToken;
             Started.TrySetResult();
             return new(Key.Task);
         }
@@ -79,6 +109,7 @@ public sealed class EncryptionUnlockTests
     private sealed class RecordingBrowser : IJSObjectReference
     {
         public List<string> Invocations { get; } = [];
+        public TaskCompletionSource Unlocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool RequireInitialization { get; init; }
         public byte[]? LastInteropKey { get; private set; }
         public ValueTask<T> InvokeAsync<T>(string identifier, object?[]? args) => InvokeAsync<T>(identifier, default, args);
@@ -92,6 +123,7 @@ public sealed class EncryptionUnlockTests
                 LastInteropKey = (byte[])parameters[2]!;
                 if (RequireInitialization && parameters[3] is false)
                     return ValueTask.FromException<T>(new JSException("MAGIC_ENCRYPTION_UNINITIALIZED: Missing policy."));
+                Unlocked.TrySetResult();
             }
             return ValueTask.FromResult((T)(object)!(Invocations[^1] == "isProtectedDatabaseUnlocked"));
         }
