@@ -18,6 +18,7 @@ Instead of treating LINQ as an in-memory filter over an already-loaded collectio
 - **Process large results progressively.** `AsAsyncEnumerable()` streams interop results so applications can begin processing before materializing the full returned collection.
 - **Define schemas in C#.** Attributes describe primary keys, indexes, compound indexes, stored names, and databases.
 - **Store practical object models.** Nested objects, collections, custom JSON converters, Unicode text, and constructor-based materialization are supported.
+- **Keep wide numbers exact.** Opt into [lossless numeric storage](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/lossless-numbers.md) for `long`, `ulong`, and `decimal` values while retaining compatible native indexed queries.
 
 Magic IndexedDB is a strong fit for offline-first Blazor applications, progressive web apps, local browser caches, disconnected workflows, and client-side datasets that need more than simple key/value access.
 
@@ -138,6 +139,7 @@ The maintained documentation lives entirely in [`docs/`](https://github.com/magi
 - [`Where` versus `Cursor`](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/where-vs-cursor.md)
 - [Ordering and pagination](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/ordering-and-pagination.md)
 - [Streaming results](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/streaming.md)
+- [Lossless numeric storage](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/lossless-numbers.md)
 - [Database management](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/database-management.md)
 - [Schema evolution](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/schema-evolution.md)
 - [Public API reference](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/reference/public-api.md)

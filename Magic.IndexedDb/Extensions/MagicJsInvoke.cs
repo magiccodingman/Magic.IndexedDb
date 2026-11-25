@@ -10,11 +10,16 @@ internal class MagicJsInvoke
 {
     private readonly IJSObjectReference _jsModule;
     private readonly long _jsMessageSizeBytes;
+    private readonly MagicJsonSerializationSettings _settings;
+    private readonly MagicJsonSerializationSettings _responseSettings;
 
-    public MagicJsInvoke(IJSObjectReference jsModule, long jsMessageSizeBytes)
+    public MagicJsInvoke(IJSObjectReference jsModule, long jsMessageSizeBytes,
+        MagicJsonSerializationSettings? settings = null, MagicJsonSerializationSettings? responseSettings = null)
     {
         _jsModule = jsModule;
         _jsMessageSizeBytes = jsMessageSizeBytes;
+        _settings = settings ?? new MagicJsonSerializationSettings { UseCamelCase = true };
+        _responseSettings = responseSettings ?? _settings;
     }
 
     internal async Task CallJsAsync(string modulePath, string functionName,
@@ -89,7 +94,7 @@ internal class MagicJsInvoke
     private async Task<T?> TrueMagicStreamJsAsync<T>(string modulePath, string functionName,
         CancellationToken token, bool isVoid, params ITypedArgument[] args)
     {
-        var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+        var settings = _settings;
 
         var package = new MagicJsPackage
         {
@@ -119,7 +124,7 @@ internal class MagicJsInvoke
         using var reader = new StreamReader(responseStream);
 
         string jsonResponse = await reader.ReadToEndAsync(token);
-        return MagicSerializationHelper.DeserializeObject<T>(jsonResponse, settings);
+        return MagicSerializationHelper.DeserializeObject<T>(jsonResponse, _responseSettings);
     }
 
     private async IAsyncEnumerable<T?> MagicYieldJsAsync<T>(
@@ -127,7 +132,7 @@ internal class MagicJsInvoke
         [EnumeratorCancellation] CancellationToken token, 
         params ITypedArgument[] args)
     {
-        var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+        var settings = _settings;
 
         var package = new MagicJsPackage
         {
@@ -185,7 +190,7 @@ internal class MagicJsInvoke
                     T? deserializedItem;
                     try
                     {
-                        deserializedItem = MagicSerializationHelper.DeserializeObject<T>(completedItem, settings);
+                        deserializedItem = MagicSerializationHelper.DeserializeObject<T>(completedItem, _responseSettings);
                     }
                     catch (Exception deserializationError)
                     {
