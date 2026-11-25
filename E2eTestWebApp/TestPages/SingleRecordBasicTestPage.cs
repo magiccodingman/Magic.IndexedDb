@@ -239,6 +239,8 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         var database = await magic.Database(TestBase.Repository.IndexDbContext.Animal);
         var existsInitially = await database.DoesExistAsync();
         var openInitially = await database.IsOpenAsync();
+        await database.OpenAsync();
+        var opened = await database.IsOpenAsync();
         await database.CloseAsync();
         var closed = !await database.IsOpenAsync();
         var persistedAfterClose = await database.DoesExistAsync();
@@ -247,7 +249,7 @@ public class SingleRecordBasicTestPage(IMagicIndexedDb magic) : TestPageBase
         await database.DeleteAsync();
         var deleted = !await database.DoesExistAsync();
 
-        return existsInitially && openInitially && closed && persistedAfterClose && reopened && deleted
+        return !existsInitially && !openInitially && opened && closed && persistedAfterClose && reopened && deleted
             ? "OK"
             : "Incorrect";
     }

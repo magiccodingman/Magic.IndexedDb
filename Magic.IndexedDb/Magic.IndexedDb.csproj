@@ -7,17 +7,17 @@
 		<Title>Magic.IndexedDb</Title>
 		<Authors>Magic Man</Authors>
 		<Copyright>MIT</Copyright>
-		<Description>A LINQ-to-IndexedDB query engine and typed browser database library for Blazor and .NET 10, with indexed query planning, cursor fallback, streaming results, and C# schema definitions.</Description>
+		<Description>A LINQ-to-IndexedDB query engine and typed browser database library for Blazor and .NET 10, with indexed query planning, streaming results, C# schema definitions, and a static, language-independent browser migration protocol.</Description>
 		<PackageProjectUrl>https://github.com/magiccodingman/Magic.IndexedDb</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/magiccodingman/Magic.IndexedDb</RepositoryUrl>
 		<PackageTags>IndexedDB;Blazor;Blazor WebAssembly;LINQ;offline-first;client-side database;browser storage;PWA;Dexie</PackageTags>
 		<PackageIcon>wizardHatIcon.png</PackageIcon>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<AssemblyVersion>1.0.1</AssemblyVersion>
+		<AssemblyVersion>3.0.0.0</AssemblyVersion>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
-		<FileVersion>1.01</FileVersion>
-		<Version>2.0.2</Version>
+		<FileVersion>3.0.0.0</FileVersion>
+		<Version>3.0.0-preview.1</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -40,6 +40,7 @@
 	<ItemGroup>
 		<SupportedPlatform Include="browser" />
 		<InternalsVisibleTo Include="Magic.IndexedDb.UnitTests" />
+		<Compile Include="..\shared\Magic.IndexedDb.Protocol\CanonicalJson.cs" Link="Migrations\CanonicalJson.cs" />
 	</ItemGroup>
 
 	<ItemGroup>

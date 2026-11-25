@@ -4,6 +4,11 @@ using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Extensions;
 using Magic.IndexedDb.LinqTranslation.Interfaces;
+using Magic.IndexedDb.LinqTranslation.Models;
+using Magic.IndexedDb.Migrations;
+using System.Collections.Concurrent;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Magic.IndexedDb.Factories;
 
@@ -15,7 +20,10 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     private readonly long _jsMessageSizeBytes;
     private readonly Dictionary<string, EncryptionConfiguration> _encryption;
     private readonly Dictionary<string, EncryptionUnlock> _unlocks;
-    private IReadOnlyDictionary<string, Type>? _encryptedSchemaTypes;
+    private readonly Lazy<IReadOnlyDictionary<string, ResolvedMagicDatabase>> _definitions;
+    private readonly ConcurrentDictionary<string, string> _instanceBindings = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Task>> _readiness = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, MagicMigrationSubscription> _migrationSubscriptions = new(StringComparer.Ordinal);
     private readonly IJSRuntime _runtime;
     private readonly bool _isDebug;
     private readonly Type[]? _tableTypes;
@@ -53,73 +61,108 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
             },
             isThreadSafe: true);
 
+        _definitions = new(() =>
+        {
+            var options = new MagicSchemaOptions
+            {
+                ProtectedDatabases = _encryption.Keys.ToArray(),
+                NumericModes = _numericStorage.Modes,
+                RecordPolicies = _encryption.ToDictionary(pair => pair.Key,
+                    pair => pair.Value.RecordPolicies, StringComparer.Ordinal)
+            };
+            var definitions = MagicSchemaResolver.Resolve(
+                tableTypes ?? SchemaHelper.GetAllMagicTables()!.ToArray(),
+                repositoryTypes ?? SchemaHelper.GetAllMagicRepositories()!.ToArray(), options)
+                .ToDictionary(database => database.Definition.DatabaseName, StringComparer.Ordinal);
+            if (_encryption.Keys.Any(name => !definitions.ContainsKey(name)))
+                throw new MagicSchemaException("MAGDB3002", "An encryption policy names an unregistered database.");
+            if (_numericStorage.Modes.Keys.Any(name => !definitions.ContainsKey(name)))
+                throw new MagicSchemaException("MAGDB3002", "A numeric policy names an unregistered database.");
+            return definitions;
+        });
+
         var moduleLoader = this._jsModule;
         this._magicJsManager = new(async () =>
+        {
+            // Resolve and validate every declaration before importing browser code.
+            var definitions = _definitions.Value;
+            var jsModule = await moduleLoader.Value;
+            _lifetime.Token.ThrowIfCancellationRequested();
+            var routes = definitions.Keys.ToDictionary(name => name, name => PhysicalRoute(name, name), StringComparer.Ordinal);
+            return new IndexedDbManager(jsModule, _jsMessageSizeBytes, routes, _lifetime.Token, _numericStorage.Modes);
+        }, isThreadSafe: true);
+    }
+
+    private string PhysicalRoute(string definitionName, string instanceName) =>
+        _encryption.TryGetValue(definitionName, out var encrypted) ? encrypted.Route :
+        _numericStorage.Mode(definitionName) == MagicNumericStorageMode.Lossless
+            ? NumericStorageConfiguration.PhysicalName(instanceName) : instanceName;
+
+    private ResolvedMagicDatabase Definition(string name)
+    {
+        ObjectDisposedException.ThrowIf(_jsModule is null || _lifetime.IsCancellationRequested, this);
+        if (_protectedOnly && !_encryption.ContainsKey(name))
+            throw new MagicSchemaException("MAGDB3011", "The database is outside this protected context.");
+        return _definitions.Value.TryGetValue(name, out var definition) ? definition :
+            throw new MagicSchemaException("MAGDB3020", $"Database '{name}' is not registered. Register its repository explicitly.");
+    }
+
+    private async Task EnsureDatabaseAsync(ResolvedMagicDatabase resolved, string instanceName)
+    {
+        var definitionName = resolved.Definition.DatabaseName;
+        var route = PhysicalRoute(definitionName, instanceName);
+        var identity = MagicSchemaJson.Fingerprint(resolved.Schema) + "|" + resolved.Definition.ManifestUrl;
+        if (_instanceBindings.GetOrAdd(route, identity) != identity)
+            throw new MagicSchemaException("MAGDB3022", "This physical instance is already bound to another schema or manifest.");
+        var initialization = _readiness.GetOrAdd(route, _ => new Lazy<Task>(() => CreateDatabaseAsync(resolved, instanceName), true));
+        try { await initialization.Value; }
+        catch
+        {
+            // Failed startup is retryable. A successful committed migration is never rolled back here.
+            _readiness.TryRemove(new KeyValuePair<string, Lazy<Task>>(route, initialization));
+            throw;
+        }
+    }
+
+    private async Task CreateDatabaseAsync(ResolvedMagicDatabase resolved, string instanceName)
+    {
+        await _magicJsManager.Value;
+        _lifetime.Token.ThrowIfCancellationRequested();
+        var name = resolved.Definition.DatabaseName;
+        var entries = resolved.TableTypes.Zip(resolved.StoreSchemas, (type, schema) => (Type: type, Schema: schema)).ToArray();
+        if (_numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
+        {
+            if (entries.Any(entry => MagicConverterHelper.HasCustomConverter(entry.Type, new())))
+                throw new InvalidOperationException("Lossless numeric storage requires mapped table members and cannot use a whole-table JSON converter. Use property converters or Legacy storage instead.");
+            foreach (var entry in entries.Where(entry => entry.Schema.PrimaryKeyAuto))
+                if (PropertyMappingCache.GetTypeOfTProperties(entry.Type).propertyEntries.Values.Any(property =>
+                    property.PrimaryKey && MagicConverterHelper.HasCustomConverter(property.Property)))
+                    throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
+        }
+
+        JsonElement payload;
+        if (_encryption.TryGetValue(name, out var configuration))
+            payload = configuration.CreateDatabase(entries);
+        else if (_numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
+            payload = NumericStorageConfiguration.CreateDatabase(instanceName, resolved.StoreSchemas);
+        else
+            payload = JsonSerializer.SerializeToElement(new DbStore
             {
-                var jsModule = await moduleLoader.Value;
-                _lifetime.Token.ThrowIfCancellationRequested();
+                Name = instanceName,
+                Version = 1,
+                StoreSchemas = resolved.StoreSchemas.ToList()
+            }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
-                var types = tableTypes ?? SchemaHelper.GetAllMagicTables()!.ToArray();
-                var schemas = types.Select(type => (Type: type, Schema: SchemaHelper.GetStoreSchema(type))).ToArray();
-                if (_encryption.Count > 0)
-                    _encryptedSchemaTypes = schemas.ToDictionary(entry => entry.Schema.TableName, entry => entry.Type, StringComparer.Ordinal);
-                var plainEntries = schemas.Where(entry => !EncryptionConfiguration.RequiresProtection(entry.Type)).ToArray();
-                var plainSchemas = plainEntries.Select(entry => entry.Schema).ToList();
-                var dbSets = repositoryTypes is null
-                    ? SchemaHelper.GetAllIndexedDbSets()
-                    : SchemaHelper.GetIndexedDbSets(repositoryTypes);
-                var names = dbSets.Select(set => set.DatabaseName).ToHashSet(StringComparer.Ordinal);
-                if (_encryption.Keys.Any(name => !names.Contains(name)))
-                    throw new InvalidOperationException("A Magic encryption policy names an unregistered database.");
-                if (_numericStorage.Modes.Keys.Any(name => !names.Contains(name)))
-                    throw new InvalidOperationException("A Magic numeric policy names an unregistered database.");
-                var routes = names.ToDictionary(name => name, name => _encryption.TryGetValue(name, out var encrypted)
-                    ? encrypted.Route
-                    : _numericStorage.Mode(name) == MagicNumericStorageMode.Lossless
-                        ? NumericStorageConfiguration.PhysicalName(name) : name, StringComparer.Ordinal);
-                var manager = new IndexedDbManager(jsModule, _jsMessageSizeBytes, routes, _lifetime.Token, _numericStorage.Modes);
-
-                foreach (var name in names)
-                {
-                    _lifetime.Token.ThrowIfCancellationRequested();
-                    if (_protectedOnly && !_encryption.ContainsKey(name)) continue;
-                    if (_numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
-                    {
-                        var applicable = _encryption.ContainsKey(name) ? schemas : plainEntries;
-                        if (applicable.Any(entry => MagicConverterHelper.HasCustomConverter(entry.Type, new())))
-                            throw new InvalidOperationException("Lossless numeric storage requires mapped table members and cannot use a whole-table JSON converter. Use property converters or Legacy storage instead.");
-                        foreach (var entry in applicable.Where(entry => entry.Schema.PrimaryKeyAuto))
-                        {
-                            var properties = PropertyMappingCache.GetTypeOfTProperties(entry.Type).propertyEntries.Values;
-                            if (properties.Any(property => property.PrimaryKey && MagicConverterHelper.HasCustomConverter(property.Property)))
-                                throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
-                        }
-                    }
-                    if (_encryption.TryGetValue(name, out var configuration))
-                    {
-                        await EncryptionUnlock.InvokeAsync<bool>(jsModule, IndexedDbFunctions.CREATE_LEGACY, true,
-                            configuration.CreateDatabase(schemas));
-                        continue;
-                    }
-
-                    if (_numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
-                    {
-                        await EncryptionUnlock.InvokeAsync<bool>(jsModule, IndexedDbFunctions.CREATE_LEGACY, true,
-                            NumericStorageConfiguration.CreateDatabase(name, plainSchemas));
-                        continue;
-                    }
-                    await new MagicJsInvoke(jsModule, _jsMessageSizeBytes).CallJsAsync(Cache.MagicDbJsImportPath,
-                        IndexedDbFunctions.CREATE_LEGACY, default,
-                        new TypedArgument<DbStore>(new DbStore()
-                        {
-                            Name = name,
-                            Version = 1,
-                            StoreSchemas = plainSchemas
-                        }));
-                }
-                return manager;
-            },
-            isThreadSafe: true);
+        var document = JsonNode.Parse(payload.GetRawText())!.AsObject();
+        document["migrationSchema"] = JsonNode.Parse(MagicSchemaJson.Serialize(resolved.Schema));
+        document["migrationManifestUrl"] = resolved.Definition.ManifestUrl;
+        payload = JsonSerializer.SerializeToElement(document);
+        var module = await _jsModule!.Value;
+        if (_encryption.ContainsKey(name) || _numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
+            await EncryptionUnlock.InvokeAsync<bool>(module, IndexedDbFunctions.CREATE_LEGACY, true, payload);
+        else
+            await new MagicJsInvoke(module, _jsMessageSizeBytes).CallJsAsync(Cache.MagicDbJsImportPath,
+                IndexedDbFunctions.CREATE_LEGACY, default, new TypedArgument<JsonElement>(payload));
     }
 
     internal MagicDbFactory CreateProtectedContext(Dictionary<string, EncryptionConfiguration> configurations) =>
@@ -191,6 +234,8 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
             // Disposal from the DI container may run after a browser disconnect.
         }
 
+        foreach (var subscription in _migrationSubscriptions.Values)
+            await subscription.DisposeAsync();
         _jsModule = null;
         try
         {
@@ -214,7 +259,6 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         var magicUtility = new MagicUtilities(jsModule, _jsMessageSizeBytes);
         return await magicUtility.GetStorageEstimateAsync(cancellationToken);
     }
-    [Obsolete("Not fully implemented yet until full migration protocol finished.")]
     public async ValueTask<IMagicQuery<T>> Query<T>(IndexedDbSet indexedDbSet)
         where T : class, IMagicTableBase, new()
     {
@@ -264,19 +308,16 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
 #pragma warning restore CS0618
     }
 
-    [Obsolete("Not decided if this will be built in further or removed")]
     public async ValueTask<IMagicQuery<T>> QueryOverride<T>(string databaseNameOverride, string schemaNameOverride) 
         where T: class, IMagicTableBase, new ()
     {
         ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
 
-        if (!_encryption.ContainsKey(databaseNameOverride) && (_protectedOnly || EncryptionConfiguration.RequiresProtection(typeof(T))))
-            throw new InvalidOperationException("The model has protected members and requires a Magic encryption policy.");
-
-        var dbManager = await this._magicJsManager.Value;
-        if (_encryption.ContainsKey(databaseNameOverride) &&
-            _encryptedSchemaTypes?.GetValueOrDefault(schemaNameOverride) != typeof(T))
-            throw new InvalidOperationException("A protected database query requires its registered table type.");
+        var definition = Definition(databaseNameOverride);
+        if (!definition.TableTypes.Contains(typeof(T)) || SchemaHelper.GetTableName<T>() != schemaNameOverride)
+            throw new MagicSchemaException("MAGDB3021", $"Table '{typeof(T).Name}' does not belong to database '{databaseNameOverride}'. Use Include<T>() for an additional placement.");
+        await EnsureDatabaseAsync(definition, databaseNameOverride);
+        var dbManager = await _magicJsManager.Value;
         return dbManager.Query<T>(databaseNameOverride, schemaNameOverride);
     }
         
@@ -293,7 +334,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         return GetUnlock(database).UnlockAsync(async () =>
         {
             var module = await js.Value;
-            await _magicJsManager.Value;
+            await EnsureDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName);
             return module;
         }, initialize, cancellationToken);
     }
@@ -305,7 +346,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
             return MagicEncryptionState.Inactive;
 
         var module = await js.Value.WaitAsync(cancellationToken);
-        await _magicJsManager.Value.WaitAsync(cancellationToken);
+        await EnsureDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName).WaitAsync(cancellationToken);
         var state = await EncryptionUnlock.InvokeAsync<string>(
             module, "getProtectedDatabaseState", false, configuration.Route).AsTask().WaitAsync(cancellationToken);
         return Enum.Parse<MagicEncryptionState>(state);
@@ -321,7 +362,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
             return await GetUnlock(database).UnlockCoreAsync(async () =>
             {
                 var module = await js.Value;
-                await _magicJsManager.Value;
+                await EnsureDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName);
                 return module;
             }, initialize, cancellationToken);
         }
@@ -356,13 +397,46 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
             : throw new InvalidOperationException("This database does not have a Magic encryption policy.");
     }
 
-    public async ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet)
-    {
-        ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
+    public ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet) =>
+        Database(indexedDbSet, indexedDbSet.DatabaseName);
 
-        if (_protectedOnly && !_encryption.ContainsKey(indexedDbSet.DatabaseName))
-            throw new InvalidOperationException("The database is outside this protected context.");
-        var dbManager = await this._magicJsManager.Value;
-        return dbManager.Database(dbManager, indexedDbSet);
+    public async ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet, string instanceName)
+    {
+        ArgumentNullException.ThrowIfNull(indexedDbSet);
+        ArgumentException.ThrowIfNullOrWhiteSpace(instanceName);
+        var definition = Definition(indexedDbSet.DatabaseName);
+        if (definition.Definition.SchemaId != indexedDbSet.SchemaId || definition.Definition.ManifestUrl != indexedDbSet.ManifestUrl)
+            throw new MagicSchemaException("MAGDB3022", "Use the registered database declaration; its schema identity and manifest cannot be overridden at query time.");
+        if (instanceName.StartsWith("__magic_", StringComparison.Ordinal))
+            throw new ArgumentException("Physical instances cannot use a reserved Magic namespace.", nameof(instanceName));
+        if (instanceName != indexedDbSet.DatabaseName && _encryption.ContainsKey(indexedDbSet.DatabaseName))
+            throw new MagicSchemaException("MAGDB3023", "Protected instances are account-scoped. Create an encryption context for the account instead.");
+        if (instanceName != indexedDbSet.DatabaseName && _definitions.Value.ContainsKey(instanceName))
+            throw new MagicSchemaException("MAGDB3022", "A physical instance cannot impersonate another registered database.");
+
+        var manager = await _magicJsManager.Value;
+        if (instanceName != indexedDbSet.DatabaseName)
+            manager = new IndexedDbManager(await _jsModule!.Value, _jsMessageSizeBytes,
+                new Dictionary<string, string> { [indexedDbSet.DatabaseName] = PhysicalRoute(indexedDbSet.DatabaseName, instanceName) },
+                _lifetime.Token, _numericStorage.Modes);
+        var route = PhysicalRoute(indexedDbSet.DatabaseName, instanceName);
+        var physicalName = _encryption.TryGetValue(indexedDbSet.DatabaseName, out var encrypted) ? encrypted.PhysicalName : route;
+        return new MagicDatabaseScoped(manager, indexedDbSet, definition.TableTypes,
+            () => EnsureDatabaseAsync(definition, instanceName),
+            () => _readiness.TryRemove(route, out _),
+            async token => await (await _jsModule!.Value).InvokeAsync<JsonElement?>("inspectMigration", token, physicalName),
+            async () => await (await _jsModule!.Value).InvokeVoidAsync("cancelMigration", route));
+    }
+
+    public async Task<IAsyncDisposable> ObserveMigrationsAsync(Func<MagicMigrationEvent, ValueTask> observer,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(observer);
+        ObjectDisposedException.ThrowIf(_jsModule is null || _lifetime.IsCancellationRequested, this);
+        var subscription = new MagicMigrationSubscription(await _jsModule.Value.WaitAsync(cancellationToken), observer,
+            id => _migrationSubscriptions.TryRemove(id, out _));
+        _migrationSubscriptions[subscription.Id] = subscription;
+        await subscription.StartAsync(cancellationToken);
+        return subscription;
     }
 }

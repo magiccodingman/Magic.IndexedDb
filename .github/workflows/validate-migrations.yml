@@ -1,0 +1,151 @@
+name: Migration validation
+
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: migration-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  protocol-contract:
+    name: Portable migration documents
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Validate canonical JSON and portable document safety
+        run: node --test tests/migrations/protocol.test.mjs
+
+  packaged-cli:
+    name: Packaged CLI contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Pack, install, and exercise the actual .NET tool
+        run: bash .github/scripts/test-migration-cli.sh
+
+      - name: Upload browser-consumable package output
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: migration-cli-fixture
+          path: artifacts/migration-cli/published
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload tool packages and diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: migration-cli-evidence-${{ github.run_attempt }}
+          path: artifacts/migration-cli
+          if-no-files-found: warn
+          overwrite: true
+
+  migration-browser:
+    name: Migrations ${{ matrix.name }}
+    needs: packaged-cli
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Chromium
+            os: ubuntu-latest
+            browser: chromium
+          - name: Firefox
+            os: ubuntu-latest
+            browser: firefox
+          - name: Linux WebKit
+            os: ubuntu-latest
+            browser: webkit
+          - name: macOS WebKit
+            os: macos-15
+            browser: webkit
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Download generated static migration package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: migration-cli-fixture
+          path: artifacts/migration-cli/published
+
+      - name: Build isolated Playwright driver
+        run: dotnet build tests/migrations/BrowserDriver/BrowserDriver.csproj --configuration Release
+
+      - name: Install browser and Linux dependencies
+        if: ${{ runner.os == 'Linux' }}
+        run: node tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/cli.js install --with-deps ${{ matrix.browser }}
+
+      - name: Install browser on macOS
+        if: ${{ runner.os == 'macOS' }}
+        run: node tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/cli.js install ${{ matrix.browser }}
+
+      - name: Run independent protocol, recovery, and package-output tests
+        env:
+          MAGIC_CLI_FIXTURE: artifacts/migration-cli/published/cli-fixture/manifest.json
+        run: >-
+          node tests/migrations/run.mjs
+          ${{ matrix.browser }}
+          tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/index.mjs
+          artifacts/migration-browser/${{ matrix.browser }}-${{ runner.os }}
+
+      - name: Upload complete migration evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: migration-${{ matrix.browser }}-${{ runner.os }}-${{ github.run_attempt }}
+          path: artifacts/migration-browser
+          if-no-files-found: warn
+          overwrite: true

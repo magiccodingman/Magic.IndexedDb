@@ -7,7 +7,8 @@ namespace TestWasm.Models;
 public sealed class EncryptionBenchmarkRepository : IMagicRepository
 {
     public static readonly IndexedDbSet Plain = new("EncryptionBenchmarkPlain");
-    public static readonly IndexedDbSet Protected = new("EncryptionBenchmarkProtected");
+    public static readonly IndexedDbSet Protected = new IndexedDbSet("EncryptionBenchmarkProtected")
+        .Include<EncryptionBenchmarkRecord>();
     public readonly IndexedDbSet ProtectedSelection = Protected;
 }
 

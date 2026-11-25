@@ -289,7 +289,7 @@ public static class NumericFixture
 public sealed class NumericRepository : IMagicRepository
 {
     public static readonly IndexedDbSet Lossless = new("Numeric.Lossless");
-    public static readonly IndexedDbSet Legacy = new("Numeric.Legacy");
+    public static readonly IndexedDbSet Legacy = new IndexedDbSet("Numeric.Legacy").Include<NumericValueRecord>();
 }
 
 public sealed class NumericProtectedRepository : IMagicRepository

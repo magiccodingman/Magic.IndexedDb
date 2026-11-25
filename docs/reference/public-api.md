@@ -36,6 +36,13 @@ Task<QuotaUsage> GetStorageEstimateAsync(
 
 ValueTask<IMagicDatabaseScoped> Database(
     IndexedDbSet indexedDbSet);
+
+ValueTask<IMagicDatabaseScoped> Database(
+    IndexedDbSet indexedDbSet, string instanceName);
+
+Task<IAsyncDisposable> ObserveMigrationsAsync(
+    Func<MagicMigrationEvent, ValueTask> observer,
+    CancellationToken cancellationToken = default);
 ```
 
 `T` must be a class implementing `IMagicTableBase` with a public parameterless constructor. `Query<T>()` selects the table's default database; the selector overload chooses one of its strongly typed database associations.
@@ -139,11 +146,26 @@ Task CloseAsync();
 Task DeleteAsync();
 Task<bool> IsOpenAsync();
 Task<bool> DoesExistAsync();
+ValueTask<IMagicQuery<T>> Query<T>();
+Task<JsonElement?> InspectMigrationAsync(CancellationToken cancellationToken = default);
+Task RetryMigrationAsync(CancellationToken cancellationToken = default);
+Task CancelMigrationAsync();
 ```
 
-The API manages one explicit database scope at a time. There are no public multi-database or all-database overloads.
+The API manages one physical instance per scope. The two-argument `Database` overload
+uses one registered logical schema for a separately named instance; scoped `Query<T>()`
+validates table membership. There are no all-database operations on the public interface.
+Obtaining a scope does not create storage; `OpenAsync` and queries initialize it.
 
-`IsOpenAsync()` describes the current service instance's cached connection, not every browser tab. `DeleteAsync()` requests destructive deletion but does not return a detailed deletion result. See [browser storage and multiple tabs](browser-support-and-storage.md).
+`InspectMigrationAsync` returns metadata only without creating/upgrading a database.
+`RetryMigrationAsync` retries failed initialization or resumes committed progress;
+its token cancels the .NET wait. `CancelMigrationAsync` cancels the browser attempt
+at a safe boundary. `ObserveMigrationsAsync` returns a disposable subscription for
+`MagicMigrationEvent` (`Phase`, `Code`, `Revision`, `TargetRevision`, `MigrationId`,
+`ProcessedRecords`, `DocumentationUrl`, and extensible metadata). See
+[migrations](../guides/migrations.md).
+
+`IsOpenAsync()` describes the current service instance's cached connection, not every browser tab. `DeleteAsync()` awaits destructive deletion and propagates failures; it does not return a structured deletion report. See [browser storage and multiple tabs](browser-support-and-storage.md).
 
 ## Storage estimate
 
@@ -183,6 +205,21 @@ CreatePrimaryKey(...)
 CreateCompoundKey(...)
 CreateCompoundIndex(...)
 ```
+
+## Version 3 schema declarations and exporter
+
+`IndexedDbSet` is an immutable, sealed declaration. `WithSchemaId`, `WithMigrations`,
+`Include<T>`, `Exclude<T>`, `ExplicitTablesOnly`, and `IncludeDefaultTables` return a
+new declaration. Default membership follows `GetDefaultDatabase()`; secondary
+placements need an explicit include.
+
+`MagicSchemaResolver.Resolve` and `ResolveDefinitions` produce `ResolvedMagicDatabase`
+values. `MagicSchemaExporter` emits neutral `MagicSchemaDocument` JSON for the CLI.
+`MagicSchemaOptions` carries numeric modes, protected database identities, and record
+policies consistently between runtime and the exporter. `MagicSchemaJson` exposes
+canonical serialization and fingerprints. `MagicStorageCodecAttribute` records a
+versioned contract for opaque converters; `MagicSchemaException` has stable `Code`
+and `DocumentationUrl` properties. See [schema authoring](../guides/migration-schema.md).
 
 ## Serialization helpers
 

@@ -17,6 +17,8 @@ internal sealed class EncryptionConfiguration
     public MagicEncryptionKeyRequest Request { get; }
     public string PhysicalName { get; }
     public string Route { get; }
+    internal IReadOnlyDictionary<string, IReadOnlyCollection<string>> RecordPolicies =>
+        _recordPolicies.ToDictionary(pair => pair.Key, pair => (IReadOnlyCollection<string>)pair.Value, StringComparer.Ordinal);
 
     public EncryptionConfiguration(MagicEncryptionOptions options, MagicNumericStorageMode numericMode = MagicNumericStorageMode.Legacy)
     {

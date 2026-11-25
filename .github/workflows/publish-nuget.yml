@@ -27,12 +27,18 @@ jobs:
     permissions:
       contents: read
 
+  migration-validation:
+    uses: ./.github/workflows/validate-migrations.yml
+    permissions:
+      contents: read
+
   publish:
     name: Build and publish package
     environment: release
     needs:
       - core-validation
       - browser-validation
+      - migration-validation
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

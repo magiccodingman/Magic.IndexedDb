@@ -10,7 +10,7 @@ Use the table's default database:
 IMagicQuery<Person> people = await MagicDb.Query<Person>();
 ```
 
-Or choose one of the table's declared databases through its strongly typed selector:
+Or choose a database that explicitly includes the table through its strongly typed selector:
 
 ```csharp
 IMagicQuery<Person> employees = await MagicDb.Query<Person>(
@@ -33,7 +33,21 @@ await database.OpenAsync();
 await database.CloseAsync();
 ```
 
-Closing releases the current Dexie connection. A later query can open the database again.
+Obtaining the scope does not create or migrate storage. `OpenAsync()` and `Query<T>()`
+initialize that database; inspection and existence checks can run first. Closing
+releases the current connection. A later query can reopen it if the schema has not
+been invalidated by another application.
+
+Use one logical schema for another plain/lossless instance:
+
+```csharp
+var tenant = await MagicDb.Database(IndexedDbContext.Client, "tenant-42-clients");
+var people = await tenant.Query<Person>();
+var state = await tenant.InspectMigrationAsync(cancellationToken);
+```
+
+Migration events, `CancelMigrationAsync()`, and `RetryMigrationAsync()` are documented
+in the [migration guide](migrations.md#observe-inspect-cancel-and-resume).
 
 Delete a database only when permanent data loss is intended:
 
@@ -41,7 +55,7 @@ Delete a database only when permanent data loss is intended:
 await database.DeleteAsync();
 ```
 
-`DeleteAsync()` requests removal of the browser database and all of its object stores and records. A future query may create a new empty database from the current schema. Other tabs can block deletion, and the current browser helper does not return a detailed deletion result, so call `DoesExistAsync()` afterward when confirmation matters.
+`DeleteAsync()` requests removal of the browser database and all of its object stores and records. A future query may create a new empty database from the current schema. Other tabs can block deletion. The method awaits completion and propagates errors; it does not return a structured deletion report. Migration failures never invoke deletion.
 
 The current API does not expose a public multi-database overload, parameterless `Database()`, `CloseAll`, or `DeleteAll`. Call the single-database API for each explicit database your application owns if such coordination is required.
 

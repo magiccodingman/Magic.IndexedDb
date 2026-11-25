@@ -1,6 +1,6 @@
 # Schema evolution and migrations
 
-Magic IndexedDB does not currently migrate existing records when your C# model changes. Once an application has stored real data, schema changes need to be handled by the application.
+Magic IndexedDB 3 provides a reviewed code-first migration workflow. Export the model, scaffold and review a transition, validate it in CI, and publish static migration assets. Read the [migration guide](migrations.md), [CLI guide](migration-cli.md), and [v3 adoption guide](../upgrading/v3.md) before changing existing installations.
 
 ## What creates the initial schema
 
@@ -53,9 +53,9 @@ Changing the constructor Magic uses can break old rows if required parameters ca
 
 Use `[MagicConstructor]` when the automatic choice is not the constructor you want Magic to use. See [schema attributes and constructors](../reference/schema-attributes.md).
 
-## Deployment strategies today
+## Choose a transition deliberately
 
-Until a supported automatic migration workflow is released, choose an application-owned strategy appropriate to the data:
+Use managed migration history for supported changes. For unsupported storage transitions, choose an explicit application-owned strategy appropriate to the data:
 
 1. Keep the existing schema compatible and add optional/defaulted properties.
 2. Read and rewrite records with explicit application code before switching behavior.
@@ -76,6 +76,6 @@ Never silently delete a user's IndexedDB database merely because the runtime mod
 
 See [browser storage and multiple tabs](../reference/browser-support-and-storage.md) for connection and deletion details, and [serialization](../reference/serialization.md) before changing numeric, date, enum, collection, or converter representations.
 
-Migration-related types found in the source are not a usable migration API yet.
+The former `DbStore.DbMigrations` placeholder is obsolete with a compile error. Version 3 uses `IndexedDbSet.WithMigrations()` and the separate CLI. Native IndexedDB version numbers are owned by the engine, not manually set in repositories.
 
 For numeric format changes, see the [lossless storage cutover guide](lossless-numbers.md#existing-databases-and-cutover). Lossless storage uses a separate physical namespace and refuses to silently adopt an existing Legacy database.

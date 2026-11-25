@@ -236,11 +236,6 @@ internal class IndexedDbManager
         return query;
     }
 
-    internal IMagicDatabaseScoped Database(IndexedDbManager manager, IndexedDbSet indexedDbSet)
-    {
-        return new MagicDatabaseScoped(manager, indexedDbSet);
-    }
-
     /// <summary>
     /// Results do not come back in the same order.
     /// </summary>

@@ -9,6 +9,29 @@ Instead of treating LINQ as an in-memory filter over an already-loaded collectio
 
 [Documentation](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/README.md) · [NuGet](https://www.nuget.org/packages/Magic.IndexedDb/) · [.NET 10 upgrade notes](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/upgrading/dotnet-10.md) · [Issues](https://github.com/magiccodingman/Magic.IndexedDb/issues)
 
+## Version 3 preview: managed migrations
+
+This branch develops **Magic IndexedDB 3.0**, currently `3.0.0-preview.1`.
+It adds a code-first migration workflow with a separate **Magic.IndexedDb.Cli**
+NuGet tool (`magicdb`) and a language-independent JavaScript migration engine.
+C# remains the first authoring experience; published migration assets are static
+JSON and optional JavaScript, suitable for a fully static Blazor site.
+
+- Resolve database/table membership once for runtime and the design-time exporter.
+- Scaffold automatic revisions and review changes the tool cannot safely infer.
+- Publish immutable manifests and assets; each browser upgrades from its own state.
+- Bootstrap new installations directly, explicitly adopt supported legacy layouts,
+  and resume committed batches after interrupted data migrations.
+- Inspect state and subscribe to progress/failure events without exposing record data.
+
+Start with the [migration guide](docs/guides/migrations.md), [CLI workflow](docs/guides/migration-cli.md),
+[schema declarations](docs/guides/migration-schema.md), and [v3 upgrade guide](docs/upgrading/v3.md).
+This is a breaking major-version preview: old all-tables deployment becomes explicit
+membership, and existing databases require a reviewed adoption path. Protected
+migration adapters, numeric codec cutovers, and key-changing resumable migrations
+are not supported yet. See [test and release acceptance](docs/contributing/migration-testing.md)
+and the [implementation handoff](docs/engineering/v3-handoff.md).
+
 ## Why use Magic IndexedDB?
 
 - **Write browser database queries in C#.** Use strongly typed predicates instead of maintaining a separate JavaScript data-access layer.
@@ -16,7 +39,8 @@ Instead of treating LINQ as an in-memory filter over an already-loaded collectio
 - **Express real application logic.** Nested `&&` and `||` predicates are translated, partitioned, optimized, and de-duplicated by primary key.
 - **Use indexes without giving up flexible queries.** `Where(...)` lets the planner use indexes where it can, while `Cursor(...)` handles scan-oriented queries.
 - **Process large results progressively.** `AsAsyncEnumerable()` streams interop results so applications can begin processing before materializing the full returned collection.
-- **Define schemas in C#.** Attributes describe primary keys, indexes, compound indexes, stored names, and databases.
+- **Define schemas in C#.** Attributes describe primary keys, indexes, compound indexes, and stored names; repository declarations control database membership.
+- **Version browser data deliberately.** A separate CLI publishes static migration packages, and the shared engine validates and applies the needed upgrade path per client.
 - **Store practical object models.** Nested objects, collections, custom JSON converters, Unicode text, and constructor-based materialization are supported.
 - **Keep wide numbers exact.** Opt into [lossless numeric storage](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/lossless-numbers.md) for `long`, `ulong`, and `decimal` values while retaining compatible native indexed queries.
 
@@ -45,7 +69,7 @@ This feels familiar to LINQ users without pretending IndexedDB behaves like SQL 
 
 ## Requirements
 
-The current codebase targets .NET 10.
+The current codebase targets .NET 10. Managed migrations require IndexedDB, Web Crypto, and the Web Locks API in a secure browser context.
 
 The current package supports Blazor WebAssembly and Blazor applications using JavaScript interop over SignalR. Browser storage behavior and quota remain controlled by the user's browser.
 

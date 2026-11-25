@@ -1,5 +1,7 @@
 "use strict";
 
+import { subscribeMigrationEvents } from "./migrations/migrationEngine.js";
+
 import {
     setDebugMode,
     getLastQueryPlannerTrace as getPlannerTrace,
@@ -7,6 +9,27 @@ import {
 } from "./utilities/utilityHelpers.js";
 
 const moduleCache = new Map(); // Cache for dynamically imported modules
+const migrationObservers = new Map();
+
+/** Subscribe only when an application asks for diagnostics; keep interop out of the engine. */
+export function observeMigrations(id, dotNetObserver) {
+    stopObservingMigrations(id);
+    migrationObservers.set(id, subscribeMigrationEvents(event =>
+        dotNetObserver.invokeMethodAsync("OnMigrationEvent", event)));
+}
+
+export function stopObservingMigrations(id) {
+    migrationObservers.get(id)?.();
+    migrationObservers.delete(id);
+}
+
+export async function inspectMigration(name) {
+    return (await getModule("./migrations/migrationEngine.js")).inspectDatabase(name);
+}
+
+export async function cancelMigration(name) {
+    (await getModule("./magicDB.js")).cancelMigration(name);
+}
 
 export function configureDebug(enabled) {
     setDebugMode(enabled);
