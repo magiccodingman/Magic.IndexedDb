@@ -68,6 +68,9 @@ fi
 "$magicdb" migrations publish --schema "$artifact_root/models/revision2.json" \
   --directory "$artifact_root/source" --output "$artifact_root/repeated" --json > "$artifact_root/publish-repeat.json"
 
+node tests/migrations/author-codec-recovery.mjs "$magicdb" "$scratch_root/recovery-codecs" \
+  "$artifact_root/published/cli-fixture/recovery-codecs" "$artifact_root/recovery-codec-contracts.json"
+
 # Real installed-package -> MSBuild-selected project SDK -> isolated exporter ->
 # shared runtime schema resolver. No application assembly is loaded by the tool.
 "$magicdb" databases list --project tests/MigrationCliConsumer/MigrationCliConsumer.csproj \
@@ -109,6 +112,8 @@ assert.equal(read('consumer-validate.json').results[0].modelCompared, true);
 const report = read('contract-results.json');
 assert.ok(report.testsExecuted >= 32, 'No contract tests discovered');
 assert.equal(report.failed, 0);
+const codecRecovery = read('recovery-codec-contracts.json');
+assert.deepEqual([codecRecovery.expected, codecRecovery.executed, codecRecovery.passed, codecRecovery.failed, codecRecovery.skipped], [3, 3, 3, 0, 0]);
 const directory = path.join(root, 'published/cli-fixture');
 const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'manifest.json')));
 assert.equal(manifest.targetRevision, 2);
@@ -122,6 +127,7 @@ for (const entry of [...manifest.schemas, ...manifest.migrations]) {
 }
 assert.deepEqual(fs.readFileSync(path.join(directory, 'manifest.json')), fs.readFileSync(path.join(root, 'repeated/cli-fixture/manifest.json')));
 const result = { installedPackage: true, testsExecuted: report.testsExecuted, failed: 0,
+  codecRecoveryTestsExecuted: codecRecovery.executed,
   browserFixture: 'artifacts/migration-cli/published/cli-fixture/manifest.json', targetRevision: 2 };
 fs.writeFileSync(path.join(root, 'summary.json'), JSON.stringify(result, null, 2) + '\n');
 console.log(JSON.stringify(result, null, 2));

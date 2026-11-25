@@ -1419,6 +1419,82 @@ test('cancel during recovery before writes and after checkpoints without replay'
     assert.deepEqual((await read(page)).map(row => row.repairs), [1, 1, 1]);
 });
 
+for (const phase of ['repair', 'verify']) {
+    test(`abrupt page termination during recovery ${phase} preserves committed progress`, async ({ page, context }) => {
+        const model = schema();
+        await seed(page, model, recoveryRows);
+        let plan = makeInterrupted(model);
+        assert.equal((await runPlan(page, plan, { batchSize: 1 })).error?.code, 'MAGDB_HOOK_FAILED');
+        const pause = `if (globalThis.holdRecovery === '${phase}' && row.id === 2) {
+            globalThis.recoveryHookPending = true;
+            await new Promise(() => {});
+        }`;
+        const approved = recoveryPackage(plan, repairModule
+            .replace('export function repairUnprocessed(row) {', `export async function repairUnprocessed(row) {
+                ${phase === 'repair' ? pause : ''}`)
+            .replace('export function verify(row) {', `export async function verify(row) {
+                (globalThis.verificationCalls ??= []).push(row.id);
+                ${phase === 'verify' ? pause : ''}`));
+        plan = appendRevision(plan, model, [{ op: 'setMissing', store: 'clients', path: 'afterRecovery', value: true }]);
+        await page.evaluate(({ options, phase }) => {
+            window.holdRecovery = phase;
+            window.pending = tryEnsure(options, true);
+        }, { options: recoveryOptions(plan, approved), phase });
+        await page.waitForFunction(() => window.recoveryHookPending === true);
+
+        const reader = await loadPage(context);
+        const checkpoint = await inspect(reader);
+        const partial = await read(reader);
+        assert.equal(checkpoint.state.status, 'recovering');
+        assert.equal(checkpoint.state.protocolVersion, 2);
+        assert.equal(checkpoint.state.revision, 1);
+        assert.equal(checkpoint.state.active.processedRecords, 1);
+        assert.deepEqual(checkpoint.state.history, []);
+        assert.deepEqual(checkpoint.state.recovery, { ...approved, phase, repaired: phase === 'repair' ? 1 : 3,
+            verified: phase === 'repair' ? 0 : 1, hasCheckpoint: true });
+        assert.deepEqual(partial.map(row => row.repairs ?? 0), phase === 'repair' ? [1, 0, 0] : [1, 1, 1]);
+        await page.close();
+
+        assert.deepEqual(await inspect(reader), checkpoint);
+        assert.deepEqual(await read(reader), partial);
+        assert.equal((await runPlan(reader, plan)).error?.code, 'MAGDB_RECOVERY_REQUIRED');
+        const resumed = await repair(reader, plan, approved);
+        assert.deepEqual(resumed.value, { outcome: 'recovered', recoveryId: approved.id, revision: 2, applicationTargetRevision: 3 });
+        assert.deepEqual(await reader.evaluate(() => verificationCalls), phase === 'repair' ? [1, 2, 3] : [2, 3]);
+        const repaired = recoveryRows.map(row => ({ ...row, value: 10, repairs: 1 }));
+        assert.deepEqual(await read(reader), repaired);
+        const original = plan.manifest.migrations[0];
+        const recovered = { id: original.id, sha256: original.sha256, outcome: 'recovered', recovery: approved };
+        assert.deepEqual((await inspect(reader)).state.history, [recovered]);
+
+        assert.equal((await runPlan(reader, plan)).value?.revision, 3);
+        const final = (await inspect(reader)).state;
+        assert.equal(final.status, 'ready');
+        assert.equal(final.protocolVersion, 2);
+        const later = plan.manifest.migrations[1];
+        assert.deepEqual(final.history, [recovered, { id: later.id, sha256: later.sha256 }]);
+        assert.deepEqual(await read(reader), repaired.map(row => ({ ...row, afterRecovery: true })));
+    });
+}
+
+test('recovery rejects a changed record codec identity before admission', async ({ page }) => {
+    const before = schema(), after = schema();
+    before.stores[0].recordCodec = 'fixture-record-v1';
+    after.stores[0].recordCodec = 'fixture-record-v2';
+    await seed(page, before, recoveryRows);
+    const plan = bundle(before, after, [{ op: 'transform', store: 'clients' }], {
+        mode: 'resumable', module: 'export function transform(row) { if (row.id === 2) throw new Error("Synthetic fault"); return { ...row, value: 11 }; }'
+    });
+    assert.equal((await runPlan(page, plan, { batchSize: 1 })).error?.code, 'MAGDB_HOOK_FAILED');
+    const checkpoint = await inspect(page), partial = await read(page);
+    assert.equal(checkpoint.state.active.processedRecords, 1);
+    const result = await repair(page, plan, recoveryPackage(plan));
+    assert.equal(result.error?.code, 'MAGDB_RECOVERY_UNSUPPORTED');
+    assert.match(result.error.message, /Recovery cannot change the store codec/);
+    assert.deepEqual(await inspect(page), checkpoint);
+    assert.deepEqual(await read(page), partial);
+});
+
 test('recovery quota and verifier errors retain checkpoints and redact private data', async ({ page }) => {
     const model = schema(); await seed(page, model, recoveryRows);
     const plan = makeInterrupted(model); expectFailure(await runPlan(page, plan, { batchSize: 1 }));
@@ -1518,7 +1594,35 @@ if (cliFixture) test('installed CLI output boots and upgrades through the browse
     assert.equal(result.revision, 2);
 });
 
-const expectedScenarioCount = cliFixture ? 92 : 91;
+if (cliFixture) for (const [codecCase, sourceHasCodec] of [['absent-to-null', false], ['null-to-absent', true]]) {
+    test(`installed CLI output recovers optional recordCodec ${codecCase}`, async ({ page }) => {
+        const relative = `recovery-codecs/${codecCase}`;
+        const directory = path.join(path.dirname(cliFixture), relative);
+        const manifest = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
+        const models = await Promise.all(manifest.schemas.map(async model =>
+            JSON.parse(await readFile(path.join(directory, model.path), 'utf8'))));
+        const [before, after] = models;
+        assert.equal(Object.hasOwn(before.stores[0], 'recordCodec'), sourceHasCodec);
+        assert.equal(Object.hasOwn(after.stores[0], 'recordCodec'), !sourceHasCodec);
+        assert.equal(models[sourceHasCodec ? 0 : 1].stores[0].recordCodec, null);
+        await seed(page, before, recoveryRows);
+        const plan = { after, url: origin + '/cli/' + relative + '/manifest.json' };
+        assert.equal((await runPlan(page, plan, { batchSize: 1 })).error?.code, 'MAGDB_HOOK_FAILED');
+        assert.equal((await inspect(page)).state.active.processedRecords, 1);
+        assert.deepEqual((await read(page)).map(row => row.value), [11, 1, 1]);
+        const { id, sha256 } = manifest.recoveries[0];
+        const result = await repair(page, plan, { id, sha256 });
+        assert.equal(result.value?.outcome, 'recovered', JSON.stringify(result));
+        assert.deepEqual(await read(page), recoveryRows.map(row => ({ ...row, value: 10, repairs: 1 })));
+        const ready = (await inspect(page)).state;
+        assert.equal(ready.protocolVersion, 2);
+        assert.deepEqual(ready.history, [{ id: manifest.migrations[0].id, sha256: manifest.migrations[0].sha256,
+            outcome: 'recovered', recovery: { id, sha256 } }]);
+        assert.equal((await runPlan(page, plan)).value?.revision, 2);
+    });
+}
+
+const expectedScenarioCount = cliFixture ? 97 : 94;
 assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
 
 if (listOnly) {

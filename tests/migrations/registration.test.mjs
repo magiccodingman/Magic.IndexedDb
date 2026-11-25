@@ -16,6 +16,8 @@ test('worker ownership runs in both modes and only the CLI boundary is optional'
         assert.equal(standalone.status, 0, standalone.stderr);
         const names = JSON.parse(standalone.stdout);
         assert.ok(names.includes('dedicated workers and tabs share migration ownership'));
+        for (const phase of ['repair', 'verify'])
+            assert.ok(names.includes(`abrupt page termination during recovery ${phase} preserves committed progress`));
         assert.ok(!names.some(name => name.startsWith('installed CLI output')));
 
         env.MAGIC_CLI_FIXTURE = path.join(scratch, 'manifest.json');
@@ -26,6 +28,8 @@ test('worker ownership runs in both modes and only the CLI boundary is optional'
         const configured = list();
         assert.equal(configured.status, 0, configured.stderr);
         assert.deepEqual(JSON.parse(configured.stdout), [...names,
-            'installed CLI output boots and upgrades through the browser protocol']);
+            'installed CLI output boots and upgrades through the browser protocol',
+            'installed CLI output recovers optional recordCodec absent-to-null',
+            'installed CLI output recovers optional recordCodec null-to-absent']);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
 });

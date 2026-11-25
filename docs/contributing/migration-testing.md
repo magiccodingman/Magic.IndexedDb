@@ -31,7 +31,10 @@ fail, if an unhandled browser exception appears, or if the expected scenario cou
 is not executed. JSON and JUnit reports, failure logs, and screenshots are written
 under `artifacts/migration-browser` (or the optional third argument).
 
-The standalone suite executes 91 cases. The installed CLI fixture adds one.
+The standalone suite executes 94 cases. The installed CLI fixture adds three,
+for 97 cases per browser. The two CLI recovery cases use published neutral
+schema snapshots where the affected store's optional `recordCodec` changes
+between omission and explicit null in each direction.
 The required jobs also load the reviewed, pinned v1 engine to verify it rejects
 a recovered journal. For local compatibility verification, extract
 `Magic.IndexedDb/wwwroot/migrations/{migrationEngine,protocol}.js` from
@@ -65,6 +68,10 @@ tool directory. Its generated static package is then consumed by the browser
 runner. This boundary test detects disagreements between CLI hashes/schema
 serialization and JavaScript protocol interpretation that either side's unit
 tests could miss.
+
+The script also authors and publishes both optional-codec recovery fixtures with
+the installed tool. It checks that a real codec identity change is rejected by
+recovery authoring and that the rejected attempt leaves source history unchanged.
 
 ## Upgrade the released runtime package in a Blazor app
 
@@ -121,6 +128,10 @@ metadata. The release workflow requires migration validation, including this gat
   and missing indexes.
 - Data and checkpoint durability after a failed batch, cancellation, or page
   termination; retry without double-applying earlier batches.
+- Abrupt recovery page termination while a repair hook or verifier is pending
+  after a durable checkpoint. A second page resumes the same package and
+  confirms committed work is preserved and ordinary opening is blocked until
+  verification finishes.
 - Concurrent tabs, blocked native upgrades, and stale application revisions.
 - Cancellation while another tab blocks an upgrade; late open requests cannot
   perform an upgrade after cancellation is reported.

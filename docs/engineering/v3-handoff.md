@@ -62,7 +62,7 @@ passed all 12 then-existing CI jobs. Separately, local Chrome, Firefox and Linux
 WebKit ran 42 installed-package adoption cases across both managed build modes.
 Those runs covered adoption through revision 1.
 
-The next validation gate runs the released-package fixture on Chromium, Firefox,
+The validation gate runs the released-package fixture on Chromium, Firefox,
 Linux WebKit and macOS WebKit. One published artifact set is reused across those
 jobs. Each job requires all seven historical packages to adopt, advance through
 the CLI-produced revision 2 and reopen in trimmed and AOT Blazor builds. Each
@@ -72,11 +72,19 @@ SHA, actual engine and host versions, and execution counts. Refer to the current
 PR check runs for exact-head outcomes and downloadable artifacts. The same
 workflow is a prerequisite for the release publisher.
 
+The [bounded recovery review revision](https://github.com/magiccodingman/Magic.IndexedDb/commit/186f5f9383ec0f87272c26679dfa851cc574dd10)
+passed all 18 checks, including 92 protocol cases per browser and 80 released
+fixture cases. The focused follow-up adds both abrupt recovery page-close
+scenarios, runtime rejection of a changed codec identity, and two browser cases
+that consume the installed CLI's published omitted/null codec fixtures. The
+current protocol gate requires 97 cases per browser. The installed CLI also
+checks that authoring rejects a real codec change without changing source history.
+
 The [testing guide](../contributing/migration-testing.md) gives local commands
 for both standalone and CLI-configured protocol runs and for the released
-packages. The portable recovery suite tests an actual pinned v1 engine alongside the current
-runner. The release gate also requires canceled/resumed recovery through Blazor,
-inspection, disposed observation, and an ordinary migration to a later target.
+packages. The portable recovery suite tests an actual pinned v1 engine alongside
+the current runner. The release gate also requires canceled/resumed recovery through
+Blazor, inspection, disposed observation, and an ordinary migration to a later target.
 The quota case injects a quota failure inside a real IndexedDB
 transaction. The service-worker test controls which exact assets are served
 from Cache Storage. The bridge covers a loaded tab and worker while offline.

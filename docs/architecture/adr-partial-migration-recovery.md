@@ -12,6 +12,11 @@ Unrelated store contracts must match. A package may handle added or removed fiel
 on the affected store. Structural work, multiple operations, protection or codec
 changes require another recovery strategy.
 
+For the affected store, an omitted `recordCodec` and an explicit JSON
+`null` both mean there is no record codec. The CLI and browser compare
+them as equivalent for recovery eligibility. Each schema snapshot keeps
+its original representation and fingerprint.
+
 The application supplies deterministic repair and verification functions. The
 engine owns native cursors, transactions, checkpoints, readiness and lineage.
 Application hooks must avoid external side effects. If required original

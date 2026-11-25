@@ -156,7 +156,7 @@ function validateRecoveryModels(from, to, store) {
         if (previous.name !== store) requireCondition(canonicalJson(previous) === canonicalJson(next),
             "MAGDB_RECOVERY_UNSUPPORTED", "Recovery cannot change unrelated store contracts.");
         else {
-            requireCondition(previous.recordCodec === next.recordCodec,
+            requireCondition((previous.recordCodec ?? null) === (next.recordCodec ?? null),
                 "MAGDB_RECOVERY_UNSUPPORTED", "Recovery cannot change the store codec.");
             compareFields(previous.fields, next.fields);
         }
