@@ -1436,8 +1436,14 @@ test('recovery quota and verifier errors retain checkpoints and redact private d
     assert.equal(quota.error.retryable, true);
     assert.equal((await inspect(page)).state.recovery.repaired, 1);
     assert.deepEqual((await read(page)).map(row => row.repairs ?? 0), [1, 0, 0]);
-    const rejected = await repair(page, plan, approved);
+    const rejected = await page.evaluate(async options => {
+        try { await engine.recoverDatabase(options); return { ok: true }; }
+        catch (error) {
+            return { error: { code: error.code, message: error.message, retryable: error.retryable, cause: error.cause } };
+        }
+    }, recoveryOptions(plan, approved));
     assert.equal(rejected.error?.code, 'MAGDB_RECOVERY_VERIFICATION_FAILED');
+    assert.equal(rejected.error.cause, undefined);
     assert.equal(rejected.error.retryable, false);
     const snapshot = await inspect(page);
     assert.equal(snapshot.state.status, 'recovering');

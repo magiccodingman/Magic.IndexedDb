@@ -756,10 +756,11 @@ async function recoverLocked(options, snapshot, manifest, base, model) {
                     value = await awaitExtension(hook(structuredClone(row.value),
                         Object.freeze({ signal: options.signal, primaryKey: structuredClone(row.key) })), options.signal);
                     if (!verify) value = structuredClone(value);
-                } catch (cause) {
+                } catch {
                     abortCheck(options.signal);
+                    // Application exceptions can contain the record being repaired.
                     throw new MigrationError(verify ? "MAGDB_RECOVERY_VERIFICATION_FAILED" : "MAGDB_RECOVERY_HOOK_FAILED",
-                        "Application recovery logic failed. Developer intervention is required.", {}, false, cause);
+                        "Application recovery logic failed. Developer intervention is required.");
                 }
                 if (verify) requireCondition(value === true, "MAGDB_RECOVERY_VERIFICATION_FAILED", "The application verifier rejected a repaired record.");
                 else {
