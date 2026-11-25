@@ -87,6 +87,29 @@ Getting a database scope does not create or migrate it. `DoesExistAsync()` and
 `OpenAsync()` or scoped `Query<T>()` starts initialization. Queries for a table
 outside the resolved membership fail before database creation.
 
+## The JavaScript engine boundary
+
+Another language can emit the same schema and assets and call the engine directly:
+
+```js
+import { ensureDatabase, inspectDatabase } from
+    "/_content/Magic.IndexedDb/migrations/migrationEngine.js";
+
+const ready = await ensureDatabase({
+    name: "tenant-42-clients",
+    schema: portableSchema,
+    manifestUrl: "/db/releases/app-003/clients/manifest.json",
+    onEvent: event => applicationLogger(event)
+});
+```
+
+The returned value identifies committed readiness, not an unguarded database handle.
+A future JavaScript adapter must use the same persisted representation, close native
+connections on `versionchange`, and enforce readiness before queries/writes.
+`assertDatabaseReady(nativeConnection, ready)` is exported for that boundary.
+Blazor's adapter already performs these checks. The engine cannot stop unrelated
+same-origin code from directly accessing native IndexedDB.
+
 ## What happens during an upgrade
 
 The engine pins the model and manifest inputs, obtains an exclusive Web Lock for

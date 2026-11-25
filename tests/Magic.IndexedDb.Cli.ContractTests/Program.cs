@@ -173,6 +173,92 @@ Test("extra legacy stores require a bridge, never inferred deletion", async f =>
     legacy["stores"]!.AsArray().Add(extra); File.WriteAllText(f.LegacyPath, legacy.ToJsonString());
     await f.Baseline(3, acknowledge: true, write: false);
 });
+Test("baseline cannot acknowledge away a different field codec before source writes", async f =>
+{
+    await f.Initial(); var history = File.ReadAllBytes(f.HistoryPath);
+    var legacy = f.Model.DeepClone(); legacy["stores"]![0]!["fields"]![1]!["codec"] = "historical-string-v1";
+    File.WriteAllText(f.LegacyPath, legacy.ToJsonString());
+    await f.Baseline(3, acknowledge: true, write: false);
+    Check(history.SequenceEqual(File.ReadAllBytes(f.HistoryPath)));
+    Check(!Directory.Exists(Path.Combine(f.Source, "fixture", "baselines")));
+});
+Test("edited baseline field contract fails validation and publication", async f =>
+{
+    await f.Initial(); await f.Baseline(0, acknowledge: true);
+    var path = Path.Combine(f.Source, "fixture", "baselines", "legacy-v2.json");
+    var baseline = JsonNode.Parse(File.ReadAllText(path))!;
+    baseline["stores"]![0]!["fields"]![1]!["nullable"] = true;
+    File.WriteAllText(path, baseline.ToJsonString());
+    await f.Fail("MAGDB4203", "migrations", "validate");
+    await f.Fail("MAGDB4203", "migrations", "publish", "--output", Path.Combine(f.Root, "release"));
+    Check(!File.Exists(f.Published("release")));
+});
+Test("duplicate physical baseline is rejected before writing another source document", async f =>
+{
+    await f.Initial(); await f.Baseline(0, acknowledge: true);
+    var original = File.ReadAllBytes(f.HistoryPath);
+    var result = await f.Raw("migrations", "baseline", "--database", "fixture", "--directory", f.Source,
+        "--legacy-schema", f.LegacyPath, "--revision", "1", "--id", "another-legacy", "--acknowledge-data-contract", "--json");
+    Check(result.Code == 3 && result.Error.Contains("MAGDB4203", StringComparison.Ordinal) && result.Error.Contains("ambiguous", StringComparison.Ordinal));
+    Check(original.SequenceEqual(File.ReadAllBytes(f.HistoryPath)));
+    Check(!File.Exists(Path.Combine(f.Source, "fixture", "baselines", "another-legacy.json")));
+});
+Test("manually duplicated physical baselines cannot validate or publish", async f =>
+{
+    await f.Initial(); await f.Baseline(0, acknowledge: true);
+    var history = f.History(); var duplicate = history["baselines"]![0]!.DeepClone(); duplicate["id"] = "another-legacy";
+    history["baselines"]!.AsArray().Add(duplicate); f.WriteHistory(history);
+    await f.Fail("MAGDB4203", "migrations", "validate");
+    await f.Fail("MAGDB4203", "migrations", "publish", "--output", Path.Combine(f.Root, "release"));
+    Check(!File.Exists(f.Published("release")));
+});
+foreach (var property in new[] { "encryptedFields", "exposedFields" })
+    Test($"{property} permits neutral export and drafts but blocks validation and publication", async f =>
+    {
+        f.Model["stores"]![0]![property] = property == "encryptedFields" ? new JsonArray("name") : new JsonArray();
+        f.Save();
+        Check((await f.Raw("databases", "list", "--schema", f.ModelPath, "--json")).Code == 0);
+        Check((await f.Raw("schema", "export", "--schema", f.ModelPath, "--json")).Code == 0);
+        await f.Code(3, "migrations", "add", "Initial");
+        f.AddIndex(); await f.Code(3, "migrations", "add", "Index");
+        await f.Fail("MAGDB4208", "migrations", "validate");
+        await f.Fail("MAGDB4208", "migrations", "publish", "--output", Path.Combine(f.Root, "release"));
+        Check(!File.Exists(f.Published("release")));
+        Check(!File.Exists(Path.Combine(f.Source, "fixture", "published.lock.json")));
+    });
+Test("empty encrypted fields and null exposed fields remain ordinary storage", async f =>
+{
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray();
+    f.Model["stores"]![0]!["exposedFields"] = null; f.Save();
+    await f.Initial(); await f.Ok("migrations", "validate");
+});
+Test("protected historical revision blocks a currently unprotected target", async f =>
+{
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
+    await f.Code(3, "migrations", "add", "Initial");
+    f.Model["stores"]![0]!.AsObject().Remove("encryptedFields"); f.Save();
+    await f.Code(3, "migrations", "add", "RemoveProtection");
+    f.ChangeMigration(m => m["operations"] = new JsonArray());
+    await f.Fail("MAGDB4208", "migrations", "validate");
+});
+Test("temporary protected store in migration is rejected before publication", async f =>
+{
+    await f.Initial(); await f.Code(3, "migrations", "add", "Temporary", "--empty");
+    var store = f.Model["stores"]![0]!.DeepClone(); store["name"] = "temporary"; store["exposedFields"] = new JsonArray();
+    f.ChangeMigration(m => m["operations"] = new JsonArray(
+        new JsonObject { ["op"] = "createStore", ["definition"] = store },
+        new JsonObject { ["op"] = "deleteStore", ["store"] = "temporary", ["allowDataLoss"] = true }));
+    await f.Fail("MAGDB4208", "migrations", "validate");
+});
+Test("protected baseline metadata fails with an explicit unsupported diagnostic", async f =>
+{
+    await f.Initial(); await f.Baseline(0, acknowledge: true);
+    var path = Path.Combine(f.Source, "fixture", "baselines", "legacy-v2.json");
+    var baseline = JsonNode.Parse(File.ReadAllText(path))!;
+    baseline["stores"]![0]!["encryptedFields"] = new JsonArray("name");
+    File.WriteAllText(path, baseline.ToJsonString());
+    await f.Fail("MAGDB4208", "migrations", "validate");
+});
 Test("custom transform module cannot escape migration root", async f =>
 {
     await f.Initial(); await f.Code(3, "migrations", "add", "Transform", "--empty");

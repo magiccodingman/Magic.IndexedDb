@@ -66,6 +66,7 @@ internal sealed class MigrationWorkspace(string directory, string schemaId)
         var requiresReview = HasProtection(model) || operations.Any(node => Protocol.Text(Protocol.Object(node, "operation"), "op") == "manual") ||
             mode == "resumable" && operations.Any(node => !Protocol.DataOperations.Contains(Protocol.Text(Protocol.Object(node, "operation"), "op")));
         return Result("created", revision, requiresReview,
+            HasProtection(model) ? "Draft created. Protected storage cannot be validated or published until an authenticated migration adapter is available; see the CLI guide." :
             requiresReview ? "Draft created. Resolve manual operations before validation or publishing." : "Migration created. Review and run migration tests before publishing.");
     }
 
@@ -83,6 +84,14 @@ internal sealed class MigrationWorkspace(string directory, string schemaId)
         var baselines = Protocol.Array(history, "baselines");
         if (baselines.Any(node => Protocol.Text(Protocol.Object(node, "baseline"), "id") == id))
             throw new CliException("MAGDB4203", $"Baseline '{id}' already exists.");
+        foreach (var node in baselines)
+        {
+            var existing = Protocol.Object(node, "baseline");
+            var reference = Protocol.Object(existing["schema"], "baseline schema reference");
+            var definition = Protocol.Object(JsonNode.Parse(package.Assets[Protocol.Text(reference, "path")]), "baseline schema");
+            if (Protocol.Equal(Protocol.PhysicalSchema(definition), Protocol.PhysicalSchema(legacyModel)))
+                throw new CliException("MAGDB4203", $"Baseline '{id}' has the same physical layout as '{Protocol.Text(existing, "id")}', making browser adoption ambiguous. Keep one adoption baseline for that layout and migrate forward from its revision.");
+        }
         var path = $"baselines/{id}.json";
         WriteNew(path, Protocol.Bytes(legacyModel));
         baselines.Add(new JsonObject
@@ -149,6 +158,7 @@ internal sealed class MigrationWorkspace(string directory, string schemaId)
         }
         var baselineReferences = new JsonArray();
         var baselineIds = new HashSet<string>(StringComparer.Ordinal);
+        var baselineLayouts = new HashSet<string>(StringComparer.Ordinal);
         foreach (var node in Protocol.Array(history, "baselines"))
         {
             var entry = Protocol.Object(node, "baseline");
@@ -162,6 +172,8 @@ internal sealed class MigrationWorkspace(string directory, string schemaId)
             if (requireRuntimeSupport) RequireSupported(baseline, $"baseline '{id}'");
             if (!Protocol.Equal(baseline, managed))
                 throw new CliException("MAGDB4203", $"Baseline '{id}' must exactly match the complete canonical schema at its selected managed revision, including persisted field contracts.");
+            if (!baselineLayouts.Add(Protocol.Canonical(Protocol.PhysicalSchema(baseline))))
+                throw new CliException("MAGDB4203", $"Baseline '{id}' duplicates another baseline's physical layout, making browser adoption ambiguous. Retain one adoption baseline for each physical layout.");
             AddAsset(assets, path, Protocol.Bytes(baseline));
             baselineReferences.Add(new JsonObject
             {

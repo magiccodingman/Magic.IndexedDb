@@ -222,6 +222,18 @@ test('fresh target bootstrap skips historical migration downloads and transforms
     assert.ok(!requests.slice(beforeRequests).includes(plan.base + '/migrations/0002_Change.json'));
 });
 
+for (const [name, change, expectedCode] of [
+    ['missing history edge', manifest => { manifest.migrations = []; }, 'MAGDB_HISTORY_INVALID'],
+    ['missing historical schema', manifest => { manifest.schemas = manifest.schemas.filter(entry => entry.revision !== 1); }, 'MAGDB_HISTORY_INVALID'],
+    ['schema beyond the target', manifest => { manifest.schemas.push({ ...manifest.schemas[1], revision: 3 }); }, 'MAGDB_MANIFEST_INVALID']
+]) test(`fresh bootstrap rejects ${name} without creating storage`, async ({ page }) => {
+    const model = schema();
+    const plan = bundle(model, model, [], { changeManifest: change });
+    const result = await runPlan(page, plan);
+    expectFailure(result); assert.equal(result.error.code, expectedCode);
+    assert.equal(await inspect(page), null);
+});
+
 test('independent physical names share a schema without sharing data', async ({ page }) => {
     await seed(page, schema(), records, 'organization-a');
     await seed(page, schema(), [{ id: 7, name: 'Different' }], 'organization-b');
@@ -272,6 +284,68 @@ test('protected schemas are rejected by the unauthenticated plain runner', async
     const model = schema(); model.stores[0].encryptedFields = ['name'];
     expectFailure(await page.evaluate(model => tryEnsure({ name: 'test', schema: model }), model));
     assert.equal(await inspect(page), null);
+});
+
+for (const [name, protection] of [
+    ['field protection', { encryptedFields: ['name'] }],
+    ['whole-record protection with no public fields', { exposedFields: [] }]
+]) test(`a plain target cannot bypass historical ${name}`, async ({ page }) => {
+    const plain = schema(); const historical = copy(plain);
+    Object.assign(historical.stores[0], protection);
+    const ready = await seed(page, plain);
+    // Simulate an existing managed installation whose recorded model included
+    // protection. The ordinary target has the same native layout; only the
+    // supported storage adapter can decide how to interpret those records.
+    await page.evaluate(async schemaHash => {
+        const db = await openRaw('test');
+        try {
+            const tx = db.transaction('__magic_migrations__', 'readwrite'); const done = complete(tx);
+            const store = tx.objectStore('__magic_migrations__'); const get = store.get('state');
+            get.onsuccess = () => store.put({ ...get.result, schemaHash }, 'state');
+            await done;
+        } finally { db.close(); }
+    }, fingerprint(historical));
+    const plan = bundle(historical, plain, [{ op: 'setMissing', store: 'clients', path: 'unsafeRawUpdate', value: true }]);
+    const result = await runPlan(page, plan);
+    expectFailure(result); assert.equal(result.error.code, 'MAGDB_PROTECTED_ADAPTER_REQUIRED');
+    await unchanged(page, ready);
+    assert.equal((await inspect(page)).state.schemaHash, fingerprint(historical));
+});
+
+test('a protected intermediate model fails before earlier plain revisions write', async ({ page }) => {
+    const plain = schema(); const intermediate = copy(plain); intermediate.stores[0].exposedFields = [];
+    const ready = await seed(page, plain);
+    const plan = appendRevision(bundle(plain, intermediate,
+        [{ op: 'setMissing', store: 'clients', path: 'unsafeRawUpdate', value: true }]), plain, []);
+    const result = await runPlan(page, plan);
+    expectFailure(result); assert.equal(result.error.code, 'MAGDB_PROTECTED_ADAPTER_REQUIRED');
+    await unchanged(page, ready);
+});
+
+test('a protected adoption baseline is rejected before stamping an unmanaged database', async ({ page }) => {
+    const plain = schema(); const historical = copy(plain); historical.stores[0].encryptedFields = ['name'];
+    await page.evaluate(({ model, rows }) => makeLegacy('test', model, rows), { model: plain, rows: records });
+    const previous = await inspect(page);
+    const plan = bundle(historical, plain,
+        [{ op: 'setMissing', store: 'clients', path: 'unsafeRawUpdate', value: true }], { baseline: historical });
+    const result = await runPlan(page, plan);
+    expectFailure(result); assert.equal(result.error.code, 'MAGDB_PROTECTED_ADAPTER_REQUIRED');
+    await unchanged(page, previous);
+    assert.equal((await inspect(page)).state, null);
+});
+
+test('a transient protected store cannot bypass preflight by being removed from the target', async ({ page }) => {
+    const model = schema(); const ready = await seed(page, model);
+    const definition = { ...copy(model.stores[0]), name: 'temporary', fields: [], exposedFields: [] };
+    const plan = bundle(model, model, [
+        { op: 'setMissing', store: 'clients', path: 'unsafeRawUpdate', value: true },
+        { op: 'createStore', definition },
+        { op: 'deleteStore', store: 'temporary', allowDataLoss: true }
+    ]);
+    const result = await runPlan(page, plan);
+    expectFailure(result); assert.equal(result.error.code, 'MAGDB_PROTECTED_ADAPTER_REQUIRED');
+    await unchanged(page, ready);
+    assert.ok(!(await inspect(page)).stores.some(store => store.name === 'temporary'));
 });
 
 test('protected registration rejects a migration manifest before provisioning storage', async ({ page }) => {
@@ -434,6 +508,45 @@ test('retry after a later transaction fails does not replay a committed earlier 
     const resumed = await runPlan(page, plan);
     assert.equal(resumed.ok, true, JSON.stringify(resumed)); assert.equal(resumed.value.revision, 3);
     assert.ok((await read(page)).every(row => row.visits === 1));
+});
+
+test('moving completed migration references to different revisions rejects on ready reopen', async ({ page }) => {
+    const model = schema(); await seed(page, model);
+    const plan = appendRevision(bundle(model, model, []), model, []);
+    const completed = await runPlan(page, plan);
+    assert.equal(completed.ok, true, JSON.stringify(completed));
+    const manifest = copy(plan.manifest);
+    Object.assign(manifest.migrations[0], { fromRevision: 2, toRevision: 3 });
+    Object.assign(manifest.migrations[1], { fromRevision: 1, toRevision: 2 });
+    jsonAsset(plan.base + '/manifest.json', manifest);
+    const rejected = await runPlan(page, plan);
+    expectFailure(rejected); assert.equal(rejected.error.code, 'MAGDB_HISTORY_REWRITTEN');
+    await unchanged(page, completed.value);
+});
+
+for (const invalidHistory of ['duplicate', 'too-long']) test(`a ${invalidHistory} completed journal is rejected without applying work`, async ({ page }) => {
+    const model = schema(); await seed(page, model);
+    let plan = bundle(model, model, []);
+    if (invalidHistory === 'duplicate') plan = appendRevision(plan, model, []);
+    const completed = await runPlan(page, plan);
+    assert.equal(completed.ok, true, JSON.stringify(completed));
+    await page.evaluate(async kind => {
+        const db = await openRaw('test');
+        try {
+            const tx = db.transaction('__magic_migrations__', 'readwrite'); const done = complete(tx);
+            const store = tx.objectStore('__magic_migrations__'); const get = store.get('state');
+            get.onsuccess = () => {
+                const state = get.result;
+                if (kind === 'duplicate') state.history[1] = structuredClone(state.history[0]);
+                else state.history.push({ id: 'impossible-extra-entry', sha256: 'sha256:' + '0'.repeat(64) });
+                store.put(state, 'state');
+            };
+            await done;
+        } finally { db.close(); }
+    }, invalidHistory);
+    const rejected = await runPlan(page, plan);
+    expectFailure(rejected); assert.equal(rejected.error.code, 'MAGDB_STATE_INVALID');
+    await unchanged(page, completed.value);
 });
 
 for (const [name, change] of [
@@ -671,6 +784,20 @@ test('resumable retry does not replay already committed batches', async ({ page 
     assert.equal(resumed.ok, true, JSON.stringify(resumed));
     assert.equal(resumed.value.revision, 2);
     assert.ok((await read(page)).every(r => r.visits === 1));
+});
+
+test('resumable hooks can reuse an output object without corrupting earlier batch results', async ({ page }) => {
+    const model = schema();
+    const original = records.map(row => ({ ...row, visits: 0 }));
+    await seed(page, model, original);
+    const plan = bundle(model, model, [{ op: 'transform', store: 'clients' }], {
+        mode: 'resumable',
+        module: 'const scratch = {}; export function transform(row) { Object.assign(scratch, row, {visits: row.visits + 1}); return scratch; }'
+    });
+    const result = await runPlan(page, plan, { batchSize: 2 });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.deepEqual(await read(page), original.map(row => ({ ...row, visits: 1 })));
+    assert.equal((await inspect(page)).state.status, 'ready');
 });
 
 test('public recovery diagnostics redact the durable record-key checkpoint', async ({ page }) => {

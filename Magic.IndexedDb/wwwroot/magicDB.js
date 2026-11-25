@@ -23,12 +23,6 @@ import { canonicalJson, metadataStore } from "./migrations/protocol.js";
  */
 
 
-//export async function initializeMagicMigration() {
-//    const { MagicMigration } = await import('/magicMigration.js');  // Dynamically import it
-//    const magicMigration = new MagicMigration(db);  // Pass only Dexie.js
-//    magicMigration.Initialize();  // Call method (optional)
-//}
-
 let databases = new Map(); // Change array to a Map
 const protectedDatabases = new Map();
 const numericDatabases = new Map();
@@ -245,10 +239,8 @@ export function listOpenDatabases() {
 export function createDb(dbStore) {
     debugLog("Received dbStore in createDb", dbStore);
 
-    if (!dbStore || !dbStore.name) {
-        console.error("Blazor.IndexedDB.Framework - Invalid dbStore provided");
-        return;
-    }
+    if (!dbStore || typeof dbStore.name !== "string" || !dbStore.name || !Array.isArray(dbStore.storeSchemas))
+        throw new MigrationError("MAGDB_CONFIGURATION_INVALID", "A database name and store schema array are required.");
 
     
     const dbName = dbStore.name;
@@ -265,111 +257,33 @@ export function createDb(dbStore) {
         if (dbName.startsWith(protectedDatabasePrefix)) throw new Error("Protected database names require their storage policy.");
         return createManagedDatabase(dbStore, numericStorage);
     }
-    if (!encryption && dbName.startsWith(numericDatabasePrefix)) {
-        throw new Error("MAGIC_NUMERIC_POLICY_REQUIRED: The lossless namespace requires its numeric storage policy.");
+    if (!dbName.startsWith(protectedDatabasePrefix) ||
+        typeof encryption.account !== "string" || !encryption.account ||
+        (encryption.physicalName != null &&
+            (!encryption.physicalName.startsWith(protectedDatabasePrefix) ||
+                !dbName.startsWith(encryption.physicalName + ":")))) {
+        throw new Error("Magic encrypted databases require a reserved name and account.");
     }
-    const existingProtection = protectedDatabases.get(dbName);
-    if (encryption) {
-        if (!dbName.startsWith(protectedDatabasePrefix) ||
-            typeof encryption.account !== "string" || !encryption.account ||
-            (encryption.physicalName != null &&
-                (!encryption.physicalName.startsWith(protectedDatabasePrefix) ||
-                    !dbName.startsWith(encryption.physicalName + ":")))) {
-            throw new Error("Magic encrypted databases require a reserved name and account.");
-        }
-        if (existingProtection) throw new Error("This protected database is already configured.");
-    } else if (dbName.startsWith(protectedDatabasePrefix)) {
-        throw new Error("Protected Magic database names require a storage policy.");
-    } else if (isDbOpen(dbName)) {
-        return;
-    }
+    if (protectedDatabases.has(dbName)) throw new Error("This protected database is already configured.");
 
-
-    const db = new Dexie(encryption?.physicalName ?? dbName);
-    const stores = Object.create(null);
-
-    for (let i = 0; i < dbStore.storeSchemas.length; i++) {
-        const schema = dbStore.storeSchemas[i];
-
-        if (!schema || !schema.tableName) {
-            console.error(`Invalid schema at index ${i}:`, schema);
-            continue;
-        }
-
-        let def = "";
-
-        // **Handle Primary Key (Single or Compound)**
-        if (Array.isArray(schema.columnNamesInCompoundKey) && schema.columnNamesInCompoundKey.length > 0) {
-            if (schema.columnNamesInCompoundKey.length === 1) {
-                // Single primary key
-                if (schema.primaryKeyAuto) def += "++"; // Auto increment
-                def += schema.columnNamesInCompoundKey[0]; // Primary key column
-            } else {
-                // Compound primary key
-                def += `[${schema.columnNamesInCompoundKey.join('+')}]`;
-            }
-        }
-
-        // **Handle Unique Indexes**
-        const uniqueIndexes = new Set(Array.isArray(schema.uniqueIndexes) ? schema.uniqueIndexes : []);
-        for (const member of uniqueIndexes) {
-            def += `,&${member}`;
-        }
-
-        // **Handle Standard Indexes**
-        if (Array.isArray(schema.indexes)) {
-            for (const member of new Set(schema.indexes)) {
-                // Compound members and explicit annotations can also be unique.
-                // Emit one native index without changing the original schema
-                // payload used by authenticated Legacy vault fingerprints.
-                if (!uniqueIndexes.has(member)) def += `,${member}`;
-            }
-        }
-
-        // **Handle Compound Indexes**
-        if (Array.isArray(schema.columnNamesInCompoundIndex)) {
-            for (let j = 0; j < schema.columnNamesInCompoundIndex.length; j++) {
-                let compoundIndex = schema.columnNamesInCompoundIndex[j];
-                if (compoundIndex.length > 0) {
-                    def += `,[${compoundIndex.join('+')}]`; // Correct format for compound indexes
-                }
-            }
-        }
-
-        stores[schema.tableName] = def;
-    }
-
-    debugLog("Dexie Store Definition:", stores);
-
-    const protection = encryption
-        ? createProtectedStorage(db, encryption.account, dbStore.storeSchemas, numericStorage)
-        : null;
-    if (protection) {
-        protectedDatabases.set(dbName, protection);
-        db.on("versionchange", () => releaseProtectedDatabase(dbName));
-    } else {
-        db.version(dbStore.version).stores(stores);
-    }
-
-    // Store the database in the Map (overwriting if it already exists)
+    // Authenticated storage retains its existing guard until a migration adapter
+    // can enforce the same policy while transforming records. There is no second
+    // unguarded Dexie schema-deployment path here.
+    const db = new Dexie(encryption.physicalName ?? dbName);
+    const protection = createProtectedStorage(db, encryption.account, dbStore.storeSchemas, numericStorage);
+    protectedDatabases.set(dbName, protection);
+    db.on("versionchange", () => releaseProtectedDatabase(dbName));
     databases.set(dbName, db);
-
-    if (protection) {
-        return (async () => {
-            if (numericStorage) await requireFreshNumericTarget(db.name, dbStore.numericLegacyName);
-            await ensureProtectedSchema(db.name, dbStore.storeSchemas);
-            await db.open();
-        })().then(() => undefined, error => {
-            protectedDatabases.delete(dbName);
-            databases.delete(dbName);
-            protection.dispose();
-            db.close();
-            throw error;
-        });
-    }
-
-    db.open().catch(error => {
-        console.error(`Failed to open IndexedDB for "${dbName}":`, error);
+    return (async () => {
+        if (numericStorage) await requireFreshNumericTarget(db.name, dbStore.numericLegacyName);
+        await ensureProtectedSchema(db.name, dbStore.storeSchemas);
+        await db.open();
+    })().then(() => undefined, error => {
+        protectedDatabases.delete(dbName);
+        databases.delete(dbName);
+        protection.dispose();
+        db.close();
+        throw error;
     });
 }
 

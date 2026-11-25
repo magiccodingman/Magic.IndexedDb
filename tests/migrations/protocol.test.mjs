@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
-    canonicalJson, sha256, validateSchema, validateManifest, validateMigration,
+    canonicalJson, sha256, validateSchema, requirePlainSchema, validateManifest, validateMigration, validateCompletedHistory,
     MigrationError, physicalStores, samePhysical
 } from '../../Magic.IndexedDb/wwwroot/migrations/protocol.js';
 
@@ -73,6 +73,43 @@ test('native IndexedDB compound key restrictions fail before planning', () => {
     rejected(() => validateSchema(input), 'MAGDB_SCHEMA_INVALID');
 });
 
+test('plain schema boundary rejects field and whole-record protection including an empty allowlist', () => {
+    for (const protection of [{ encryptedFields: ['name'] }, { exposedFields: [] }, { exposedFields: ['id'] }]) {
+        const input = model(); Object.assign(input.stores[0], protection);
+        // Fields metadata is not an authentication decision. Omitting all field
+        // descriptors cannot make a declared protected store safe for raw access.
+        input.stores[0].fields = [];
+        rejected(() => requirePlainSchema(input), 'MAGDB_PROTECTED_ADAPTER_REQUIRED');
+    }
+    const plain = model(); Object.assign(plain.stores[0], { encryptedFields: [], exposedFields: null });
+    assert.doesNotThrow(() => requirePlainSchema(plain));
+});
+
+test('malformed protection metadata cannot bypass the plain storage boundary', () => {
+    for (const property of ['encryptedFields', 'exposedFields']) {
+        for (const members of [false, 0, '', {}, { length: 0 }, ['name', 42]]) {
+            const input = model(); input.stores[0][property] = members;
+            rejected(() => requirePlainSchema(input), 'MAGDB_SCHEMA_INVALID');
+        }
+    }
+});
+
+test('migration validation refuses protected historical and destination schemas', () => {
+    const plain = model(); const protectedModel = copy(plain);
+    protectedModel.stores[0].encryptedFields = ['name'];
+    rejected(() => validateMigration(migration([]), manifest().migrations[0], protectedModel, plain), 'MAGDB_PROTECTED_ADAPTER_REQUIRED');
+    rejected(() => validateMigration(migration([]), manifest().migrations[0], plain, protectedModel), 'MAGDB_PROTECTED_ADAPTER_REQUIRED');
+});
+
+test('transient protected stores are rejected even if removed before the plain target', () => {
+    const from = model(); const definition = { ...copy(from.stores[0]), name: 'temporary', fields: [], exposedFields: [] };
+    const operations = [
+        { op: 'createStore', definition },
+        { op: 'deleteStore', store: 'temporary', allowDataLoss: true }
+    ];
+    rejected(() => validateMigration(migration(operations), manifest().migrations[0], from, from), 'MAGDB_PROTECTED_ADAPTER_REQUIRED');
+});
+
 test('physical schema comparison preserves compound key order and ignores CLR-only fields', () => {
     const input = model(); input.stores[0].keyPath = ['id', 'name'];
     const actual = physicalStores(input);
@@ -93,6 +130,46 @@ test('manifest rejects unsupported digests and another schema identity', () => {
     const input = manifest(); input.schemas[0].sha256 = 'md5:' + 'a'.repeat(32);
     rejected(() => validateManifest(input, 'clients'), 'MAGDB_ASSET_INVALID');
     rejected(() => validateManifest(manifest(), 'other'), 'MAGDB_SCHEMA_ID_MISMATCH');
+});
+
+test('manifest requires the complete history even when a fresh client needs only its target', () => {
+    const missingEdge = manifest(); missingEdge.migrations = [];
+    rejected(() => validateManifest(missingEdge, 'clients'), 'MAGDB_HISTORY_INVALID');
+    const missingSchema = manifest(); missingSchema.schemas = missingSchema.schemas.filter(entry => entry.revision !== 1);
+    rejected(() => validateManifest(missingSchema, 'clients'), 'MAGDB_HISTORY_INVALID');
+    const futureSchema = manifest(); futureSchema.schemas.push({ revision: 3, path: 'schemas/3.json', sha256: checksum });
+    rejected(() => validateManifest(futureSchema, 'clients'), 'MAGDB_MANIFEST_INVALID');
+    const futureEdge = manifest(); futureEdge.migrations[0] = { ...futureEdge.migrations[0], fromRevision: 2, toRevision: 3 };
+    rejected(() => validateManifest(futureEdge, 'clients'), 'MAGDB_HISTORY_INVALID');
+});
+
+test('completed history is the ordered suffix ending at the committed revision', () => {
+    const input = manifest(); input.targetRevision = 3;
+    input.schemas.push({ revision: 3, path: 'schemas/3.json', sha256: checksum });
+    input.migrations.push({ id: 'next-change', fromRevision: 2, toRevision: 3, path: 'migrations/3.json', sha256: checksum });
+    const history = input.migrations.map(({ id, sha256 }) => ({ id, sha256 }));
+    assert.doesNotThrow(() => validateManifest(input, 'clients'));
+    assert.doesNotThrow(() => validateCompletedHistory(history, 3, input));
+    assert.doesNotThrow(() => validateCompletedHistory(history.slice(1), 3, input));
+    assert.doesNotThrow(() => validateCompletedHistory([], 3, input));
+    rejected(() => validateCompletedHistory([...history].reverse(), 3, input), 'MAGDB_HISTORY_REWRITTEN');
+    rejected(() => validateCompletedHistory(history.slice(0, 1), 3, input), 'MAGDB_HISTORY_REWRITTEN');
+    // Both references and digests still exist, but assigning them to different
+    // edges changes which transformations an older installation would execute.
+    const moved = copy(input);
+    Object.assign(moved.migrations[0], { fromRevision: 2, toRevision: 3 });
+    Object.assign(moved.migrations[1], { fromRevision: 1, toRevision: 2 });
+    assert.doesNotThrow(() => validateManifest(moved, 'clients'));
+    rejected(() => validateCompletedHistory(history, 3, moved), 'MAGDB_HISTORY_REWRITTEN');
+});
+
+test('malformed, duplicate, and overlong journal history rejects independently of a manifest', () => {
+    const entry = { id: 'add-index', sha256: checksum };
+    rejected(() => validateCompletedHistory(null, 2), 'MAGDB_STATE_INVALID');
+    rejected(() => validateCompletedHistory([{ ...entry, sha256: 'invalid' }], 2), 'MAGDB_STATE_INVALID');
+    rejected(() => validateCompletedHistory([entry, copy(entry)], 3), 'MAGDB_STATE_INVALID');
+    rejected(() => validateCompletedHistory([entry, { ...entry, id: 'another' }], 2), 'MAGDB_STATE_INVALID');
+    rejected(() => validateCompletedHistory([entry], 1), 'MAGDB_STATE_INVALID');
 });
 
 test('index creation must produce the declared target', () => {

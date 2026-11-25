@@ -1,4 +1,4 @@
-import { MigrationError, metadataStore, canonicalJson, sha256, validateSchema, validateManifest, validateCompletedHistory,
+import { MigrationError, metadataStore, canonicalJson, sha256, requirePlainSchema, validateManifest, validateCompletedHistory,
     validateMigration, requireCondition, physicalStores, samePhysical, compareNames } from "./protocol.js";
 
 export { MigrationError };
@@ -396,9 +396,8 @@ export async function ensureDatabase(options) {
         } catch (cause) {
             throw new MigrationError("MAGDB_INVALID_DOCUMENT", "Migration inputs must be serializable data.", {}, false, cause);
         }
-        validateSchema(options.schema);
-        requireCondition(!options.name.startsWith("__magic_protected__:") && !options.schema.stores.some(store =>
-            store.encryptedFields?.length || store.exposedFields != null), "MAGDB_PROTECTED_ADAPTER_REQUIRED",
+        requirePlainSchema(options.schema);
+        requireCondition(!options.name.startsWith("__magic_protected__:"), "MAGDB_PROTECTED_ADAPTER_REQUIRED",
         "Protected migrations must run through an authenticated storage adapter.");
         requireCondition(options.batchSize == null || Number.isSafeInteger(options.batchSize) && options.batchSize > 0 && options.batchSize <= 10000,
             "MAGDB_BATCH_INVALID", "batchSize must be between 1 and 10000.");
@@ -434,7 +433,7 @@ async function ensureLocked(options) {
         const reference = manifest.schemas.find(entry => entry.revision === revision);
         requireCondition(reference, "MAGDB_HISTORY_INVALID", "Required schema revision is missing.");
         const { document } = await jsonAsset(reference, base, options.signal);
-        validateSchema(document);
+        requirePlainSchema(document);
         requireCondition(document.schemaId === options.schema.schemaId, "MAGDB_SCHEMA_ID_MISMATCH", "Schema asset belongs to another database.");
         const resolved = { schema: document, hash: await sha256(canonicalJson(document)) };
         models.set(revision, resolved);
@@ -452,7 +451,7 @@ async function ensureLocked(options) {
         requireCondition(manifest, "MAGDB_ADOPTION_REQUIRED", "Existing unmanaged databases require an explicit validated adoption baseline.");
         for (const candidate of manifest.baselines ?? []) {
             const old = (await jsonAsset(candidate.schema, base, options.signal)).document;
-            validateSchema(old);
+            requirePlainSchema(old);
             requireCondition(old.schemaId === options.schema.schemaId, "MAGDB_BASELINE_INVALID", "Baseline schema identity does not match.");
             if (samePhysical(snapshot.stores, old)) {
                 assertNumericPolicy(snapshot, old);

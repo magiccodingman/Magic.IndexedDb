@@ -54,6 +54,9 @@ jobs:
           unzip -Z1 "${package}" | grep -Fx LICENSE.txt
           unzip -Z1 "${package}" | grep -Fx wizardHatIcon.png
           unzip -Z1 "${package}" | grep -F 'staticwebassets/'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/migrations/migrationEngine.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/migrations/protocol.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/magicDbMethods.js'
 
       - name: Run unit and contract tests
         run: >-

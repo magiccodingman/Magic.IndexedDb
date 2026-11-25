@@ -2,6 +2,8 @@
 
 ## Purpose and status
 
+PR: https://github.com/magiccodingman/Magic.IndexedDb/pull/147
+
 Branch: `feat/v3-managed-migrations`, based on the repository's default branch
 `master` at `b8036f2` (including the recent correctness, encryption, and lossless
 numeric work). This is a development preview for the next major release:

@@ -56,6 +56,10 @@ string DatabaseName { get; }
 string SchemaName { get; }
 ```
 
+For a separately named physical instance, `DatabaseName` remains the logical
+declaration name; the scope's manager routes operations to its bound instance. Use
+migration inspection or event metadata when the physical name is needed.
+
 Query composition:
 
 ```csharp

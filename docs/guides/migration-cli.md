@@ -203,6 +203,21 @@ operations with stable primary keys; put structural changes in separate adjacent
 atomic migrations. Numeric format transitions are not supported by this protocol
 implementation, even if a draft's `manual` marker is removed.
 
+### Protected-storage limitation
+
+This preview has no authenticated migration adapter. Validation, baseline adoption,
+testing, and publishing fail with `MAGDB4208` if any current or historical schema,
+baseline, or `createStore` definition has nonempty `encryptedFields` or nonnull
+`exposedFields`. An empty `exposedFields` array still declares protected storage.
+Removing a draft's `manual` marker does not enable protected migrations, and a
+currently unprotected target cannot hide protected historical revisions.
+
+`schema export` and `databases list` remain available for neutral model authoring.
+`migrations add` may write protected snapshots and drafts, but returns review exit
+`3` and explains the unsupported adapter. Do not remove protection metadata from a
+real model to make publishing pass; keep using the previous compatible runtime
+until an authenticated adapter and its browser coverage are available.
+
 ## Custom JavaScript transformations
 
 Built-in data operations are `renameField`, `setMissing`, and `deleteField`; they
@@ -256,19 +271,30 @@ Baseline planning declares which known legacy layout corresponds to a managed
 revision. It does not connect to a browser, inspect the user's live records,
 invent C# classes from samples, or adopt an unknown database automatically.
 
-First create a managed snapshot that describes the **complete existing physical
-layout**, with the old numeric storage format. Preserve extra stores if they
-already exist. Export or write a neutral legacy schema describing that layout and
-record the baseline:
+First create a managed snapshot that describes the **complete existing schema**,
+including its persisted field names, types, nullability, codecs, nested contracts,
+physical layout, and old numeric storage format. Preserve extra stores if they
+already exist. Export or write a neutral legacy schema describing that complete
+contract and record the baseline:
 
 ```sh
 magicdb migrations baseline --database clients --legacy-schema legacy-clients.json --revision 1 --id legacy-v2 --acknowledge-data-contract
 ```
 
-The CLI requires an exact match of store names, primary keys, auto-increment flags,
-indexes, and numeric format at the selected revision. The acknowledgement means
-you reviewed historical field/converter semantics that physical IndexedDB metadata
-cannot prove. The browser still validates the actual database before adoption.
+The CLI requires full canonical schema equality with the selected managed revision,
+matching the browser's adoption rule. Equal physical stores and indexes are not
+enough when field names, types, nullability, codecs, or other declared contracts
+differ. A mismatch is rejected before writing baseline source; validation also
+checks manually edited baseline documents. The acknowledgement means you reviewed
+the historical data's compliance with that declared contract, which physical
+IndexedDB metadata cannot prove. It does not permit mapping different contracts.
+The browser still validates the actual database before adoption.
+
+Only one baseline may recognize a given physical layout. Different IDs or nominated
+revisions cannot distinguish those databases when the browser sees identical store
+and index metadata. The CLI rejects such ambiguous baselines both when creating
+them and when validating edited history. Keep one adoption revision for that layout
+and express subsequent changes as migrations.
 
 If the desired new model differs, add subsequent migrations from this complete
 legacy snapshot to the desired model. Do not remove extra stores from the baseline
@@ -378,6 +404,7 @@ link. Common diagnostic groups are:
 | `MAGDB4001`–`MAGDB4003` | Correct command arguments and select the intended schema |
 | `MAGDB4101`–`MAGDB4104` | Correct JSON/protocol, duplicate metadata, or asset paths |
 | `MAGDB4201`–`MAGDB4207` | Create/review history, resolve drift/manual operations, or repair an invalid plan |
+| `MAGDB4208` | Protected migration support requires an authenticated adapter; export/draft authoring is available, deployment is blocked in this preview |
 | `MAGDB4301` | Restore published immutable content; create a new migration for changes |
 | `MAGDB4302` | Use a new output directory or inspect pre-existing unreferenced files |
 | `MAGDB4303` | Wait for the other writer on this source history to finish |

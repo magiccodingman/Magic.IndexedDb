@@ -65,6 +65,11 @@ export function validateSchema(schema) {
     for (const store of schema.stores) {
         requireCondition(validName(store.name) && !names.has(store.name), "MAGDB_SCHEMA_INVALID", "Invalid, duplicate, or reserved store name.");
         names.add(store.name);
+        for (const property of ["encryptedFields", "exposedFields"]) {
+            const members = store[property];
+            requireCondition(members == null || Array.isArray(members) && members.every(member => typeof member === "string"),
+                "MAGDB_SCHEMA_INVALID", "Protection metadata must be null or an array of persisted field names.");
+        }
         requireCondition(validKeyPath(store.keyPath) && typeof store.autoIncrement === "boolean" &&
             !(store.autoIncrement && Array.isArray(store.keyPath)), "MAGDB_SCHEMA_INVALID", "Invalid store key configuration.");
         requireCondition(Array.isArray(store.indexes) && Array.isArray(store.fields), "MAGDB_SCHEMA_INVALID", "Store indexes and fields must be arrays.");
@@ -82,6 +87,14 @@ export function validateSchema(schema) {
             fields.add(field.name);
         }
     }
+    return schema;
+}
+
+/** All schema boundaries in the plain runner must preserve storage protections. */
+export function requirePlainSchema(schema) {
+    validateSchema(schema);
+    requireCondition(!schema.stores.some(store => store.encryptedFields?.length > 0 || store.exposedFields != null),
+        "MAGDB_PROTECTED_ADAPTER_REQUIRED", "Protected migrations must run through an authenticated storage adapter.");
     return schema;
 }
 
@@ -154,6 +167,8 @@ export function validateAsset(asset) {
 }
 
 export function validateMigration(document, reference, from, to) {
+    requirePlainSchema(from);
+    requirePlainSchema(to);
     validateProtocol(document);
     requireCondition(document.schemaId === from.schemaId && document.schemaId === to.schemaId &&
         document.id === reference.id && document.fromRevision === reference.fromRevision && document.toRevision === reference.toRevision,
@@ -182,7 +197,7 @@ export function validateMigration(document, reference, from, to) {
     for (const operation of document.operations) {
         const store = stores.get(operation.store);
         if (operation.op === "createStore") {
-            validateSchema({ ...from, stores: [operation.definition] });
+            requirePlainSchema({ ...from, stores: [operation.definition] });
             requireCondition(!stores.has(operation.definition.name), "MAGDB_OPERATION_INVALID", "Store already exists.");
             stores.set(operation.definition.name, physicalStores({ stores: [operation.definition] })[0]);
         } else {
