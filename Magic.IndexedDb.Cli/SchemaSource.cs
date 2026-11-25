@@ -13,6 +13,11 @@ internal static class SchemaSource
         else if (args.Get("project") is { } project) input = await ExportProjectAsync(project, args, cancellationToken);
         else throw new CliException("MAGDB4002", "Supply --schema MODEL.json or --project DESIGN_TIME.csproj. Use --history-only explicitly to validate committed history without comparing the current application model.", 2);
 
+        return ReadSchemas(input);
+    }
+
+    internal static List<JsonObject> ReadSchemas(JsonObject input)
+    {
         var schemas = input["schemas"] is JsonArray array
             ? array.Select(item => Protocol.ValidateSchema(Protocol.Object(item, "schema"))).ToList()
             : [Protocol.ValidateSchema(input)];

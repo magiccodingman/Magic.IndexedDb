@@ -162,6 +162,28 @@ Test("legacy baseline requires semantic acknowledgement", async f =>
 {
     await f.Initial(); await f.Baseline(3, acknowledge: false);
 });
+Test("baseline selects its schema from an exported multi-database envelope", async f =>
+{
+    await f.Initial();
+    var sibling = f.Model.DeepClone().AsObject();
+    sibling["schemaId"] = "another";
+    var envelope = new JsonObject { ["protocolVersion"] = 1, ["schemas"] = new JsonArray(sibling, f.Model.DeepClone()) };
+    File.WriteAllText(f.LegacyPath, envelope.ToJsonString());
+    await f.Baseline(0, acknowledge: true, write: false);
+    await f.Publish("release");
+    var manifest = JsonNode.Parse(File.ReadAllText(f.Published("release")))!;
+    Check(manifest["baselines"]!.AsArray().Count == 1);
+});
+Test("baseline envelope missing the selected schema does not write adoption history", async f =>
+{
+    await f.Initial();
+    var other = f.Model.DeepClone().AsObject();
+    other["schemaId"] = "another";
+    var envelope = new JsonObject { ["protocolVersion"] = 1, ["schemas"] = new JsonArray(other) };
+    File.WriteAllText(f.LegacyPath, envelope.ToJsonString());
+    await f.Baseline(2, acknowledge: true, write: false);
+    Check(!Directory.Exists(Path.Combine(f.Source, "fixture", "baselines")));
+});
 Test("exact legacy baseline validates and publishes", async f =>
 {
     await f.Initial(); await f.Baseline(0, acknowledge: true); await f.Publish("release");

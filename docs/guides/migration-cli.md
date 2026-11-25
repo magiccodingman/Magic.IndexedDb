@@ -275,7 +275,8 @@ First create a managed snapshot that describes the **complete existing schema**,
 including its persisted field names, types, nullability, codecs, nested contracts,
 physical layout, and old numeric storage format. Preserve extra stores if they
 already exist. Export or write a neutral legacy schema describing that complete
-contract and record the baseline:
+contract and record the baseline. A single schema or the full schema export envelope is accepted.
+For an envelope, `--database` selects the legacy schema with that same ID.
 
 ```sh
 magicdb migrations baseline --database clients --legacy-schema legacy-clients.json --revision 1 --id legacy-v2 --acknowledge-data-contract

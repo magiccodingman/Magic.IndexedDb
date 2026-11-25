@@ -113,7 +113,7 @@ public static class CliApplication
                 args.Only("database", "directory", "legacy-schema", "revision", "id", "acknowledge-data-contract");
                 var id = args.Require("database");
                 if (!int.TryParse(args.Require("revision"), out var revision) || revision < 1) throw new CliException("MAGDB4001", "--revision must be a positive integer.", 2);
-                var legacy = Protocol.ValidateSchema(Protocol.ReadObject(args.Require("legacy-schema")));
+                var legacy = SchemaSource.Select(SchemaSource.ReadSchemas(Protocol.ReadObject(args.Require("legacy-schema"))), args).Single();
                 var result = Workspace(args, id).AddBaseline(legacy, revision, args.Get("id") ?? "legacy-v2", args.Has("acknowledge-data-contract"));
                 await WriteAsync(output, result, json); return 0;
             }
