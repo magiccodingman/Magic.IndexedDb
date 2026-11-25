@@ -112,7 +112,7 @@ internal class MagicJsInvoke
 
         // Send to JS
         await using var responseStreamRef = await InvokeBrowserAsync(_jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler",
-            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes));
+            token, streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes));
 
         // 🚀 Convert the stream reference back to JSON in C#
         await using var responseStream = await responseStreamRef.OpenReadStreamAsync(long.MaxValue, token);
@@ -150,16 +150,18 @@ internal class MagicJsInvoke
 
         // Register before starting JavaScript so an immediate first chunk cannot race registration.
         MagicJsChunkProcessor.RegisterInstance(instanceId);
-        var producerTask = ObserveProducerAsync(_jsModule.InvokeVoidAsync(
-            "streamedJsHandler", producerCancellation.Token,
-            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes));
+        Task producerTask = Task.CompletedTask;
 
         bool isCompleted = false;
 
         try
         {
+            producerTask = ObserveProducerAsync(_jsModule.InvokeVoidAsync(
+                "streamedJsHandler", producerCancellation.Token,
+                streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes));
             while (!isCompleted)
             {
+                token.ThrowIfCancellationRequested();
                 string? completedItem;
                 try
                 {
@@ -208,20 +210,25 @@ internal class MagicJsInvoke
         }
         finally
         {
-            producerCancellation.Cancel();
-            if (!producerTask.IsCompleted)
+            try
             {
-                try
+                producerCancellation.Cancel();
+                if (!producerTask.IsCompleted)
                 {
-                    await producerTask;
-                }
-                catch (OperationCanceledException) when (producerCancellation.IsCancellationRequested)
-                {
-                    // Expected when enumeration is canceled or disposed before completion.
+                    try
+                    {
+                        await producerTask;
+                    }
+                    catch (OperationCanceledException) when (producerCancellation.IsCancellationRequested)
+                    {
+                        // Expected when enumeration is canceled or disposed before completion.
+                    }
                 }
             }
-
-            MagicJsChunkProcessor.RemoveInstance(instanceId);
+            finally
+            {
+                MagicJsChunkProcessor.RemoveInstance(instanceId);
+            }
         }
     }
 

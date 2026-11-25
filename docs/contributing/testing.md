@@ -13,7 +13,7 @@ These tests cover expression translation, schema generation, serialization, stre
 The public API is stored in `Magic.IndexedDb.UnitTests/PublicApiBaseline.txt`. If an API change is deliberate, review the diff and regenerate the file with:
 
 ```bash
-UPDATE_PUBLIC_API_BASELINE=1 dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj --configuration Release --filter PublicApiMatchesApprovedBaseline
+UPDATE_PUBLIC_API_BASELINE=1 dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj --configuration Release --filter PublicApi_MatchesReviewedBaseline
 ```
 
 Commit the updated baseline with the API change.
@@ -46,5 +46,34 @@ CI runs both the .NET and browser suites. The workflow files under `.github/work
 - Compare ordered results item by item when testing ordering or pagination.
 - Add a focused test for a bug so the same behavior cannot quietly return.
 - Treat a public API baseline change as part of the API review, not as a routine test update.
+
+## Check results across execution paths
+
+The audit regression tests supplement the existing examples with comparisons against
+independent expected results:
+
+- `AuditExpressionRegressionTests` checks translated predicate behavior against
+  compiled C# expressions, including nulls, captured values, conversions, and date
+  boundaries. Unsupported member expressions must fail explicitly instead of
+  querying a different property with the same name.
+- `QueryPlannerRegressionTestExpressions` sends typed C# queries through real
+  Blazor interop and compares both `Where` and forced `Cursor` results with in-memory
+  LINQ. This catches mismatches between serialization, translation, and JavaScript.
+- `QueryPlannerRegressionTestAudit` compares automatic planning and forced cursor
+  execution with a separate reference evaluator using a fixed random seed. Its
+  focused cases also cover contradiction handling, mixed OR branches, sparse
+  indexes, compound lookups, ordering, and pagination. Positive planner assertions
+  ensure complete indexes retain their native ordering path.
+- `SerializationRegressionTests` and `SingleRecordBasicTestAudit` verify both value
+  round trips and actual persisted keys. Include zero-valued explicit keys, compound
+  keys, and a non-key property named `id`; checking only generated `id` keys can hide
+  destructive write behavior.
+- `AuditStreamingRegressionTests` tests cancellation with already-buffered results,
+  late callbacks after disposal, incomplete records, and interop failure cleanup.
+
+Keep the reference evaluator separate from the planner's comparison and optimization
+helpers. A test that shares the same implementation can reproduce the same mistake.
+In-memory IndexedDB shims are useful for local reproduction, but real-browser CI
+remains the gate for IndexedDB transactions, indexes, and Blazor interop.
 
 The [query planner diagnostics](query-planner-diagnostics.md) page explains how to inspect the browser planner when a query returns the wrong records or chooses an unexpected path.

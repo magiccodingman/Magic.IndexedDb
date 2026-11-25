@@ -10,8 +10,7 @@ internal class MagicCursor<T> : IMagicCursor<T> where T : class
     public MagicQuery<T> MagicQuery { get; set; }
     public MagicCursor(MagicQuery<T> _magicQuery)
     {
-        _magicQuery.ForceCursorMode = true;
-        MagicQuery = _magicQuery;
+        MagicQuery = new MagicQuery<T>(_magicQuery) { ForceCursorMode = true };
     }
 
     public IMagicCursor<T> Cursor(Expression<Func<T, bool>> predicate)

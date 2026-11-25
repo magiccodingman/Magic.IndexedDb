@@ -83,8 +83,10 @@ export function flattenUniversalPredicate(rootNode) {
         nestedOrFilterUnclean: {
             orGroups: orGroupsOptimized
         },
-        isUniversalTrue: detection.isUniversalTrue,
-        isUniversalFalse: detection.isUniversalFalse
+        // No surviving DNF branches means false, not an absent filter. An
+        // empty AND branch, in contrast, is true and absorbs every OR branch.
+        isUniversalTrue: detection.isUniversalTrue || andGroups.some(group => group.length === 0),
+        isUniversalFalse: detection.isUniversalFalse || andGroups.length === 0
     };
 
     debugLog("Flattened predicate result", result);
@@ -97,6 +99,9 @@ function flattenNodeToAndGroups(node) {
 
     if (nodeType === "Condition") {
         if (!node.condition) return [];
+        if (node.condition.property === "__constant") {
+            return node.condition.value === true ? [[]] : [];
+        }
         const normalized = normalizeCondition(node.condition);
         return [[normalized]];
     }

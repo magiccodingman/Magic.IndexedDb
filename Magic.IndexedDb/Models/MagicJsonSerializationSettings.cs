@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using Magic.IndexedDb.Helpers;
 
 namespace Magic.IndexedDb.Models;
 
@@ -30,7 +31,9 @@ public class MagicJsonSerializationSettings
     public JsonSerializerOptions GetOptionsWithResolver<T>()
     {
         var newOptions = new JsonSerializerOptions(Options); // Clone settings
-        newOptions.Converters.Add(new MagicContractResolver<T>()); // Ensure the correct resolver is added
+        // An application converter owns this type's complete JSON representation.
+        if (!MagicConverterHelper.HasCustomConverter(typeof(T), newOptions))
+            newOptions.Converters.Add(new MagicContractResolver<T>());
         return newOptions;
     }
 }

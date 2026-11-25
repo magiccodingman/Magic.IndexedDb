@@ -183,7 +183,8 @@ public static class PropertyMappingCache
     private static readonly HashSet<Type> _simpleTypes = new()
     {
         typeof(string), typeof(decimal), typeof(DateTime), typeof(DateTimeOffset),
-        typeof(Guid), typeof(Uri), typeof(TimeSpan)
+        typeof(Guid), typeof(Uri), typeof(TimeSpan), typeof(DateOnly), typeof(TimeOnly),
+        typeof(System.Text.Json.JsonElement)
     };
 
     // Cache lookups for extreme performance

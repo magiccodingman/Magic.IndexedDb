@@ -424,19 +424,12 @@ export async function deleteAllDatabases() {
 
 
 
-const keyCache = new Map(); // Caches key structures for each (db, storeName) combination
-
 /**
  * Retrieves the primary key structure for a given table.
- * Caches the key structure to avoid redundant lookups.
+ * Read the live table schema so distinct names and recreated databases cannot
+ * share stale metadata through a concatenated cache key.
  */
 async function getPrimaryKey(dbName, storeName) {
-    const cacheKey = `${dbName}.${storeName}`;
-
-    if (keyCache.has(cacheKey)) {
-        return keyCache.get(cacheKey);
-    }
-
     const table = await getTable(dbName, storeName);
     const primaryKey = table.schema.primKey; // Retrieve the primary key metadata
 
@@ -447,7 +440,6 @@ async function getPrimaryKey(dbName, storeName) {
         keyStructure = { isCompound: false, keys: [primaryKey.keyPath] };
     }
 
-    keyCache.set(cacheKey, keyStructure);
     return keyStructure;
 }
 
@@ -471,12 +463,7 @@ export async function addItem(item) {
     const protection = protectedTable(item.dbName, item.storeName);
     if (protection) return protection.write([item.record], (table, [row]) => table.add(row));
     const table = await getTable(item.dbName, item.storeName);
-    const key = await formatKey(item.dbName, item.storeName, item.record);
-
-    return await table.add({
-        ...item.record,
-        id: key
-    });
+    return await table.add({ ...item.record });
 }
 
 /**
@@ -486,13 +473,7 @@ export async function bulkAddItem(dbName, storeName, items) {
     const protection = protectedTable(dbName, storeName);
     if (protection) return protection.write(items, (table, rows) => table.bulkAdd(rows));
     const table = await getTable(dbName, storeName);
-
-    const formattedItems = await Promise.all(items.map(async item => ({
-        ...item,
-        id: await formatKey(dbName, storeName, item)
-    })));
-
-    return await table.bulkAdd(formattedItems);
+    return await table.bulkAdd(items.map(item => ({ ...item })));
 }
 
 
@@ -504,12 +485,7 @@ export async function putItem(item) {
     const protection = protectedTable(item.dbName, item.storeName);
     if (protection) return protection.write([item.record], (table, [row]) => table.put(row));
     const table = await getTable(item.dbName, item.storeName);
-    const key = await formatKey(item.dbName, item.storeName, item.record);
-
-    return await table.put({
-        ...item.record,
-        id: key
-    });
+    return await table.put({ ...item.record });
 }
 
 // Bulk put function for Dexie.js
@@ -525,16 +501,7 @@ export async function bulkPutItems(items) {
         return protection.write(items.map(item => item.record), (table, rows) => table.bulkPut(rows));
     }
     const table = await getTable(dbName, storeName);
-
-    const formattedItems = await Promise.all(items.map(async item => {
-        const key = await formatKey(item.dbName, item.storeName, item.record);
-        return {
-            ...item.record,
-            id: key
-        };
-    }));
-
-    return await table.bulkPut(formattedItems);
+    return await table.bulkPut(items.map(item => ({ ...item.record })));
 }
 
 
@@ -572,12 +539,7 @@ export async function bulkUpdateItem(items) {
     }
     const table = await getTable(items[0].dbName, items[0].storeName);
     try {
-        const formattedItems = await Promise.all(items.map(async item => ({
-            ...item.record,
-            id: await formatKey(item.dbName, item.storeName, item.record)
-        })));
-
-        await table.bulkPut(formattedItems);
+        await table.bulkPut(items.map(item => ({ ...item.record })));
         return items.length;
     } catch (e) {
         console.error(e);

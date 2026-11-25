@@ -55,6 +55,26 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
     let indexCache = buildIndexMetadata(table);
     let primaryKeys = [...indexCache.compoundKeys];
 
+    const explicitOrder = queryAdditions.find(addition =>
+        addition.additionFunction === QUERY_ADDITIONS.ORDER_BY ||
+        addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING);
+    if (explicitOrder && !forceCursor) {
+        const hasPredicate = !isUniversalTrue && nestedOrFilterUnclean.orGroups.length > 0;
+        if (hasPredicate) {
+            // A filtering index defines its own traversal. It cannot also
+            // satisfy arbitrary explicit ordering before first/last/pagination.
+            forceCursor = true;
+        } else if (indexCache.indexes.has(explicitOrder.property) &&
+            !indexCache.primaryKeyIndexes.has(explicitOrder.property)) {
+            const [indexedCount, totalCount] = await db.transaction("r", table, () =>
+                Promise.all([table.orderBy(explicitOrder.property).count(), table.count()]));
+            // Secondary indexes omit null/missing/non-key values. Preserve the
+            // native ordering path when complete, otherwise include those rows
+            // in the cursor's null-aware sort.
+            forceCursor = indexedCount !== totalCount;
+        }
+    }
+
     let yieldedPrimaryKeys = new Set();
 
     debugLog("Validated schema & cached indexes", { primaryKeys, indexes: indexCache.indexes });

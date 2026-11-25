@@ -54,14 +54,14 @@ public class PredicateVisitor<T> : ExpressionVisitor
         throw new InvalidOperationException("Invalid expression type.");
     }
 
-    private IEnumerable<object> GetIEnumerableItems(MemberExpression member)
+    private IEnumerable<object?> GetIEnumerableItems(MemberExpression member)
     {
         var compiledMember = Expression.Lambda<Func<IEnumerable>>(member).Compile();
         var enumerable = compiledMember();
-        return enumerable.OfType<object>();
+        return enumerable.Cast<object?>();
     }
 
-    private Expression ReplaceParameter(LambdaExpression lambda, object value)
+    private Expression ReplaceParameter(LambdaExpression lambda, object? value)
     {
         var parameter = lambda.Parameters.FirstOrDefault();
         if (parameter != null)

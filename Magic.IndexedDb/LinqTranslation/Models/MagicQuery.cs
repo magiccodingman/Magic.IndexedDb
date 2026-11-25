@@ -70,11 +70,16 @@ internal class MagicQuery<T> : IMagicQuery<T>, IMagicQueryStaging<T> where T : c
         var parameter = Expression.Parameter(typeof(T), "x");
 
         var combinedBody = Expression.AndAlso(
-            new PredicateVisitor<T>().Visit(first.Body),
-            new PredicateVisitor<T>().Visit(second.Body)
+            new QueryParameterReplacer(first.Parameters[0], parameter).Visit(first.Body),
+            new QueryParameterReplacer(second.Parameters[0], parameter).Visit(second.Body)
         );
 
         return Expression.Lambda<Func<T, bool>>(combinedBody, parameter);
+    }
+
+    private sealed class QueryParameterReplacer(ParameterExpression source, ParameterExpression target) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) => node == source ? target : node;
     }
 
 

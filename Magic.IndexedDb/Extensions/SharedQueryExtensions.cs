@@ -51,6 +51,9 @@ internal static class SharedQueryExtensions
         if (propertyInfo == null)
             throw new ArgumentException("The expression must represent a single property access.");
 
+        if (MagicConverterHelper.HasCustomConverter(propertyInfo))
+            throw new InvalidOperationException("Ordering a custom-converted property is not supported because its stored ordering may differ from its CLR ordering.");
+
         MagicPropertyEntry mpe = PropertyMappingCache.GetPropertyEntry<T>(propertyInfo);
 
         if (!mpe.PrimaryKey && !mpe.Indexed && !mpe.UniqueIndex)
@@ -77,6 +80,9 @@ internal static class SharedQueryExtensions
         if (propertyInfo == null)
             throw new ArgumentException("The expression must represent a single property access.");
 
+        if (MagicConverterHelper.HasCustomConverter(propertyInfo))
+            throw new InvalidOperationException("Ordering a custom-converted property is not supported because its stored ordering may differ from its CLR ordering.");
+
         var _MagicQuery = new MagicQuery<T>(magicQuery);
         _MagicQuery.StoredMagicQueries.Add(new StoredMagicQuery
         {
@@ -89,10 +95,11 @@ internal static class SharedQueryExtensions
 
     private static MemberExpression GetMemberExpressionFromLambda<T>(Expression<Func<T, object>> expression)
     {
-        if (expression.Body is MemberExpression m)
+        if (expression.Body is MemberExpression m && m.Expression == expression.Parameters[0])
             return m;
 
-        if (expression.Body is UnaryExpression u && u.Operand is MemberExpression um)
+        if (expression.Body is UnaryExpression u && u.Operand is MemberExpression um &&
+            um.Expression == expression.Parameters[0])
             return um;
 
         throw new ArgumentException("The expression must represent a single property access.");

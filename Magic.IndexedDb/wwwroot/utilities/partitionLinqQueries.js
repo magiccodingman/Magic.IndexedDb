@@ -148,7 +148,8 @@ export function partitionQueryConditions(nestedOrFilter, queryAdditions, indexCa
         QUERY_ADDITIONS.LAST, QUERY_ADDITIONS.FIRST].includes(addition.additionFunction)
     );
 
-    if (hasTakeOrSkipOrFirstOrLast && (indexedQueries.length + compoundIndexQueries.length) > 1) {
+    if (hasTakeOrSkipOrFirstOrLast &&
+        (indexedQueries.length + compoundIndexQueries.length + cursorConditions.length) > 1) {
         debugLog("Multiple indexed/compound queries detected with TAKE/SKIP, forcing all to cursor.");
 
         const regularIndexedEntryShape = indexedQueries.map(query => ({
@@ -211,6 +212,17 @@ function detectCompoundQuery(andConditions, indexCache) {
                 .sort((a, b) => [...fieldSet].indexOf(a.property) - [...fieldSet].indexOf(b.property));
 
             const residualConditions = andConditions.filter(cond => !fieldSet.has(cond.property));
+
+            // The compound executor performs one exact tuple lookup. Ranges,
+            // repeated constraints on a component, ignore-case strings and
+            // non-key values cannot be represented by that tuple. Let ordinary
+            // index classification choose a standalone index or a cursor.
+            if (sortedConditions.length !== fieldSet.size || sortedConditions.some(condition =>
+                condition.operation !== "Equal" ||
+                (condition.isString === true && condition.caseSensitive === false) ||
+                !isSupportedIndexedOperation([condition]))) {
+                continue;
+            }
 
             debugLog("Detected valid compound query", {
                 properties: [...fieldSet],
