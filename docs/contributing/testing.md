@@ -99,7 +99,8 @@ indexed ranges, and indexed ordering in Legacy and Lossless modes. It records
 serialized UTF-8 payload size and median elapsed times without flaky timing
 thresholds. Input values are exactly representable in both modes so the
 comparison does not silently compare rounded Legacy data against exact data.
-The timings include application serialization/interop and are not a universal
-IndexedDB throughput claim. Results and publish logs are CI artifacts.
+The timings include application serialization/interop and enabled debug tracing;
+they are not a universal IndexedDB throughput claim. Results and publish logs are
+CI artifacts.
 
 The [query planner diagnostics](query-planner-diagnostics.md) page explains how to inspect the browser planner when a query returns the wrong records or chooses an unexpected path.
