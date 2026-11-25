@@ -49,3 +49,21 @@ means the branch needed stored values. A mixed query may report both.
 `interop-result.payloadBytes` measures the UTF-8 result body for materialized
 entity and projected reads. The covered-projection regression also checks native
 IndexedDB calls, independently of the planner's trace.
+
+
+### Published WASM projection benchmark
+
+The AOT fixture emits `projectionBenchmark` in `numeric-wasm-report.json`.
+The fixture compares the same indexed filter over 1,000 rows. In the local
+Linux Chromium run on a Ryzen 9 7950X3D, five measured repetitions gave:
+
+| Result | Median elapsed | UTF-8 interop result |
+| --- | ---: | ---: |
+| Complete entities | 218.3 ms | 1,264,894 bytes |
+| Projection with an uncovered property | 37.5 ms | 27,894 bytes |
+| Projection covered by the index and primary key | 38.4 ms | 47,894 bytes |
+
+The projected shapes differ in field encoding and byte count. These measurements
+show the reduced transfer size of both projections. The covered branch's
+zero value reads are shown by its trace and the native IndexedDB regression.
+The browser fixture did not provide a reliable peak memory measurement.

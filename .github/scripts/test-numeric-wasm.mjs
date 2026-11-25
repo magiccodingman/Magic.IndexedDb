@@ -76,15 +76,20 @@ try {
     const names = report.scenarios?.filter(scenario => scenario.state === 'passed').map(scenario => scenario.name);
     if (!Array.isArray(names) || names.length !== expectedScenarios.length ||
         expectedScenarios.some(name => !names.includes(name)))
-        throw new Error('The WASM fixture did not execute all six numeric scenarios.');
+        throw new Error('The WASM fixture did not execute all required scenarios.');
     if (report.benchmark?.length !== 2 || ['Legacy', 'Lossless'].some(mode =>
         !report.benchmark.some(result => result.mode === mode && result.rowCount === 5_000 && result.repetitions === 3 &&
             result.writeMilliseconds.length === 3 && result.rangeMilliseconds.length === 3 && result.orderMilliseconds.length === 3)))
         throw new Error('The numeric benchmark did not report both complete comparisons.');
+    const projectionShapes = ['entity', 'record-projection', 'covered-projection'];
+    if (report.projectionBenchmark?.length !== projectionShapes.length || projectionShapes.some(shape =>
+        !report.projectionBenchmark.some(result => result.shape === shape && result.rows === 1_000 &&
+            Number.isFinite(result.medianMilliseconds) && result.payloadBytes > 0)))
+        throw new Error('The projection benchmark did not report all three comparisons.');
     if (pageErrors.length > 0) throw new Error('The browser reported an unhandled error.\n' + pageErrors.join('\n'));
 
-    console.log('All six numeric scenarios passed in ' + report.runtime + ' (.NET ' + report.runtimeVersion + ').');
-    console.log(JSON.stringify({ benchmark: report.benchmark }, null, 2));
+    console.log('All numeric and projection scenarios passed in ' + report.runtime + ' (.NET ' + report.runtimeVersion + ').');
+    console.log(JSON.stringify({ benchmark: report.benchmark, projectionBenchmark: report.projectionBenchmark }, null, 2));
 } catch (error) {
     failure = error;
     console.error(error.stack ?? error);
