@@ -1,3 +1,4 @@
+using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Migrations;
 using Microsoft.JSInterop;
 
@@ -94,13 +95,33 @@ public sealed class MigrationDiagnosticsTests
         Assert.ThrowsExactly<ObjectDisposedException>(() => _ = browser.Reference.Value);
     }
 
+    [TestMethod]
+    public async Task FactoryDisposal_CancelsAnObservationWithAnInFlightRegistration()
+    {
+        var registered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var browser = new ObserverBrowser { RegistrationStarted = registered, ReleaseRegistration = release };
+        await using var factory = new MagicDbFactory(browser, 1024, false, [], []);
+
+        var observing = factory.ObserveMigrationsAsync(_ => ValueTask.CompletedTask);
+        await registered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await factory.DisposeAsync();
+        try
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(() => observing.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+        finally { release.TrySetResult(); }
+        CollectionAssert.AreEqual(new[] { browser.RegisteredId }, browser.StoppedIds.ToArray());
+        Assert.ThrowsExactly<ObjectDisposedException>(() => _ = browser.Reference!.Value);
+    }
+
     private static async ValueTask FailAfterYield()
     {
         await Task.Yield();
         throw new InvalidOperationException("Asynchronous observer failure.");
     }
 
-    private sealed class ObserverBrowser : IJSObjectReference
+    private sealed class ObserverBrowser : IJSObjectReference, IJSRuntime
     {
         public CancellationTokenSource? CancelAfterRegistration { get; init; }
         public string? RegisteredId { get; private set; }
@@ -108,6 +129,8 @@ public sealed class MigrationDiagnosticsTests
         public List<string> StoppedIds { get; } = [];
         public CancellationToken StopToken { get; private set; }
         public Func<Task>? DuringStop { get; set; }
+        public TaskCompletionSource? RegistrationStarted { get; init; }
+        public TaskCompletionSource? ReleaseRegistration { get; init; }
 
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) =>
             InvokeAsync<TValue>(identifier, CancellationToken.None, args);
@@ -116,6 +139,11 @@ public sealed class MigrationDiagnosticsTests
         {
             switch (identifier)
             {
+                case "import":
+                    return (TValue)(object)this;
+                case "configureDebug":
+                case "closeAll":
+                    return default!;
                 case "observeMigrations":
                     RegisteredId = (string)args![0]!;
                     Reference = (DotNetObjectReference<MagicMigrationSubscription>)args[1]!;
@@ -126,6 +154,8 @@ public sealed class MigrationDiagnosticsTests
                         CancelAfterRegistration.Cancel();
                         throw new OperationCanceledException(cancellationToken);
                     }
+                    RegistrationStarted?.SetResult();
+                    if (ReleaseRegistration is not null) await ReleaseRegistration.Task.WaitAsync(cancellationToken);
                     return default!;
                 case "stopObservingMigrations":
                     StoppedIds.Add((string)args![0]!);

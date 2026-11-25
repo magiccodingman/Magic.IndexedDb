@@ -432,11 +432,15 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(observer);
-        ObjectDisposedException.ThrowIf(_jsModule is null || _lifetime.IsCancellationRequested, this);
-        var subscription = new MagicMigrationSubscription(await _jsModule.Value.WaitAsync(cancellationToken), observer,
+        var js = _jsModule;
+        ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
+        using var registration = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+        var module = await js.Value.WaitAsync(registration.Token);
+        registration.Token.ThrowIfCancellationRequested();
+        var subscription = new MagicMigrationSubscription(module, observer,
             id => _migrationSubscriptions.TryRemove(id, out _));
         _migrationSubscriptions[subscription.Id] = subscription;
-        await subscription.StartAsync(cancellationToken);
+        await subscription.StartAsync(registration.Token);
         return subscription;
     }
 }

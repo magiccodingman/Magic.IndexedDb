@@ -11,14 +11,32 @@
     {
         try
         {
-            await CheckDatabase(false);
-            await CheckDatabase(true);
 #if MANAGED
+            var adoption = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using (await Magic.ObserveMigrationsAsync(notification =>
+            {
+                if (notification.Phase == "adopting" && notification.SchemaId == "west")
+                    adoption.TrySetResult();
+                return ValueTask.CompletedTask;
+            }))
+            {
+                await CheckDatabase(false);
+                await CheckDatabase(true);
+                await adoption.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            }
+
+            var west = await Magic.Database(FixtureRepository.West);
+            var inspection = await west.InspectMigrationAsync();
+            Require(inspection?.GetProperty("state").GetProperty("revision").GetInt32() == 1,
+                "Typed migration inspection could not read the adoption journal.");
             var tenant = await Magic.Database(FixtureRepository.West, "fixture-west-tenant");
             var tenantInvoices = await tenant.Query<Invoice>();
             Require(await tenantInvoices.CountAsync() == 0, "A second physical instance inherited the first instance's rows.");
             await tenantInvoices.AddAsync(new Invoice { Id = 701, Account = "independent" });
             Require(await tenantInvoices.CountAsync() == 1, "The isolated instance could not persist its own row.");
+#else
+            await CheckDatabase(false);
+            await CheckDatabase(true);
 #endif
             state = "passed";
             message = "Both fixture databases passed typed assertions.";

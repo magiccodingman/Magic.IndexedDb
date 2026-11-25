@@ -41,8 +41,17 @@ internal sealed class MagicMigrationSubscription : IAsyncDisposable
     internal async Task StartAsync(CancellationToken cancellationToken)
     {
         _reference = DotNetObjectReference.Create(this);
-        try { await _module.InvokeVoidAsync("observeMigrations", cancellationToken, Id, _reference); }
-        catch { await DisposeAsync(); throw; }
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await _module.InvokeVoidAsync("observeMigrations", cancellationToken, Id, _reference);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch
+        {
+            await DisposeAsync();
+            throw;
+        }
     }
 
     [JSInvokable]
