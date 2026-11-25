@@ -70,16 +70,32 @@ internal sealed class EncryptionConfiguration
 
     public JsonElement CreateDatabase(IEnumerable<(Type Type, StoreSchema Schema)> schemas)
     {
-        var rows = schemas.Select(entry => new
+        var rows = schemas.Select(entry =>
         {
-            entry.Schema.TableName,
-            entry.Schema.PrimaryKeyAuto,
-            entry.Schema.ColumnNamesInCompoundKey,
-            entry.Schema.Indexes,
-            entry.Schema.UniqueIndexes,
-            entry.Schema.ColumnNamesInCompoundIndex,
-            EncryptedFields = ProtectedFields(entry.Type),
-            ExposedFields = GetExposedFields(entry.Type, entry.Schema.TableName)
+            var protectedFields = ProtectedFields(entry.Type);
+            var exposedFields = GetExposedFields(entry.Type, entry.Schema.TableName);
+            if (exposedFields is null && protectedFields.Length > 0 &&
+                MagicConverterHelper.HasCustomConverter(entry.Type, new JsonSerializerOptions()))
+            {
+                // A whole-table converter can rename or duplicate protected
+                // values outside their annotated fields. Only a complete record
+                // payload can safely protect an otherwise arbitrary wire shape.
+                throw new InvalidOperationException(
+                    $"Table '{entry.Schema.TableName}' uses a custom JSON converter and cannot use field encryption. " +
+                    "Configure whole-record encryption with an explicit public allowlist instead.");
+            }
+
+            return new
+            {
+                entry.Schema.TableName,
+                entry.Schema.PrimaryKeyAuto,
+                entry.Schema.ColumnNamesInCompoundKey,
+                entry.Schema.Indexes,
+                entry.Schema.UniqueIndexes,
+                entry.Schema.ColumnNamesInCompoundIndex,
+                EncryptedFields = protectedFields,
+                ExposedFields = exposedFields
+            };
         }).ToArray();
 
         if (_recordPolicies.Keys.Any(table => !rows.Any(row => row.TableName == table)))

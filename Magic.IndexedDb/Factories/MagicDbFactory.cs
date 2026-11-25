@@ -182,10 +182,11 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     public async Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(this._jsModule is null || _lifetime.IsCancellationRequested, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var jsModule = await this._jsModule.Value;
+        var jsModule = await this._jsModule.Value.WaitAsync(cancellationToken);
         var magicUtility = new MagicUtilities(jsModule, _jsMessageSizeBytes);
-        return await magicUtility.GetStorageEstimateAsync();
+        return await magicUtility.GetStorageEstimateAsync(cancellationToken);
     }
     [Obsolete("Not fully implemented yet until full migration protocol finished.")]
     public async ValueTask<IMagicQuery<T>> Query<T>(IndexedDbSet indexedDbSet)

@@ -99,15 +99,8 @@ function walkPredicateTree(node, visitFn) {
 }
 
 
-let lastCursorWarningTime = null;
-
 async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys, compoundKeys, recordHandler) {
     debugLog("Processing Cursor Records");
-
-    const now = Date.now();
-    let shouldLogWarning = !lastCursorWarningTime || now - lastCursorWarningTime > 10 * 60 * 1000;
-
-    const requiredPropertiesFiltered = new Set();
 
     const hasConditions =
         predicateTree &&
@@ -116,28 +109,13 @@ async function processCursorRecords(db, table, predicateTree, yieldedPrimaryKeys
             (predicateTree.children && predicateTree.children.length > 0)
         );
 
-    if (hasConditions) {
-        collectPropertiesFromTree(predicateTree, requiredPropertiesFiltered);
-    }
-
     await db.transaction('r', table, async () => {
         // toCollection() traverses the store by its actual primary key, including a
         // compound primary key. orderBy(compoundKeys[0]) incorrectly assumes the first
         // component of a compound key is also a standalone index.
         await table.toCollection().each((record) => {
-            if (requiredPropertiesFiltered.size > 0) {
-                for (const prop of requiredPropertiesFiltered) {
-                    if (record[prop] === undefined) {
-                        if (shouldLogWarning) {
-                            console.warn(`[IndexedDB Cursor Warning] Skipping record due to missing property: ${prop}`);
-                            lastCursorWarningTime = now;
-                            shouldLogWarning = false;
-                        }
-                        return;
-                    }
-                }
-            }
-
+            // Missing properties participate in the predicate itself. Skipping
+            // the row here breaks IsNull and OR branches that match another field.
             const recordKey = normalizeCompoundKey(compoundKeys, record);
             if (hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                 return;
@@ -303,10 +281,14 @@ function getComparisonFunction(operation) {
     const operations = {
         [QUERY_OPERATIONS.EQUAL]: (recordValue, queryValue) => recordValue === queryValue,
         [QUERY_OPERATIONS.NOT_EQUAL]: (recordValue, queryValue) => recordValue !== queryValue,
-        [QUERY_OPERATIONS.GREATER_THAN]: (recordValue, queryValue) => recordValue > queryValue,
-        [QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) => recordValue >= queryValue,
-        [QUERY_OPERATIONS.LESS_THAN]: (recordValue, queryValue) => recordValue < queryValue,
-        [QUERY_OPERATIONS.LESS_THAN_OR_EQUAL]: (recordValue, queryValue) => recordValue <= queryValue,
+        [QUERY_OPERATIONS.GREATER_THAN]: (recordValue, queryValue) =>
+            recordValue != null && queryValue != null && recordValue > queryValue,
+        [QUERY_OPERATIONS.GREATER_THAN_OR_EQUAL]: (recordValue, queryValue) =>
+            recordValue != null && queryValue != null && recordValue >= queryValue,
+        [QUERY_OPERATIONS.LESS_THAN]: (recordValue, queryValue) =>
+            recordValue != null && queryValue != null && recordValue < queryValue,
+        [QUERY_OPERATIONS.LESS_THAN_OR_EQUAL]: (recordValue, queryValue) =>
+            recordValue != null && queryValue != null && recordValue <= queryValue,
         [QUERY_OPERATIONS.STARTS_WITH]: (recordValue, queryValue) =>
             typeof recordValue === "string" && recordValue.startsWith(queryValue),
 
@@ -337,7 +319,8 @@ function getComparisonFunction(operation) {
         },
 
         [QUERY_OPERATIONS.IN]: (recordValue, queryValue) =>
-            Array.isArray(queryValue) && queryValue.includes(recordValue),
+            Array.isArray(queryValue) &&
+            (queryValue.includes(recordValue) || (recordValue == null && queryValue.includes(null))),
 
         [QUERY_OPERATIONS.MONTH_EQUAL]: (recordValue, queryValue) => {
             recordValue = normalizeDate(recordValue);
@@ -758,7 +741,8 @@ function applyCursorQueryAdditions(
             for (let prop of detectedIndexOrderProperties) {
                 const aVal = a.sortingProperties[prop];
                 const bVal = b.sortingProperties[prop];
-                if (aVal !== bVal) return aVal > bVal ? 1 : -1;
+                const comparison = compareSortValues(aVal, bVal);
+                if (comparison !== 0) return comparison;
             }
             return a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"];
         });
@@ -786,10 +770,11 @@ function applyCursorQueryAdditions(
                     let valueA = a.sortingProperties[prop];
                     let valueB = b.sortingProperties[prop];
 
-                    if (valueA !== valueB) {
+                    const comparison = compareSortValues(valueA, valueB);
+                    if (comparison !== 0) {
                         return addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING
-                            ? (valueB > valueA ? 1 : -1)
-                            : (valueA > valueB ? 1 : -1);
+                            ? -comparison
+                            : comparison;
                     }
 
                     return a.sortingProperties["_MagicOrderId"] - b.sortingProperties["_MagicOrderId"];
@@ -797,15 +782,15 @@ function applyCursorQueryAdditions(
                 break;
 
             case QUERY_ADDITIONS.SKIP:
-                primaryKeyList = primaryKeyList.slice(addition.intValue);
+                primaryKeyList = primaryKeyList.slice(Math.max(0, addition.intValue));
                 break;
 
             case QUERY_ADDITIONS.TAKE:
-                primaryKeyList.length = Math.min(primaryKeyList.length, addition.intValue);
+                primaryKeyList.length = Math.min(primaryKeyList.length, Math.max(0, addition.intValue));
                 break;
 
             case QUERY_ADDITIONS.TAKE_LAST:
-                primaryKeyList = primaryKeyList.slice(-addition.intValue);
+                primaryKeyList = addition.intValue > 0 ? primaryKeyList.slice(-addition.intValue) : [];
                 break;
 
             case QUERY_ADDITIONS.FIRST:
@@ -829,4 +814,13 @@ function applyCursorQueryAdditions(
     return primaryKeyList.map(item =>
         compoundKeys.map(key => item.sortingProperties[key])
     );
+}
+
+function compareSortValues(left, right) {
+    if (left == null || right == null) {
+        return left == null ? (right == null ? 0 : -1) : 1;
+    }
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
 }

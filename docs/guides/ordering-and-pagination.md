@@ -13,6 +13,8 @@ List<Person> ordered = await people
 
 `ToListAsync()` applies the requested query ordering before materialization. An indexed ordering has the best chance of staying on an IndexedDB-native path. Ordering by a non-indexed property requires cursor processing.
 
+Secondary indexes omit null, missing, and other values that are not valid IndexedDB keys. Before using an index for an unfiltered sort, Magic checks that it covers every stored row. An incomplete index uses cursor sorting so those rows remain in the result. Null and missing values sort first in ascending cursor order and last in descending order. Complete standalone indexes retain the native ordering path.
+
 `OrderByDescending` follows the same rules:
 
 ```csharp
@@ -86,7 +88,7 @@ List<Person> page = await people
 
 This still means “skip `offset` rows and return `pageSize` rows.” The method order is reversed because IndexedDB applies the limit and offset in that order. The staged interfaces prevent calling `Take` after `Skip`.
 
-Use a positive count for `Take` and `TakeLast`, and a non-negative offset for `Skip`. Avoid zero and negative counts; different query paths do not currently handle them consistently.
+Zero or negative counts for `Take` and `TakeLast` return an empty sequence. A negative `Skip` offset is treated as zero.
 
 For page-number pagination:
 
@@ -111,7 +113,7 @@ List<Person> lastFive = await people
     .ToListAsync();
 ```
 
-Magic may transform `TakeLast` using reverse traversal and a limit when the order/index path allows it. Otherwise, the cursor engine applies the requested semantics.
+The cursor engine applies `TakeLast` to the completed matching sequence and preserves the selected rows' order. Tail selection and other pagination apply once after all matching OR branches have been combined and de-duplicated.
 
 ## Compound primary keys and ordering
 
