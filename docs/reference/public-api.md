@@ -12,9 +12,16 @@ IServiceCollection AddMagicBlazorDB(
 IServiceCollection AddMagicBlazorDB(
     long jsMessageSizeBytes,
     bool isDebug);
+
+IServiceCollection AddMagicIndexedDbNumericStorage(
+    params MagicNumericStorageOptions[] databases);
 ```
 
 `BlazorInteropMode.WASM` uses a 15 MiB message limit. `BlazorInteropMode.SignalR` uses 31 KiB.
+
+`new MagicNumericStorageOptions(databaseName)` selects `MagicNumericStorageMode.Lossless`
+for that logical database. Unlisted databases remain `Legacy`. Configure a new
+database or plan an explicit cutover using the [lossless numbers guide](../guides/lossless-numbers.md).
 
 ## `IMagicIndexedDb`
 

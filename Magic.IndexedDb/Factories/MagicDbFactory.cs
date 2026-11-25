@@ -22,13 +22,15 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     private readonly Type[]? _repositoryTypes;
     private readonly IMagicEncryptionKeyProvider? _keyProvider;
     private readonly bool _protectedOnly;
+    private readonly NumericStorageConfiguration _numericStorage;
     private readonly CancellationTokenSource _lifetime = new();
     public long JsMessageSizeBytes => _jsMessageSizeBytes;
 
     public MagicDbFactory(
         IJSRuntime jSRuntime, long jsMessageSizeBytes, bool isDebug,
         Type[]? tableTypes = null, Type[]? repositoryTypes = null,
-        Dictionary<string, EncryptionConfiguration>? encryption = null, IMagicEncryptionKeyProvider? keyProvider = null, bool protectedOnly = false)
+        Dictionary<string, EncryptionConfiguration>? encryption = null, IMagicEncryptionKeyProvider? keyProvider = null, bool protectedOnly = false,
+        NumericStorageConfiguration? numericStorage = null)
     {
         _jsMessageSizeBytes = jsMessageSizeBytes;
         _runtime = jSRuntime;
@@ -37,7 +39,9 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         _repositoryTypes = repositoryTypes;
         _keyProvider = keyProvider;
         _protectedOnly = protectedOnly;
-        _encryption = encryption ?? new(StringComparer.Ordinal);
+        _numericStorage = numericStorage ?? new NumericStorageConfiguration([]);
+        _encryption = (encryption ?? new(StringComparer.Ordinal)).ToDictionary(pair => pair.Key,
+            pair => pair.Value.WithNumericStorage(_numericStorage.Mode(pair.Key)), StringComparer.Ordinal);
         _unlocks = _encryption.ToDictionary(pair => pair.Key,
             pair => new EncryptionUnlock(pair.Value, keyProvider!), StringComparer.Ordinal);
         this._jsModule = new(async () =>
@@ -59,21 +63,38 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
                 var schemas = types.Select(type => (Type: type, Schema: SchemaHelper.GetStoreSchema(type))).ToArray();
                 if (_encryption.Count > 0)
                     _encryptedSchemaTypes = schemas.ToDictionary(entry => entry.Schema.TableName, entry => entry.Type, StringComparer.Ordinal);
-                var plainSchemas = schemas.Where(entry => !EncryptionConfiguration.RequiresProtection(entry.Type))
-                    .Select(entry => entry.Schema).ToList();
-                var manager = new IndexedDbManager(jsModule, _jsMessageSizeBytes,
-                    _encryption.ToDictionary(pair => pair.Key, pair => pair.Value.Route, StringComparer.Ordinal), _lifetime.Token);
-
+                var plainEntries = schemas.Where(entry => !EncryptionConfiguration.RequiresProtection(entry.Type)).ToArray();
+                var plainSchemas = plainEntries.Select(entry => entry.Schema).ToList();
                 var dbSets = repositoryTypes is null
                     ? SchemaHelper.GetAllIndexedDbSets()
                     : SchemaHelper.GetIndexedDbSets(repositoryTypes);
                 var names = dbSets.Select(set => set.DatabaseName).ToHashSet(StringComparer.Ordinal);
                 if (_encryption.Keys.Any(name => !names.Contains(name)))
                     throw new InvalidOperationException("A Magic encryption policy names an unregistered database.");
+                if (_numericStorage.Modes.Keys.Any(name => !names.Contains(name)))
+                    throw new InvalidOperationException("A Magic numeric policy names an unregistered database.");
+                var routes = names.ToDictionary(name => name, name => _encryption.TryGetValue(name, out var encrypted)
+                    ? encrypted.Route
+                    : _numericStorage.Mode(name) == MagicNumericStorageMode.Lossless
+                        ? NumericStorageConfiguration.PhysicalName(name) : name, StringComparer.Ordinal);
+                var manager = new IndexedDbManager(jsModule, _jsMessageSizeBytes, routes, _lifetime.Token, _numericStorage.Modes);
 
                 foreach (var name in names)
                 {
                     _lifetime.Token.ThrowIfCancellationRequested();
+                    if (_protectedOnly && !_encryption.ContainsKey(name)) continue;
+                    if (_numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
+                    {
+                        var applicable = _encryption.ContainsKey(name) ? schemas : plainEntries;
+                        if (applicable.Any(entry => MagicConverterHelper.HasCustomConverter(entry.Type, new())))
+                            throw new InvalidOperationException("Lossless numeric storage requires mapped table members and cannot use a whole-table JSON converter. Use property converters or Legacy storage instead.");
+                        foreach (var entry in applicable.Where(entry => entry.Schema.PrimaryKeyAuto))
+                        {
+                            var properties = PropertyMappingCache.GetTypeOfTProperties(entry.Type).propertyEntries.Values;
+                            if (properties.Any(property => property.PrimaryKey && MagicConverterHelper.HasCustomConverter(property.Property)))
+                                throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
+                        }
+                    }
                     if (_encryption.TryGetValue(name, out var configuration))
                     {
                         await EncryptionUnlock.InvokeAsync<bool>(jsModule, IndexedDbFunctions.CREATE_LEGACY, true,
@@ -81,7 +102,12 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
                         continue;
                     }
 
-                    if (_protectedOnly) continue;
+                    if (_numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
+                    {
+                        await EncryptionUnlock.InvokeAsync<bool>(jsModule, IndexedDbFunctions.CREATE_LEGACY, true,
+                            NumericStorageConfiguration.CreateDatabase(name, plainSchemas));
+                        continue;
+                    }
                     await new MagicJsInvoke(jsModule, _jsMessageSizeBytes).CallJsAsync(Cache.MagicDbJsImportPath,
                         IndexedDbFunctions.CREATE_LEGACY, default,
                         new TypedArgument<DbStore>(new DbStore()
@@ -98,7 +124,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
 
     internal MagicDbFactory CreateProtectedContext(Dictionary<string, EncryptionConfiguration> configurations) =>
         new(_runtime, _jsMessageSizeBytes, _isDebug, _tableTypes, _repositoryTypes,
-            configurations, _keyProvider, protectedOnly: true);
+            configurations, _keyProvider, protectedOnly: true, _numericStorage);
 
     internal async Task DestroyProtectedDatabaseAsync(IndexedDbSet database)
     {

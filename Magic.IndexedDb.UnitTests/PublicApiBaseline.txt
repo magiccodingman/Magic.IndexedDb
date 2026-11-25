@@ -270,6 +270,20 @@ enum Magic.IndexedDb.MagicEncryptionState : System.IComparable, System.IConverti
   field static Magic.IndexedDb.MagicEncryptionState PolicyMismatch = 3
   field static Magic.IndexedDb.MagicEncryptionState Uninitialized = 0
   field static Magic.IndexedDb.MagicEncryptionState Unlocked = 2
+enum Magic.IndexedDb.MagicNumericStorageMode : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int32 value__
+  field static Magic.IndexedDb.MagicNumericStorageMode Legacy = 0
+  field static Magic.IndexedDb.MagicNumericStorageMode Lossless = 1
+class Magic.IndexedDb.MagicNumericStorageOptions : System.IEquatable<Magic.IndexedDb.MagicNumericStorageOptions>
+  ctor Magic.IndexedDb.MagicNumericStorageOptions(System.String DatabaseName, Magic.IndexedDb.MagicNumericStorageMode Mode = Lossless)
+  method Magic.IndexedDb.MagicNumericStorageOptions <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.MagicNumericStorageOptions other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(out System.String DatabaseName, out Magic.IndexedDb.MagicNumericStorageMode Mode)
+  property Magic.IndexedDb.MagicNumericStorageMode Mode { get; set; }
+  property System.String DatabaseName { get; set; }
 class Magic.IndexedDb.MagicTableTool<T>
   ctor Magic.IndexedDb.MagicTableTool<T>()
 class Magic.IndexedDb.MagicUniqueIndexAttribute : Magic.IndexedDb.Interfaces.IColumnNamed, System.Attribute
@@ -296,6 +310,7 @@ class Magic.IndexedDb.Models.MagicException : System.Exception, System.Runtime.S
 class Magic.IndexedDb.Models.MagicJsonSerializationSettings
   ctor Magic.IndexedDb.Models.MagicJsonSerializationSettings()
   method System.Text.Json.JsonSerializerOptions GetOptionsWithResolver<T>()
+  property Magic.IndexedDb.MagicNumericStorageMode NumericStorageMode { get; set; }
   property System.Boolean UseCamelCase { get; set; }
   property System.Text.Json.JsonSerializerOptions Options { get; set; }
 struct Magic.IndexedDb.Models.MagicPropertyEntry
@@ -368,6 +383,7 @@ static class Magic.IndexedDb.ServiceCollectionExtensions
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicBlazorDB(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Int64 jsMessageSizeBytes, System.Boolean isDebug, System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<System.Type> repositoryTypes)
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicIndexedDbEncryption<TProvider>(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
   method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicIndexedDbEncryption<TProvider>(Microsoft.Extensions.DependencyInjection.IServiceCollection services, System.Func<System.IServiceProvider, System.Collections.Generic.IEnumerable<Magic.IndexedDb.MagicEncryptionOptions>> configure)
+  method static Microsoft.Extensions.DependencyInjection.IServiceCollection AddMagicIndexedDbNumericStorage(Microsoft.Extensions.DependencyInjection.IServiceCollection services, Magic.IndexedDb.MagicNumericStorageOptions[] databases)
 class Magic.IndexedDb.StoreRecord<T>
   ctor Magic.IndexedDb.StoreRecord<T>()
   property System.String DbName { get; set; }

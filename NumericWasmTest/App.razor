@@ -1,0 +1,86 @@
+@using System.Diagnostics
+@using System.Text.Json
+@inject IMagicIndexedDb Magic
+@inject IMagicIndexedDbEncryption Encryption
+@inject IJSRuntime JavaScript
+
+<h1>Numeric WebAssembly validation</h1>
+<p>Generated values only. The published CI build enables WebAssembly AOT compilation.</p>
+<pre id="numeric-wasm-results" data-state="@_report.State">@ReportJson</pre>
+
+@code {
+    private readonly NumericWasmReport _report = new();
+    private string ReportJson => JsonSerializer.Serialize(_report, NumericWasmReportJsonContext.Default.NumericWasmReport);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            if (!OperatingSystem.IsBrowser()) throw new InvalidOperationException("These tests must execute inside WebAssembly.");
+            await using var diagnostics = await JavaScript.InvokeAsync<IJSObjectReference>(
+                "import", "./_content/Magic.IndexedDb/magicDbMethods.js");
+
+            await Run(nameof(NumericFixture.RoundTripAndStream), () => NumericFixture.RoundTripAndStream(Magic));
+            await Run(nameof(NumericFixture.IndexedPredicatesAndOrdering), () => NumericFixture.IndexedPredicatesAndOrdering(Magic), "compound-index");
+            await Run(nameof(NumericFixture.ExplicitKeysAndBulkCrud), () => NumericFixture.ExplicitKeysAndBulkCrud(Magic));
+            await Run(nameof(NumericFixture.CanonicalUniqueIndexes), () => NumericFixture.CanonicalUniqueIndexes(Magic), "single-index");
+            await Run(nameof(NumericFixture.NativeAutoIncrementKeys), () => NumericFixture.NativeAutoIncrementKeys(Magic));
+            await Run(nameof(NumericFixture.ProtectedPublicAccess), () => NumericFixture.ProtectedPublicAccess(Magic, Encryption));
+
+            _report.Benchmark = await NumericBenchmark.RunAsync(Magic, async () =>
+            {
+                await RequireNativePlan(diagnostics, "single-index");
+            });
+            _report.State = "passed";
+
+            async Task Run(string name, Func<Task<string>> scenario, string? nativeStrategy = null)
+            {
+                var watch = Stopwatch.StartNew();
+                var result = new NumericScenarioResult { Name = name };
+                _report.Scenarios.Add(result);
+                await InvokeAsync(StateHasChanged);
+                try
+                {
+                    var output = await scenario();
+                    if (output != "OK") throw new InvalidOperationException("Unexpected fixture result: " + output);
+                    if (nativeStrategy is not null)
+                        result.PlannerTrace = await RequireNativePlan(diagnostics, nativeStrategy);
+                    result.State = "passed";
+                }
+                catch (Exception error)
+                {
+                    result.State = "failed";
+                    result.Error = error.ToString();
+                    throw;
+                }
+                finally
+                {
+                    result.ElapsedMilliseconds = watch.Elapsed.TotalMilliseconds;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (Exception error)
+        {
+            _report.State = "failed";
+            _report.Failure = error.ToString();
+            Console.Error.WriteLine(error);
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static async Task<JsonElement> RequireNativePlan(IJSObjectReference diagnostics, string strategy)
+    {
+        var trace = await diagnostics.InvokeAsync<JsonElement>("getLastQueryPlannerTrace");
+        if (trace.ValueKind != JsonValueKind.Object || !trace.TryGetProperty("stages", out var stages))
+            throw new InvalidOperationException("The numeric query did not produce a planner trace.");
+        var entries = stages.EnumerateArray().ToArray();
+        if (!entries.Any(entry => entry.GetProperty("stage").GetString() == "branch-classified" &&
+                entry.GetProperty("details").GetProperty("strategy").GetString() == strategy) ||
+            !entries.Any(entry => entry.GetProperty("stage").GetString() == "indexed-execution") ||
+            entries.Any(entry => entry.GetProperty("stage").GetString() == "cursor-execution"))
+            throw new InvalidOperationException("Expected native numeric index execution: " + trace.GetRawText());
+        return trace;
+    }
+}

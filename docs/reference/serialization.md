@@ -7,7 +7,7 @@ Most ordinary models work without extra configuration:
 | C# value | How it is stored |
 |---|---|
 | Strings, booleans, and nulls | As their normal JSON values |
-| Numeric types and `decimal` | As JavaScript numbers; see [numeric precision](#numeric-precision) |
+| Numeric types and `decimal` | Native numbers in Legacy mode; exact wide numeric encodings in [lossless mode](../guides/lossless-numbers.md) |
 | `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `Guid`, `Uri`, and `TimeSpan` | Using their `System.Text.Json` representation |
 | Nullable values | As either `null` or the underlying value |
 | Enums | As numbers by default, or names when a string-enum converter is used |
@@ -20,7 +20,7 @@ Being able to store a value does not mean every part of it can be queried. For e
 
 ## Numeric precision
 
-Numbers pass through JavaScript before reaching IndexedDB. JavaScript cannot represent every `long`, `ulong`, or high-precision `decimal` value exactly.
+The default Legacy format sends numbers through JavaScript before reaching IndexedDB. JavaScript cannot represent every `long`, `ulong`, or high-precision `decimal` value exactly. For new databases, enable [lossless numeric storage](../guides/lossless-numbers.md) once to preserve these values while keeping typed properties and native indexed queries.
 
 The safe integer range is **-9,007,199,254,740,991 through 9,007,199,254,740,991** (`Number.MIN_SAFE_INTEGER` through `Number.MAX_SAFE_INTEGER`). For example, sending `9007199254740993` as a JSON number produces `9007199254740992` when JavaScript parses it. A decimal such as `7922816251426433759354395.0335` also loses precision. These are storage-boundary limits, including when the parsed value is subsequently encrypted; encryption does not restore digits lost during JSON parsing.
 
@@ -44,7 +44,7 @@ Changing how an existing property represents time can make older records incompa
 
 ## Enums
 
-Enums are stored as numbers by default. Add `JsonStringEnumConverter` to an enum when you prefer to store its names:
+Enums are stored as numbers by default. In a lossless database, enums with a `long` or `ulong` underlying type use the exact wide-integer encoding. Add `JsonStringEnumConverter` to an enum when you prefer to store its names:
 
 ```csharp
 using System.Text.Json.Serialization;
@@ -97,6 +97,8 @@ Dictionary keys follow the normal `System.Text.Json` rules. In a `Dictionary<str
 Converter attributes on a persisted type or property are used during normal database operations. There is currently no global `JsonSerializerOptions` setting on `IMagicIndexedDb`.
 
 A converter for an entire table can rename or duplicate its members, so it cannot be combined with field-only `[MagicEncrypt]` protection. That configuration is rejected before the protected database opens. Use whole-record protection with an explicit public allowlist when the table needs such a converter, and preserve the configured key and public member names in its output. A converter on an individual encrypted property remains supported because its complete output stays inside that property's encrypted envelope.
+
+Lossless numeric databases additionally reject whole-table converters and converters on auto-increment keys. Property converters remain application-owned representations; they are not automatically rewritten into Magic's numeric format. See [lossless numbers](../guides/lossless-numbers.md#encryption-and-converters).
 
 `MagicJsonSerializationSettings` and `MagicSerializationHelper` are useful for direct serialization calls and tests. Settings passed to those helpers do not change the serializer used by the injected database service.
 

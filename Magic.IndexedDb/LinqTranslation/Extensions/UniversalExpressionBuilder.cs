@@ -4,6 +4,7 @@ using Magic.IndexedDb.Models;
 using Magic.IndexedDb.Models.UniversalOperations;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Text.Json;
 
@@ -13,10 +14,16 @@ public class UniversalExpressionBuilder<T>
 {
     private static readonly ConcurrentDictionary<Type, bool> StringBackedEnumCache = new();
     private readonly Expression<Func<T, bool>> _predicate;
+    private readonly MagicJsonSerializationSettings _settings;
 
-    public UniversalExpressionBuilder(Expression<Func<T, bool>> predicate)
+    public UniversalExpressionBuilder(Expression<Func<T, bool>> predicate) : this(predicate, new MagicJsonSerializationSettings())
+    {
+    }
+
+    internal UniversalExpressionBuilder(Expression<Func<T, bool>> predicate, MagicJsonSerializationSettings settings)
     {
         _predicate = predicate;
+        _settings = settings;
     }
 
     /// <summary>
@@ -169,6 +176,7 @@ public class UniversalExpressionBuilder<T>
             if (leftExpr == null || rightVal == null)
                 throw new InvalidOperationException($"Cannot parse method call: {call}");
 
+            ValidateObjectEqualityOperand(call, leftExpr, rightVal.Value);
             var cond = BuildConditionFromMemberAndConstant(leftExpr, rightVal, operation, caseSensitive);
 
             return new FilterNode
@@ -295,6 +303,7 @@ public class UniversalExpressionBuilder<T>
         if (leftExpr == null || rightVal == null)
             throw new InvalidOperationException($"Cannot parse NOT method: {call}");
 
+        ValidateObjectEqualityOperand(call, leftExpr, rightVal.Value);
         var cond = BuildConditionFromMemberAndConstant(leftExpr, rightVal, inverted, caseSensitive);
 
         return new FilterNode
@@ -739,6 +748,24 @@ public class UniversalExpressionBuilder<T>
     // Internal Helpers
     // ------------------------------
 
+    private void ValidateObjectEqualityOperand(MethodCallExpression call, MemberExpression member, object? value)
+    {
+        if (_settings.NumericStorageMode != MagicNumericStorageMode.Lossless || value is null ||
+            call.Method.Name != "Equals" || call.Method.GetParameters() is not [{ ParameterType: var argumentType }] ||
+            argumentType != typeof(object))
+            return;
+
+        var type = Nullable.GetUnderlyingType(member.Type) ?? member.Type;
+        if ((type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal)) &&
+            value.GetType() != type)
+        {
+            // Scalar Equals(object) requires the same CLR type. Encoding a boxed
+            // number must not turn it into a matching string or another numeric type.
+            throw new InvalidOperationException(
+                "Lossless queries do not support scalar Equals(object) operands with a different CLR type. Use a matching typed operand.");
+        }
+    }
+
     private FilterCondition BuildConditionFromMemberAndConstant(
         MemberExpression? memberExpr,
         ConstantExpression? constExpr,
@@ -760,14 +787,27 @@ public class UniversalExpressionBuilder<T>
         }
 
         object? val = NormalizeEnumComparisonValue(propInfo, constExpr.Value, operation);
-        if (MagicConverterHelper.HasCustomConverter(propInfo))
+        var options = _settings.GetOptionsWithNumericConverters();
+        var hasCustomConverter = MagicConverterHelper.HasCustomConverter(propInfo, options);
+        if (_settings.NumericStorageMode == MagicNumericStorageMode.Lossless &&
+            MagicNumericSerialization.IsNativeAutoIncrementKey(propInfo, typeof(T)))
+        {
+            if (hasCustomConverter)
+                throw new InvalidOperationException("A lossless native auto-increment key cannot use a custom JSON converter.");
+            val = MagicNumericSerialization.SerializeNativeKey(val, propInfo.PropertyType);
+        }
+        else if (hasCustomConverter)
         {
             if (operation is not "Equal" and not "NotEqual")
                 throw new InvalidOperationException("Custom-converted properties support equality comparisons only; their stored representation may change other query semantics.");
-            var converted = MagicConverterHelper.SerializePropertyValue(propInfo, val);
+            var converted = MagicConverterHelper.SerializePropertyValue(propInfo, val, options);
             if (converted.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
                 throw new InvalidOperationException("Equality queries require a scalar representation for custom-converted properties.");
             val = converted;
+        }
+        else if (_settings.NumericStorageMode == MagicNumericStorageMode.Lossless)
+        {
+            val = NormalizeNumericComparisonValue(propInfo.PropertyType, val);
         }
 
         string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
@@ -781,6 +821,29 @@ public class UniversalExpressionBuilder<T>
             isString,
             effectiveCaseSensitivity
         );
+    }
+
+    private static object? NormalizeNumericComparisonValue(Type declaredType, object? value)
+    {
+        if (value is null) return null;
+        var type = Nullable.GetUnderlyingType(declaredType) ?? declaredType;
+        if (type.IsEnum || (type != typeof(long) && type != typeof(ulong) && type != typeof(decimal)))
+            return value;
+        if (value.GetType() == type) return value;
+
+        // Do not use Convert's rounding of fractional values for an integral
+        // member. Unsupported mixed numeric comparisons must fail explicitly.
+        if (value is double or float ||
+            (type != typeof(decimal) && value is decimal number && number != decimal.Truncate(number)))
+            throw new InvalidOperationException("Lossless numeric query operands must convert exactly to the persisted property's numeric type.");
+        try
+        {
+            return Convert.ChangeType(value, type, CultureInfo.InvariantCulture);
+        }
+        catch (Exception error) when (error is OverflowException or InvalidCastException or FormatException)
+        {
+            throw new InvalidOperationException("The query operand is outside the persisted property's numeric type.", error);
+        }
     }
 
     private static object? NormalizeEnumComparisonValue(
