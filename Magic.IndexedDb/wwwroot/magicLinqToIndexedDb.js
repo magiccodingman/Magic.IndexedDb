@@ -89,14 +89,16 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         debugLog("No filtering or query additions. Fetching entire table.");
         if (projection) {
             const primary = indexFields(table.schema.primKey);
-            if (covers(primary, projection)) {
+            if (!forceCursor && covers(primary, projection)) {
                 const keys = await table.toCollection().primaryKeys();
                 traceQueryPlannerStage("projection-execution", { strategy: "index-covered", fullRecordReads: 0 });
                 for (const key of keys) yield output(keyRecord(primary, key));
             } else {
                 const rows = [];
                 await table.each(record => rows.push(output(record)));
-                traceQueryPlannerStage("projection-execution", { strategy: "record", fullRecordReads: rows.length });
+                traceQueryPlannerStage("projection-execution", {
+                    strategy: "record", source: "cursor", fullRecordReads: rows.length
+                });
                 yield* rows;
             }
             return;
