@@ -4,6 +4,7 @@ using Magic.IndexedDb.SchemaAnnotations;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 
 namespace Magic.IndexedDb.Helpers;
@@ -459,6 +460,12 @@ public static class PropertyMappingCache
         Type type = typeof(T);
     }
 
+    private static bool IsCompilerGeneratedRecordContract(PropertyInfo property) =>
+        property.Name == "EqualityContract" && property.PropertyType == typeof(Type) &&
+        property.GetMethod is { IsPublic: false } getter &&
+        (property.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false) ||
+         getter.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false));
+
     internal static void EnsureTypeIsCached(Type type)
     {
         //string typeKey = type.FullName!;
@@ -492,8 +499,8 @@ public static class PropertyMappingCache
         List<MagicPropertyEntry> newMagicPropertyEntry = new List<MagicPropertyEntry>();
         foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy))
         {
-            if (property.GetIndexParameters().Length > 0)
-                continue; // 🔥 Skip indexers entirely
+            if (property.GetIndexParameters().Length > 0 || IsCompilerGeneratedRecordContract(property))
+                continue;
 
             string propertyKey = property.Name; // Now stored as string, not PropertyInfo
 

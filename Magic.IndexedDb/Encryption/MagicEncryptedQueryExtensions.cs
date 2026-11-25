@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Text.Json;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.LinqTranslation.Extensions;
-using Magic.IndexedDb.LinqTranslation.Models;
 using Magic.IndexedDb.Models;
 
 namespace Magic.IndexedDb;
@@ -15,14 +14,7 @@ public static class MagicEncryptedQueryExtensions
         this IMagicExecute<T> source, Expression<Func<T, TValue>> member, CancellationToken cancellationToken = default)
         where T : class
     {
-        var query = source switch
-        {
-            MagicQuery<T> direct => direct,
-            MagicQueryExtensions<T> staged => staged.MagicQuery,
-            MagicCursor<T> cursor => cursor.MagicQuery,
-            MagicCursorExtension<T> stagedCursor => stagedCursor.MagicQuery,
-            _ => throw new ArgumentException("A Magic table query is required.", nameof(source))
-        };
+        var query = MagicProjectionExtensions.GetQuery(source);
         string name = MappedMember(member);
         var predicate = new MagicQueryExtensions<T>(query).GetCollectedBinaryJsonExpressions();
         var rows = await query.Manager.ProjectPublicAsync(query, predicate, name, cancellationToken);

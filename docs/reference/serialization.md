@@ -82,6 +82,8 @@ When Magic creates an object from a stored record, it chooses a constructor in t
 
 Constructor parameters are matched to properties without regard to case, and optional parameter defaults are honored. Magic fills any remaining writable properties after the object is constructed.
 
+C# record DTOs can round-trip through constructor materialization, including positional records, nested records, get-only constructor-bound properties, and properties renamed with `[property: MagicName(...)]`. Magic omits the compiler-generated record equality metadata from storage.
+
 `Query<T>()` still requires the table type to satisfy its `new()` constraint. Constructor-based materialization is therefore most useful for nested types, or for a table model that also keeps a public parameterless constructor.
 
 See [schema attributes and constructors](schema-attributes.md) for examples.

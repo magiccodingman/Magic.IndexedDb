@@ -31,6 +31,21 @@ Magic converts the expression tree into a universal predicate tree, partitions c
 
 The optimizer may transform equivalent conditions. For example, several equality alternatives on one indexed property can become an IndexedDB `anyOf` lookup, and compatible lower/upper bounds can become a range.
 
+## Select specific properties
+
+Use `Select` after filtering, ordering, or pagination to send only the selected values across browser interop.
+
+```csharp
+var people = await MagicDb.Query<Person>();
+var summaries = await people.Where(person => person.Age >= 18)
+    .Select(person => new { person.Name, person.Age })
+    .ToListAsync();
+```
+
+Select a direct mapped property for scalar results, or construct an object from direct mapped properties. Both `ToListAsync()` and `AsAsyncEnumerable()` defer execution until called and follow their existing ordering contracts. Unsupported selectors such as method calls or arithmetic fail explicitly. An absent stored property supplies the CLR default for its projected type.
+
+Magic applies its existing predicate, ordering, and pagination rules before selecting fields. Unfiltered primary-key-only projections can read keys directly. Other projections may need to read the full stored record inside the browser. On protected tables `Select` requires the normal unlocked query path. Use `SelectPublicAsync` for explicit public-only access after the connection has authenticated its policy.
+
 ## Common supported expressions
 
 The C# translator supports these principal expression families:

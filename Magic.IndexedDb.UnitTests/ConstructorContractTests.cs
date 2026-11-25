@@ -67,6 +67,26 @@ public sealed class ConstructorContractTests
         StringAssert.Contains(exception.Message, nameof(MagicConstructorAttribute));
     }
 
+    [TestMethod]
+    public void RecordDtos_RoundTripMappedPositionalNestedAndGetOnlyProperties()
+    {
+        var model = new RecordEnvelope(new PersonRecord(42, "Ada"), new GetOnlyRecord(7));
+        var json = MagicSerializationHelper.SerializeObject(model,
+            new MagicJsonSerializationSettings { UseCamelCase = true });
+
+        StringAssert.Contains(json, "\"stored_name\":\"Ada\"");
+        Assert.IsFalse(json.Contains("EqualityContract", StringComparison.OrdinalIgnoreCase));
+        Assert.AreEqual(model, MagicSerializationHelper.DeserializeObject<RecordEnvelope>(json));
+    }
+
+    private sealed record RecordEnvelope(PersonRecord Person, GetOnlyRecord GetOnly);
+    private sealed record PersonRecord(int Id, [property: MagicName("stored_name")] string Name);
+    private sealed record GetOnlyRecord
+    {
+        public int Id { get; }
+        public GetOnlyRecord(int id) => Id = id;
+    }
+
     private sealed class HybridModel
     {
         public int Id { get; }

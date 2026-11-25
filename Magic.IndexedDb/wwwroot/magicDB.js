@@ -673,3 +673,28 @@ export async function* wrapperMagicQueryYield(dbName, storeName, nestedOrFilter,
     const table = db.table(storeName);
     yield* magicQueryYield(db, table, nestedOrFilter, queryAdditions, forceCursor);
 }
+
+export async function projectRecords(dbName, storeName, predicate, additions, forceCursor, fields) {
+    return collectProtectedQuery(projectRecordStream(dbName, storeName, predicate, additions, forceCursor, fields));
+}
+
+export async function* projectRecordStream(dbName, storeName, predicate, additions, forceCursor, fields) {
+    const protection = protectedTable(dbName, storeName);
+    if (!protection && !forceCursor && !additions.length &&
+        predicate?.condition?.property === "__constant" && predicate.condition.value === true) {
+        const table = await getTable(dbName, storeName);
+        const path = table.schema.primKey.keyPath;
+        const keys = Array.isArray(path) ? path : [path];
+        if (fields.every(field => keys.includes(field))) {
+            for (const key of await table.toCollection().primaryKeys()) {
+                const parts = Array.isArray(path) ? key : [key];
+                yield Object.fromEntries(fields.map(field => [field, parts[keys.indexOf(field)]]));
+            }
+            return;
+        }
+    }
+
+    for await (const row of wrapperMagicQueryYield(dbName, storeName, predicate, additions, forceCursor)) {
+        yield Object.fromEntries(fields.filter(field => Object.hasOwn(row, field)).map(field => [field, row[field]]));
+    }
+}
