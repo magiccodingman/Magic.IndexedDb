@@ -290,16 +290,18 @@ export function createDb(dbStore) {
         }
 
         // **Handle Unique Indexes**
-        if (Array.isArray(schema.uniqueIndexes)) {
-            for (let j = 0; j < schema.uniqueIndexes.length; j++) {
-                def += `,&${schema.uniqueIndexes[j]}`;
-            }
+        const uniqueIndexes = new Set(Array.isArray(schema.uniqueIndexes) ? schema.uniqueIndexes : []);
+        for (const member of uniqueIndexes) {
+            def += `,&${member}`;
         }
 
         // **Handle Standard Indexes**
         if (Array.isArray(schema.indexes)) {
-            for (let j = 0; j < schema.indexes.length; j++) {
-                def += `,${schema.indexes[j]}`;
+            for (const member of new Set(schema.indexes)) {
+                // Compound members and explicit annotations can also be unique.
+                // Emit one native index without changing the original schema
+                // payload used by authenticated Legacy vault fingerprints.
+                if (!uniqueIndexes.has(member)) def += `,${member}`;
             }
         }
 
@@ -578,7 +580,9 @@ export async function putItem(item) {
     const protection = protectedTable(item.dbName, item.storeName);
     if (protection) return protection.write([item.record], (table, [row]) => table.put(row));
     const table = await getTable(item.dbName, item.storeName);
-    return await table.put({ ...item.record });
+    // Older WebKit can remove the original row before a unique-index put fails.
+    // An explicit transaction rolls that mutation back when the request rejects.
+    return await table.db.transaction("rw", table, () => table.put({ ...item.record }));
 }
 
 // Bulk put function for Dexie.js
@@ -594,7 +598,8 @@ export async function bulkPutItems(items) {
         return protection.write(items.map(item => item.record), (table, rows) => table.bulkPut(rows));
     }
     const table = await getTable(dbName, storeName);
-    return await table.bulkPut(items.map(item => ({ ...item.record })));
+    return await table.db.transaction("rw", table,
+        () => table.bulkPut(items.map(item => ({ ...item.record }))));
 }
 
 
@@ -607,7 +612,9 @@ export async function updateItem(item) {
     const table = await getTable(item.dbName, item.storeName);
     const key = await formatKey(item.dbName, item.storeName, item.record);
 
-    return await table.update(key, item.record);
+    // Keep update-only/count semantics while giving failed replacements the
+    // same explicit rollback boundary as protected writes.
+    return await table.db.transaction("rw", table, () => table.update(key, item.record));
 }
 
 /**
@@ -632,7 +639,8 @@ export async function bulkUpdateItem(items) {
     }
     const table = await getTable(items[0].dbName, items[0].storeName);
     try {
-        await table.bulkPut(items.map(item => ({ ...item.record })));
+        await table.db.transaction("rw", table,
+            () => table.bulkPut(items.map(item => ({ ...item.record }))));
         return items.length;
     } catch (e) {
         console.error(e);

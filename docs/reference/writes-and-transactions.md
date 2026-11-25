@@ -39,15 +39,30 @@ The returned number is the size of the batch. It does not tell you how many reco
 
 `DeleteRangeAsync` works the same way: its return value is the number of keys requested, not the number that existed.
 
-## Bulk operations are not transactions
+## Write failures and transaction boundaries
 
-Magic does not expose a transaction API yet. Do not assume a failed bulk operation rolled back the whole batch. Some records may have been written before the failure.
+`UpdateAsync` and `UpdateRangeAsync` execute their browser-side replacements in
+an explicit IndexedDB transaction. If a replacement violates a unique index or
+otherwise fails inside that transaction, Magic aborts it: the original records
+remain intact, and earlier replacements in the same batch are rolled back.
 
-After a failed or cancelled bulk write, query the affected keys before retrying. It also helps to validate keys and unique values before sending the batch.
+This is a boundary around one call, not a transaction spanning several application
+calls. It does not roll back an earlier completed call. Magic does not expose a
+general application transaction API yet.
+
+Ordinary `AddRangeAsync` retains its partial-success behavior: some records may
+have been inserted before a later insert fails. Protected bulk writes use the
+encrypted store's existing transaction boundary. After a failed ordinary bulk
+insert, query the affected keys before retrying. Validate keys and unique values
+before sending a batch when possible.
 
 ## Cancellation does not undo a write
 
 The add, update, and delete methods accept a cancellation token. Cancellation can stop serialization or stop .NET from waiting for the result, but it does not undo work that has already reached IndexedDB.
+
+After cancellation, query the affected keys before retrying, including for
+`UpdateRangeAsync`: cancellation of the .NET wait does not establish whether the
+browser transaction committed or aborted.
 
 `ClearTable()` does not accept a cancellation token.
 
@@ -55,7 +70,12 @@ The add, update, and delete methods accept a cancellation token. Cancellation ca
 
 `[MagicUniqueIndex]` makes IndexedDB reject duplicate values. A failed insert does not leave the table unusable; you can correct the value and try another operation.
 
-With a bulk insert or update, read the affected records after a unique-index failure instead of guessing which items were written.
+A unique member can also participate in a compound index. Magic creates one
+unique index for the member and retains the separate compound index.
+
+A failed `UpdateAsync` or `UpdateRangeAsync` transaction preserves the original
+records. With an ordinary bulk insert, read the affected records after a
+unique-index failure instead of guessing which inserts succeeded.
 
 ## Auto-incremented keys
 
