@@ -2,7 +2,7 @@
 
 /// <reference types="./dexie/dexie.d.ts" />
 import Dexie from "./dexie/dexie.js";
-import { magicQueryAsync, magicQueryYield } from "./magicLinqToIndexedDb.js";
+import { magicQueryAsync, magicQueryYield, selectFields } from "./magicLinqToIndexedDb.js";
 import { createProtectedStorage, ensureProtectedSchema, protectedDatabasePrefix } from "./utilities/protectedStorage.js";
 import { encryptionMetadataStore } from "./utilities/encryptionPolicy.js";
 import {
@@ -781,21 +781,12 @@ export async function projectRecords(dbName, storeName, predicate, additions, fo
 
 export async function* projectRecordStream(dbName, storeName, predicate, additions, forceCursor, fields) {
     const protection = protectedTable(dbName, storeName);
-    if (!protection && !forceCursor && !additions.length &&
-        predicate?.condition?.property === "__constant" && predicate.condition.value === true) {
-        const table = await getTable(dbName, storeName);
-        const path = table.schema.primKey.keyPath;
-        const keys = Array.isArray(path) ? path : [path];
-        if (fields.every(field => keys.includes(field))) {
-            for (const key of await table.toCollection().primaryKeys()) {
-                const parts = Array.isArray(path) ? key : [key];
-                yield Object.fromEntries(fields.map(field => [field, parts[keys.indexOf(field)]]));
-            }
-            return;
-        }
+    if (protection) {
+        for await (const row of protection.query(predicate, additions, forceCursor))
+            yield selectFields(row, fields);
+        return;
     }
 
-    for await (const row of wrapperMagicQueryYield(dbName, storeName, predicate, additions, forceCursor)) {
-        yield Object.fromEntries(fields.filter(field => Object.hasOwn(row, field)).map(field => [field, row[field]]));
-    }
+    const db = await getDb(dbName);
+    yield* magicQueryYield(db, db.table(storeName), predicate, additions, forceCursor, fields);
 }

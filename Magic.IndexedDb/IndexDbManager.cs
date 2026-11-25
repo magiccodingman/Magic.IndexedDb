@@ -307,7 +307,7 @@ internal class IndexedDbManager
     internal async Task<JsonElement[]> ProjectAsync<T>(MagicQuery<T> query, string[] fields,
         CancellationToken token) where T : class
     {
-        var rows = await new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallJsAsync<JsonElement[]>(
+        var rows = await Invocation(query.DatabaseName).CallJsAsync<JsonElement[]>(
             Cache.MagicDbJsImportPath, "projectRecords", token, ProjectionArguments(query, fields));
         _lifetime.ThrowIfCancellationRequested();
         return rows ?? [];
@@ -316,7 +316,7 @@ internal class IndexedDbManager
     internal async IAsyncEnumerable<JsonElement> ProjectStreamAsync<T>(MagicQuery<T> query, string[] fields,
         [EnumeratorCancellation] CancellationToken token) where T : class
     {
-        await foreach (var row in new MagicJsInvoke(_jsModule, _jsMessageSizeBytes).CallYieldJsAsync<JsonElement>(
+        await foreach (var row in Invocation(query.DatabaseName).CallYieldJsAsync<JsonElement>(
             Cache.MagicDbJsImportPath, "projectRecordStream", token, ProjectionArguments(query, fields)))
         {
             _lifetime.ThrowIfCancellationRequested();

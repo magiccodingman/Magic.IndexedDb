@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using System.Text;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
@@ -16,13 +16,17 @@ public static class MagicProjectionExtensions
     {
         ArgumentNullException.ThrowIfNull(selector);
         var query = GetQuery(source);
+        var settings = query.Manager.Settings(query.DatabaseName);
+        if (MagicConverterHelper.HasCustomConverter(typeof(T), settings.Options))
+            throw new NotSupportedException("Select cannot project a table whose converter defines its entire JSON representation.");
+
         var row = Expression.Parameter(typeof(JsonElement), "row");
-        var projection = new ProjectedMembers(selector.Parameters[0], row);
+        var projection = new ProjectedMembers<T>(selector.Parameters[0], row, settings);
         var body = projection.Visit(selector.Body);
         if (projection.Names.Count == 0)
             throw new NotSupportedException("Select must reference at least one mapped property.");
 
-        var materialize = Expression.Lambda<Func<JsonElement, TResult>>(body, row).Compile();
+        var materialize = Expression.Lambda<Func<JsonElement, TResult>>(body, row).Compile(preferInterpretation: true);
         var fields = projection.Names.ToArray();
         return new MagicProjectedQuery<TResult>(
             token => query.Manager.ProjectAsync(query, fields, token),
@@ -39,10 +43,14 @@ public static class MagicProjectionExtensions
         _ => throw new ArgumentException("A Magic table query is required.", nameof(source))
     };
 
-    private sealed class ProjectedMembers(ParameterExpression source, ParameterExpression row) : ExpressionVisitor
+    private sealed class ProjectedMembers<T>(ParameterExpression source, ParameterExpression row,
+        MagicJsonSerializationSettings settings) : ExpressionVisitor where T : class
     {
-        private static readonly MethodInfo ReadMethod = typeof(ProjectedMembers)
-            .GetMethod(nameof(Read), BindingFlags.Static | BindingFlags.NonPublic)!;
+        private static readonly MethodInfo ReadMethod =
+            ((MethodCallExpression)((Expression<Func<ProjectedMembers<T>, JsonElement, MagicPropertyEntry, object?>>)
+                ((projector, value, member) => projector.Read(value, member))).Body).Method;
+        private readonly JsonSerializerOptions _options = settings.GetOptionsWithResolver<T>();
+        private readonly MagicContractResolver<T> _resolver = new();
         public HashSet<string> Names { get; } = new(StringComparer.Ordinal);
 
         public override Expression? Visit(Expression? node)
@@ -50,7 +58,6 @@ public static class MagicProjectionExtensions
             if (node is null) return null;
             if (node.NodeType is not (ExpressionType.MemberAccess or ExpressionType.New or ExpressionType.MemberInit))
                 throw new NotSupportedException("Select supports direct mapped properties and objects initialized from those properties.");
-
             return base.Visit(node);
         }
 
@@ -59,38 +66,35 @@ public static class MagicProjectionExtensions
             if (node.Expression != source || node.Member is not PropertyInfo property)
                 throw new NotSupportedException("Select requires direct mapped properties of the table model.");
 
-            var entry = PropertyMappingCache.GetPropertyEntry(property, source.Type);
-            if (entry.NotMapped)
+            var entry = PropertyMappingCache.GetPropertyEntry(property, typeof(T));
+            if (entry.NotMapped || (!property.CanWrite && !PropertyMappingCache.GetTypeOfTProperties(typeof(T))
+                    .ConstructorParameterMappings.ContainsKey(property.Name)))
                 throw new NotSupportedException($"Select cannot project the unmapped property '{property.Name}'.");
 
-            var name = entry.JsPropertyName;
-            Names.Add(name);
-            return Expression.Call(ReadMethod.MakeGenericMethod(property.PropertyType),
-                row, Expression.Constant(name), Expression.Constant(property, typeof(PropertyInfo)));
+            Names.Add(entry.JsPropertyName);
+            return Expression.Convert(Expression.Call(Expression.Constant(this), ReadMethod,
+                row, Expression.Constant(entry)), property.PropertyType);
         }
 
         protected override MemberBinding VisitMemberBinding(MemberBinding node)
         {
             if (node is not MemberAssignment)
                 throw new NotSupportedException("Select supports direct object member assignments.");
-
             return base.VisitMemberBinding(node);
         }
 
-        private static TValue? Read<TValue>(JsonElement row, string name, PropertyInfo property)
+        private object? Read(JsonElement row, MagicPropertyEntry property)
         {
-            if (!row.TryGetProperty(name, out var value))
-                return default;
+            if (!row.TryGetProperty(property.JsPropertyName, out var value))
+                throw new JsonException($"Selected property '{property.JsPropertyName}' is missing from the stored record.");
 
-            return value.Deserialize<TValue>(ReadOptions<TValue>.ByProperty.GetOrAdd(property, static member =>
-            {
-                var settings = new MagicJsonSerializationSettings { UseCamelCase = true };
-                return MagicConverterHelper.ForProperty(member, settings.GetOptionsWithResolver<TValue>());
-            }));
-        }
-        private static class ReadOptions<TValue>
-        {
-            internal static readonly ConcurrentDictionary<PropertyInfo, JsonSerializerOptions> ByProperty = new();
+            var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(value.GetRawText()));
+            reader.Read();
+            var result = _resolver.ReadMappedProperty(ref reader, property, typeof(T), _options);
+            if (result is null && property.Property.PropertyType.IsValueType &&
+                Nullable.GetUnderlyingType(property.Property.PropertyType) is null)
+                throw new JsonException($"Selected property '{property.JsPropertyName}' is null but its type is non-nullable.");
+            return result;
         }
     }
 }

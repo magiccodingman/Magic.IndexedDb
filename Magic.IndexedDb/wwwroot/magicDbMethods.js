@@ -3,7 +3,8 @@
 import {
     setDebugMode,
     getLastQueryPlannerTrace as getPlannerTrace,
-    clearQueryPlannerTrace as clearPlannerTrace
+    clearQueryPlannerTrace as clearPlannerTrace,
+    traceQueryPlannerStage
 } from "./utilities/utilityHelpers.js";
 
 const moduleCache = new Map(); // Cache for dynamically imported modules
@@ -145,6 +146,9 @@ export async function streamedJsHandler(streamRef, instanceId, dotNetHelper, max
         // Ensure result is a valid JSON response
         let responseJson = JSON.stringify(result === undefined ? null : result);
         let encodedResponse = new TextEncoder().encode(responseJson);
+        if (methodName === "projectRecords" || methodName === "wrapperMagicQueryAsync") {
+            traceQueryPlannerStage("interop-result", { payloadBytes: encodedResponse.byteLength });
+        }
         return new Uint8Array(encodedResponse);
     } catch (error) {
         console.error("Magic IndexedDB streamed invocation failed.");

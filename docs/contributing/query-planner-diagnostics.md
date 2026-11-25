@@ -41,3 +41,11 @@ The records are the important result. Avoid asserting every detail of the chosen
 The .NET tests verify the predicate tree produced from C#. Browser tests then verify what happens after that tree reaches JavaScript and IndexedDB. This split helps narrow a failure to expression translation or browser execution.
 
 The planner targets IndexedDB 2.0 behavior. It does not rely on features that only exist in the IndexedDB 3.0 draft.
+
+
+For a projected query, `projection-execution` reports `index-covered` with
+`fullRecordReads: 0` when that branch traverses only keys. A `record` stage
+means the branch needed stored values. A mixed query may report both.
+`interop-result.payloadBytes` measures the UTF-8 result body for materialized
+entity and projected reads. The covered-projection regression also checks native
+IndexedDB calls, independently of the planner's trace.

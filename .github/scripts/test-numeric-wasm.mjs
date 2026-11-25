@@ -12,7 +12,9 @@ const expectedScenarios = [
     'ExplicitKeysAndBulkCrud',
     'CanonicalUniqueIndexes',
     'NativeAutoIncrementKeys',
-    'ProtectedPublicAccess'
+    'ProtectedPublicAccess',
+    'ProjectionRepresentations',
+    'CoveredProjection'
 ];
 
 await access(path.join(wwwroot, 'index.html'));

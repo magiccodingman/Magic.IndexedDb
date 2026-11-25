@@ -15,6 +15,7 @@ public sealed class NumericWasmReport
     public bool IsDynamicCodeCompiled { get; set; } = RuntimeFeature.IsDynamicCodeCompiled;
     public List<NumericScenarioResult> Scenarios { get; set; } = [];
     public List<NumericBenchmarkResult> Benchmark { get; set; } = [];
+    public List<ProjectionBenchmarkResult> ProjectionBenchmark { get; set; } = [];
     public string? Failure { get; set; }
 }
 
@@ -26,6 +27,8 @@ public sealed class NumericScenarioResult
     public JsonElement? PlannerTrace { get; set; }
     public string? Error { get; set; }
 }
+
+public sealed record ProjectionBenchmarkResult(string Shape, int Rows, double MedianMilliseconds, int PayloadBytes);
 
 [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(NumericWasmReport))]
