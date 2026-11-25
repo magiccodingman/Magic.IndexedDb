@@ -59,6 +59,26 @@ runner. This boundary test detects disagreements between CLI hashes/schema
 serialization and JavaScript protocol interpretation that either side's unit
 tests could miss.
 
+## Upgrade the released runtime package in a Blazor app
+
+With the Wasm workload and Playwright browsers installed, run this from the
+repository root. Choose a new output directory for each build.
+
+```bash
+MAGIC_UPGRADE_AOT=true bash tests/migrations/ReleasedUpgrade/build.sh artifacts/released-upgrade
+node tests/migrations/ReleasedUpgrade/run.mjs artifacts/released-upgrade \
+  tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/index.mjs chromium
+```
+
+The fixture uses released NuGet binaries, a locally packed preview runtime and
+CLI, and two independently built app/exporter configurations. Each package runs
+at one HTTP origin before the server switches to v3, using the same browser
+context and database names. It checks typed data invariants, raw records, native
+keys and indexes, the numeric policy, the adoption journal, and the static
+modules loaded by Blazor. Use `firefox` or `webkit` to repeat on those engines.
+The historical binaries run in a .NET 10 fixture host. Set `MAGIC_UPGRADE_AOT=false`
+to publish trimmed v3 apps without AOT.
+
 ## What the suite checks
 
 - Fresh bootstrap at a target revision without downloading historical transforms.
@@ -102,7 +122,7 @@ Use reports from the exact commit under review for execution evidence.
 | Same-format Lossless storage | Keeps the reserved numeric namespace and persisted numeric policy | Existing numeric E2E fixtures plus managed registration, tamper, and reopen scenarios; historical package upgrade fixtures still required |
 | Existing protected bootstrap and CRUD | Continues through the authenticated storage path | Existing encryption E2E fixtures plus ciphertext-preservation coverage after a rejected manifest |
 | Protected migration manifests | Explicitly rejected with `MAGDB_PROTECTED_MIGRATION_UNSUPPORTED` before provisioning or writes | Public registration rejection tests; no authenticated migration execution is claimed |
-| Legacy adoption | Requires an explicit baseline whose physical layout and codec policy match | Constructed native layouts, including native version 10; released-package origin/profile tests remain required |
+| Legacy adoption | Requires an explicit baseline whose physical layout and codec policy match | Constructed native layouts and the separate released-package Blazor fixture |
 | Codec changes, key rotation, key rebuilding, and cross-database transfers | No general-purpose adapter in this preview | Fail-closed scenarios establish rejection where applicable; successful transition coverage is not claimed |
 | Application data meaning | Custom transformations and application assertions remain necessary | The engine does not infer business invariants or validate arbitrary converters |
 | Offline, quota, device, and process failures | Durable transactions/checkpoints are the recovery mechanism | Page interruption is covered by authored browser scenarios; full process, real device, quota, and offline deployment evidence remains release work |
@@ -115,12 +135,11 @@ an error; it is never silently ignored.
 
 ## Evidence boundaries and further release work
 
-The legacy tests construct documented 2.x physical layouts through the native
-IndexedDB API. They are **not** evidence of running every historical published
-Magic package. Before a stable 3.0 release, add fixtures that run the supported
-published 2.x packages, preserve the exact origin/profile, and upgrade the app to
-3.0. Include Legacy and Lossless numeric namespaces and authenticated encryption
-policies. A generic sample layout cannot establish historical converter semantics.
+The portable browser tests construct legacy layouts through the native IndexedDB
+API. The released-package Blazor fixture is separate and verifies representative
+unprotected Legacy and Lossless paths. Test your own old deployments, converters,
+and business invariants before promoting a release. Authenticated protection has
+separate CRUD and explicit migration-rejection coverage.
 
 Page termination tests exercise loss of a JavaScript execution context, not an OS
 power failure or physical disk failure. Add process termination, quota exhaustion,
