@@ -171,6 +171,14 @@ any later revisions. Its token cancels the .NET wait. Use
 `RecoveryId`, `RecoveryPhase` and `VerifiedRecords`.
 See the [recovery contract](../architecture/adr-partial-migration-recovery.md).
 
+For authenticated histories, the existing encryption lifecycle authorizes managed
+initialization and recovery. `InitializeAsync` explicitly establishes a new
+identity; `EnsureUnlockedAsync` authorizes an existing one; `LockAsync` revokes
+pending work. `MagicEncryptionOptions.PhysicalDatabaseName` is an optional explicit
+binding for reviewed in-place enrollment and requires a pinned manifest. Keep
+that account context after all fields become public. See
+[encrypted migrations](../guides/encrypted-migrations.md).
+
 `RetryMigrationAsync` retries failed initialization or resumes committed progress;
 its token cancels the .NET wait. `CancelMigrationAsync` cancels the browser attempt
 at a safe boundary. `ObserveMigrationsAsync` returns a disposable subscription for

@@ -31,8 +31,8 @@ fail, if an unhandled browser exception appears, or if the expected scenario cou
 is not executed. JSON and JUnit reports, failure logs, and screenshots are written
 under `artifacts/migration-browser` (or the optional third argument).
 
-The standalone suite executes 94 cases. The installed CLI fixture adds three,
-for 97 cases per browser. The two CLI recovery cases use published neutral
+The standalone suite currently registers 115 cases. Installed CLI fixtures add
+four, for 119 cases per browser, including authenticated transitions and recovery. The two CLI recovery cases use published neutral
 schema snapshots where the affected store's optional `recordCodec` changes
 between omission and explicit null in each direction.
 The required jobs also load the reviewed, pinned v1 engine to verify it rejects
@@ -44,11 +44,13 @@ a recovered journal. For local compatibility verification, extract
 ## Validate the portable documents without a browser
 
 ```bash
-node --test tests/migrations/protocol.test.mjs tests/migrations/registration.test.mjs
+node --test tests/migrations/protocol.test.mjs tests/migrations/protected-protocol.test.mjs \
+  tests/migrations/protected-adapter.test.mjs tests/migrations/registration.test.mjs
 ```
 
 These tests check canonical JSON and SHA-256, unsupported capabilities, unsafe
-operation plans, destructive-change approval, and exact target structure.
+operation plans, destructive/protection-loss approval, exact target structure,
+authenticated policy and journal proofs, and typed checkpoint identities.
 `tests/migrations/canonical-vectors.json` is a shared language-neutral corpus for
 the .NET and JavaScript serializers. It includes Unicode, lone surrogates,
 ordinal property order, and JavaScript numeric formatting boundaries. Passing
@@ -69,7 +71,10 @@ runner. This boundary test detects disagreements between CLI hashes/schema
 serialization and JavaScript protocol interpretation that either side's unit
 tests could miss.
 
-The script also authors and publishes both optional-codec recovery fixtures with
+The script also authors and publishes a six-revision authenticated history that
+adds and removes field/whole-record protection, then creates a public index. Its
+reviewed protection-loss decisions and capability retention are checked by the
+installed tool and the JavaScript protocol. It also publishes both optional-codec recovery fixtures with
 the installed tool. It checks that a real codec identity change is rejected by
 recovery authoring and that the rejected attempt leaves source history unchanged.
 
@@ -103,11 +108,16 @@ tab/worker bridge that stays fenced after an injected initialization failure.
 
 The migration workflow builds the historical and managed static assets once
 and shares them with Chromium, Firefox, Linux WebKit and macOS WebKit jobs.
-Each configuration requires ten cases per mode, seven adoption/forward
-upgrades, two cutover cases and one explicit Blazor recovery. No skips are
+Each configuration requires eleven cases per mode: seven adoption/forward
+upgrades, two cutover cases, one explicit Blazor recovery, and one authenticated
+Blazor lifecycle. No skips are
 allowed. The recovery fixture publishes static assets with the installed CLI,
 causes a partial migration, cancels during verification, resumes and opens the
-application's later ordinary target. It asserts disposal of the observer. It uploads reports and build
+application's later ordinary target. It asserts disposal of the observer. The
+authenticated fixture adopts field ciphertext, revokes a pending transform through
+the C# lock API, reauthorizes, writes whole-record ciphertext, and explicitly
+declassifies it while retaining authenticated history. It checks raw intermediate
+storage and typed CRUD in both published modes. The runner uploads reports and build
 metadata. The release workflow requires migration validation, including this gate.
 
 ## What the suite checks
@@ -140,9 +150,11 @@ metadata. The release workflow requires migration validation, including this gat
 - Observer isolation, metadata-only event payloads, and checkpoint key redaction.
 - Immutable schema inputs even while migration ownership is pending.
 - Rejection of protected schemas by the unauthenticated plain runner.
-- Rejection of protected manifests through the public registration API before
-  provisioning or changing a vault; authenticated CRUD and ciphertext survive
-  the rejected request.
+- Lazy protected registration without provisioning storage or requesting assets
+  before authorization; conflicting registration cannot replace an active vault.
+- Authenticated plaintext/field/whole-record transitions, allowlist changes,
+  explicit protection-loss decisions, stable physical enrollment, and exact
+  policy/journal proofs across lock, resume, termination, and approved recovery.
 - Managed Lossless numeric-policy tampering, reopen behavior, reserved metadata,
   and prevention of unguarded database handles.
 
@@ -155,18 +167,19 @@ Use reports from the exact commit under review for execution evidence.
 | --- | --- | --- |
 | Plain managed schemas | Fresh target bootstrap, atomic changes, and resumable transforms with stable keys | Portable document tests plus native browser scenarios, including rollback, interruption, and multiple releases |
 | Same-format Lossless storage | Keeps the reserved numeric namespace and persisted numeric policy | Existing numeric E2E fixtures plus managed registration, tamper, and reopen scenarios; released 2.0.7 Lossless adoption, forward migration and reopen |
-| Existing protected bootstrap and CRUD | Continues through the authenticated storage path | Existing encryption E2E fixtures plus ciphertext-preservation coverage after a rejected manifest |
-| Protected migration manifests | Explicitly rejected with `MAGDB_PROTECTED_MIGRATION_UNSUPPORTED` before provisioning or writes | Public registration rejection tests; no authenticated migration execution is claimed |
+| Existing protected bootstrap and CRUD | Retains legacy behavior without a manifest; managed contexts pin policy and journal proof | Existing encryption E2E and new managed registration/ciphertext/lock cases |
+| Protected migration manifests | Lazy registration, explicit authorization, authenticated adoption/rewrites and bounded recovery | Pure Web Crypto/protocol tests, installed CLI assets, native transition/termination/tamper cases; exact-head browser and published-WASM results required |
 | Legacy adoption | Requires an explicit baseline whose physical layout and codec policy match | Constructed native layouts and the separate released-package Blazor fixture |
 | Codec changes, key rotation, key rebuilding, and cross-database transfers | No general-purpose adapter in this preview | Fail-closed scenarios establish rejection where applicable; successful transition coverage is not claimed |
 | Application data meaning | Custom transformations and application assertions remain necessary | The engine does not infer business invariants or validate arbitrary converters |
 | Offline, quota, device, and process failures | Durable transactions/checkpoints are the recovery mechanism | Page interruption is covered by authored browser scenarios; full process, real device, quota, and offline deployment evidence remains release work |
 
-Protected records must never be routed through raw JSON transforms to bypass the
-guard. A future authenticated adapter must verify the existing policy, work with
-the caller's key/session lifecycle, and authenticate any resulting policy before
-protected migration support is advertised. Supplying a manifest currently means
-an error; it is never silently ignored.
+The authenticated adapter is required for protected records. Raw JSON transforms
+cannot bypass this boundary. New acceptance includes both protection directions,
+whole-record allowlists, explicit loss decisions, wrong authorization, journal
+proof tampering, page termination, metadata deletion, and in-place enrollment.
+The [handoff](../engineering/protected-migrations-handoff.md) identifies remaining
+real-environment coverage and the distinction between authored and executed tests.
 
 ## Evidence boundaries and further release work
 
@@ -174,16 +187,18 @@ The portable browser tests construct legacy layouts through the native IndexedDB
 API. The released-package Blazor fixture is separate and verifies representative
 unprotected Legacy and Lossless paths. Test your own old deployments, converters,
 and business invariants before promoting a release. Authenticated protection has
-separate CRUD and explicit migration-rejection coverage.
+separate cryptographic, lifecycle, transition, and authenticated recovery coverage.
+Its new real-browser/application acceptance is independent of the earlier plain
+migration approval.
 
 Page termination tests exercise loss of a JavaScript execution context, not an OS
 power failure or physical disk failure. Add process termination, quota exhaustion,
 large real datasets, fully offline PWA upgrades, and mixed old/new application
 deployments on supported physical devices. Record actual results and limitations.
 
-Protected schema/policy changes, key rotation, staging migrations that change
-primary keys, and cross-database transfers require dedicated end-to-end tests
-before they can be advertised as supported. Rejection tests establish fail-closed
+Authenticated schema/policy changes require the new extension's own end-to-end
+acceptance. Data-key rotation, staging migrations that change primary keys, and
+cross-database transfers remain unsupported. Rejection tests establish fail-closed
 behavior, not successful transformation coverage.
 
 The engine verifies physical schema, journal state, and transform output/key

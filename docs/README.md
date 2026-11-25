@@ -27,6 +27,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Database management](guides/database-management.md) — open, close, delete, existence, and quota operations
 - [Schema evolution](guides/schema-evolution.md) — model and persisted-data change planning
 - [Managed migrations](guides/migrations.md) — static assets, readiness, events, and recovery
+- [Encrypted migrations](guides/encrypted-migrations.md) — authorization, protection changes, and in-place enrollment
 - [Legacy writer cutover](guides/legacy-writer-cutover.md)
 - [Migration CLI](guides/migration-cli.md) — tool installation, project export, validation, and publication
 - [Migration schema declarations](guides/migration-schema.md) — default/explicit membership and shared C# model export
@@ -46,8 +47,9 @@ Start with the four pages below. The guides and reference pages are there when y
 - [How the query engine works](architecture/query-engine.md)
 - [Universal predicate language](architecture/universal-predicate-language.md)
 - [Encryption at rest design](architecture/encryption-at-rest.md)
-- [Migration protocol v1](architecture/migration-protocol.md)
+- [Migration protocol and capabilities](architecture/migration-protocol.md)
 - [Partial migration recovery](architecture/adr-partial-migration-recovery.md)
+- [Authenticated migration contract](architecture/adr-authenticated-migrations.md)
 - [Version 3 implementation contract](architecture/v3-implementation-contract.md)
 
 ## Contributing
@@ -56,6 +58,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Query planner diagnostics](contributing/query-planner-diagnostics.md)
 - [Migration testing and release acceptance](contributing/migration-testing.md)
 - [Version 3 implementation handoff](engineering/v3-handoff.md)
+- [Authenticated migration acceptance handoff](engineering/protected-migrations-handoff.md)
 
 ## Upgrading and legacy versions
 

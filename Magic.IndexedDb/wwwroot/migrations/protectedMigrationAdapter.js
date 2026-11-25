@@ -92,13 +92,18 @@ export async function createProtectedMigrationAdapter(options) {
     const adapter = Object.freeze({
         name, account, keyId, signal, assertCurrent,
         fingerprint: schema => portableProtectionPolicy(schema).policyFingerprint,
-        async verifyPolicy(envelope, schema) {
+        async verifyPolicy(envelope, schema, { legacyOnly = false } = {}) {
             const value = await decrypt(envelope, context(encryptionMetadataKey), "MAGDB_AUTHORIZATION_REJECTED");
             let parsed;
             try { parsed = JSON.parse(value); } catch { /* redacted below */ }
             if (!Array.isArray(parsed) || parsed.length !== 3 || parsed[0] !== "Magic.IndexedDb/policy" || parsed[1] !== 1 ||
                 !matchesProtectionFingerprint(parsed[2], schema))
                 throw error("MAGDB_PROTECTION_POLICY_MISMATCH", "The authenticated protection policy differs from the installed model.");
+            // A valid managed sentinel is evidence that authenticated history
+            // already existed. Removing its journal/proof must never turn it
+            // back into an adoptable legacy vault and replay old transforms.
+            if (legacyOnly && parsed[2] === portableProtectionPolicy(schema).policyFingerprint)
+                throw error("MAGDB_PROTECTION_STATE_INVALID", "A managed protection policy requires its authenticated migration journal.");
             return structuredClone(envelope);
         },
         createPolicy(schema) {

@@ -154,7 +154,7 @@ async function runProtectedMigration(registration, recovery) {
 }
 
 function registerProtectedMigration(dbStore, numericStorage) {
-    const schema = nativeSchema(dbStore, numericStorage);
+    const schema = structuredClone(nativeSchema(dbStore, numericStorage));
     const identity = canonicalJson({ schema, manifestUrl: dbStore.migrationManifestUrl,
         account: dbStore.encryption.account, physicalName: dbStore.encryption.physicalName ?? dbStore.name });
     const previous = managedDatabases.get(dbStore.name);
@@ -187,7 +187,8 @@ function registerProtectedMigration(dbStore, numericStorage) {
 function nativeSchema(dbStore, numericStorage) {
     return dbStore.migrationSchema ?? {
         protocolVersion: 1, schemaId: dbStore.schemaId ?? dbStore.numericLegacyName ?? dbStore.name,
-        numericFormat: numericStorage ? "lossless-v1" : "legacy", requiredCapabilities: [],
+        numericFormat: numericStorage ? "lossless-v1" : "legacy",
+        requiredCapabilities: dbStore.encryption ? ["authenticatedMigrationsV1"] : [],
         stores: dbStore.storeSchemas.map(store => {
             const indexes = new Map();
             for (const member of store.indexes ?? []) indexes.set(member, { name: member, keyPath: member, unique: false, multiEntry: false });
@@ -195,8 +196,11 @@ function nativeSchema(dbStore, numericStorage) {
             for (const parts of store.columnNamesInCompoundIndex ?? []) indexes.set(`[${parts.join("+")}]`, {
                 name: `[${parts.join("+")}]`, keyPath: parts, unique: false, multiEntry: false });
             const keys = store.columnNamesInCompoundKey;
-            return { name: store.tableName, keyPath: keys.length === 1 ? keys[0] : keys, autoIncrement: Boolean(store.primaryKeyAuto),
-                indexes: [...indexes.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0), fields: [] };
+            return { name: store.tableName, keyPath: keys.length === 0 ? null : keys.length === 1 ? keys[0] : keys,
+                autoIncrement: Boolean(store.primaryKeyAuto),
+                indexes: [...indexes.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0), fields: [],
+                ...(store.encryptedFields !== undefined ? { encryptedFields: structuredClone(store.encryptedFields) } : {}),
+                ...(store.exposedFields !== undefined ? { exposedFields: structuredClone(store.exposedFields) } : {}) };
         }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
     };
 }
@@ -445,9 +449,8 @@ export function createDb(dbStore) {
     if (dbStore.migrationManifestUrl != null) return registerProtectedMigration(dbStore, numericStorage);
     if (protectedDatabases.has(dbName)) throw new Error("This protected database is already configured.");
 
-    // Authenticated storage retains its existing guard until a migration adapter
-    // can enforce the same policy while transforming records. There is no second
-    // unguarded Dexie schema-deployment path here.
+    // The legacy no-manifest path only creates genuinely new native storage.
+    // Existing protection changes require the authenticated managed path above.
     const db = new Dexie(encryption.physicalName ?? dbName);
     const protection = createProtectedStorage(db, encryption.account, dbStore.storeSchemas, numericStorage);
     protectedDatabases.set(dbName, protection);

@@ -139,6 +139,14 @@ cat > "$recovery_app/Directory.Build.props" <<PROPS
 PROPS
 bash "$recovery_source/build.sh" "$recovery_app" "$out" "$cli" "${modes[@]}"
 
+protected_source="$root/tests/migrations/ProtectedWasm"
+protected_app="$out/protected-wasm"
+make_fixture "$protected_app" preview "$protected_source"
+cat > "$protected_app/Directory.Build.props" <<PROPS
+<Project><PropertyGroup><MagicPackage>$runtime_version</MagicPackage></PropertyGroup></Project>
+PROPS
+bash "$protected_source/build.sh" "$protected_app" "$out" "$cli" "${modes[@]}"
+
 printf '%s\n' "${versions[@]}" > "$out/historical-versions.txt"
 node - "$out" "$(git rev-parse HEAD)" "$runtime_version" "$cli_version" "$(dotnet --version)" "${modes[@]}" <<'JS'
 const [out, sourceSha, runtimeVersion, cliVersion, sdkVersion, ...modes] = process.argv.slice(2);

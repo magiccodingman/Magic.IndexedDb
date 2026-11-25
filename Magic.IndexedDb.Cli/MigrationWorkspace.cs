@@ -41,6 +41,12 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
         var operations = empty ? new JsonArray(MigrationPlanner.Manual("Add custom data operations before publishing this migration.", "dataOnly"))
             : MigrationPlanner.Diff(previous.TargetSchema, model);
         var authenticated = HasProtection(model) || ProtectionRules.HasCapability(model) || ProtectionRules.HasCapability(previous.Manifest);
+        if (authenticated)
+        {
+            RequireSupported(model, "current model", authenticated: true);
+            foreach (var (historicalRevision, historicalSchema) in previous.Schemas)
+                RequireSupported(historicalSchema, $"schema revision {historicalRevision}", authenticated: true);
+        }
         var hasData = empty || operations.Any(node =>
         {
             var operation = Protocol.Object(node, "operation");
@@ -91,7 +97,7 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
         using var writeLock = Lock();
         var package = Validate(null, false);
         if (!package.Schemas.TryGetValue(revision, out var managed)) throw new CliException("MAGDB4203", $"No managed schema revision {revision} exists.");
-        RequireSupported(legacyModel, "legacy baseline");
+        RequireSupported(legacyModel, "legacy baseline", ProtectionRules.HasCapability(package.Manifest));
         if (!Protocol.Equal(managed, legacyModel))
             throw new CliException("MAGDB4203", "Legacy baseline must exactly match the complete canonical schema at the selected managed revision, including fields, codecs, and numeric format. Acknowledgement cannot map different data contracts. Start history with the complete legacy model, then add explicit migrations.");
         var history = ReadHistory();
@@ -173,6 +179,9 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
                 ["id"] = id, ["fromRevision"] = from, ["toRevision"] = to, ["path"] = path, ["sha256"] = Protocol.Hash(assets[path])
             });
         }
+        if (requireRuntimeSupport && authenticatedHistory)
+            foreach (var (revision, schema) in schemas)
+                RequireSupported(schema, $"schema revision {revision}", authenticated: true);
         var baselineReferences = new JsonArray();
         var baselineIds = new HashSet<string>(StringComparer.Ordinal);
         var baselineLayouts = new HashSet<string>(StringComparer.Ordinal);
@@ -186,7 +195,7 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
             var reference = Protocol.Object(entry["schema"], "baseline schema reference");
             var path = Protocol.Text(reference, "path");
             var baseline = Protocol.ValidateSchema(Protocol.ReadObject(Protocol.SafePath(Root, path)));
-            if (requireRuntimeSupport) RequireSupported(baseline, $"baseline '{id}'");
+            if (requireRuntimeSupport) RequireSupported(baseline, $"baseline '{id}'", authenticatedHistory);
             if (!Protocol.Equal(baseline, managed))
                 throw new CliException("MAGDB4203", $"Baseline '{id}' must exactly match the complete canonical schema at its selected managed revision, including persisted field contracts.");
             if (!baselineLayouts.Add(Protocol.Canonical(Protocol.PhysicalSchema(baseline))))
@@ -262,7 +271,7 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
                 var definition = Protocol.Object(operation["definition"], "store definition");
                 var checkedSchema = Protocol.ValidateSchema(new JsonObject { ["protocolVersion"] = 1, ["schemaId"] = SchemaId,
                     ["numericFormat"] = Protocol.Text(target, "numericFormat"), ["stores"] = new JsonArray(definition.DeepClone()) });
-                if (requireRuntimeSupport) RequireSupported(checkedSchema, $"createStore in migration '{Protocol.Text(migration, "id")}'");
+                if (requireRuntimeSupport) RequireSupported(checkedSchema, $"createStore in migration '{Protocol.Text(migration, "id")}'", authenticated);
                 var created = Protocol.Object(Protocol.Array(Protocol.PhysicalSchema(checkedSchema), "stores")[0], "store");
                 if (!physical.TryAdd(Protocol.Text(created, "name"), created)) throw new CliException("MAGDB4207", "createStore targets an existing store.");
                 continue;
@@ -460,8 +469,8 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
         if (field.Contains('.') || field is "__proto__" or "prototype" or "constructor") throw new CliException("MAGDB4207", $"Built-in transforms require a safe top-level field: '{field}'.");
     }
     private static bool HasProtection(JsonObject schema) => ProtectionRules.HasProtection(schema);
-    private static void RequireSupported(JsonObject schema, string context)
-        => ProtectionRules.ValidateSchema(schema, context);
+    private static void RequireSupported(JsonObject schema, string context, bool authenticated = false)
+        => ProtectionRules.ValidateSchema(schema, context, authenticated);
     private JsonObject Result(string status, int revision, bool review, string message) => new()
     {
         ["schemaId"] = SchemaId, ["status"] = status, ["revision"] = revision, ["requiresReview"] = review, ["message"] = message,

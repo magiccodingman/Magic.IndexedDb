@@ -1,4 +1,4 @@
-# Migration protocol v1
+# Migration protocol and capabilities
 
 This document describes the implemented protocol in Magic IndexedDB 3. The browser
 implementation is `Magic.IndexedDb/wwwroot/migrations/`; the CLI and C# exporter
@@ -74,15 +74,17 @@ security and trusted deployment remain the application's responsibility.
 
 ## Capability negotiation
 
-The v1 engine advertises `atomic`, `resumable`, `legacyAdoption`, and
-`customTransforms`. Unknown `protocolVersion` values, required capabilities,
+The engine advertises `atomic`, `resumable`, `legacyAdoption`,
+`customTransforms`, and `authenticatedMigrationsV1`. Recovery-aware manifests also
+require `resumableRepairV1`. Unknown `protocolVersion` values, required capabilities,
 operations, or numeric codecs fail closed. Optional metadata may be additive when
 it does not change execution meaning. A feature that changes execution semantics
 must require a recognized capability or a new protocol version; adding an ignored
 field is not a valid way to weaken preconditions.
 
 New adapters can consume the same model/history without teaching the engine a
-language's type system. Future encryption, staging, rollback, checkpoint retention,
+language's type system. Authenticated migrations use the existing encryption
+adapter and a v3 authenticated journal. Future staging, rollback, checkpoint retention,
 or codec conversion must have their own complete validation and recovery semantics
 before they are advertised. No current API promises those unimplemented behaviors.
 
@@ -126,6 +128,27 @@ when explicit recovery is admitted. Its format and recovered lineage survive
 later ordinary migrations. See the [recovery contract](adr-partial-migration-recovery.md)
 for validation, readiness, and old-client rejection.
 
+## Authenticated format
+
+Authenticated histories require `authenticatedMigrationsV1`, including all-public
+revisions after declassification. Schema/migration documents stay v1; recovery
+manifest bindings stay v2. Authenticated journals use v3 from adoption/bootstrap
+onward and preserve that version through recovery and subsequent revisions.
+
+`__magic_encryption/policy` contains a ready policy or an authenticated migration
+fence. `__magic_encryption/migration-state` authenticates the complete journal,
+including native checkpoint identities and recovery history. Every record batch,
+journal update, and new proof commit together. Data encoding and proof generation
+finish before the native write transaction. Its commit compares the exact prior
+policy/proof envelopes and journal while authorization remains active.
+
+The `reprotect` data operation applies the target policy to logical records.
+Protection loss requires `allowProtectionLoss: true` on the affected operation.
+Ordinary protected transforms receive logical decrypted records. Structural
+changes use separate atomic revisions. See the
+[authenticated migration contract](adr-authenticated-migrations.md) for policy
+semantics, admission, rollback limits, and future key rotation.
+
 ## Ownership and readiness
 
 An exclusive Web Lock named by physical database serializes migration attempts in
@@ -163,8 +186,9 @@ checks the target layout and records readiness. Different revisions commit
 independently; failing a later revision does not undo a previous successful revision.
 
 This preview supports data-only resumable operations. Key changes, structural
-staging and atomic swaps, cross-database moves, authenticated transforms, and
-changing lossless numeric representation are rejected. No operation silently copies
+staging and atomic swaps, cross-database moves, and changing lossless numeric
+representation are rejected. Authenticated transforms require their adapter and
+capability, resumable mode, and one logical operation per store. No operation silently copies
 ciphertext through the ordinary record pipeline.
 
 Cancellation does not undo committed revisions/batches. A blocked native open has

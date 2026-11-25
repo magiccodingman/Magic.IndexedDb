@@ -34,8 +34,9 @@ internal static class ProtectionRules
             : !oldFields.IsSubsetOf(Members(after, "encryptedFields"));
     }
 
-    internal static void ValidateSchema(JsonObject schema, string context)
+    internal static void ValidateSchema(JsonObject schema, string context, bool authenticated = false)
     {
+        authenticated |= HasCapability(schema) || HasProtection(schema);
         foreach (var node in Protocol.Array(schema, "stores"))
         {
             var store = Protocol.Object(node, "store");
@@ -43,13 +44,18 @@ internal static class ProtectionRules
             var exposed = store["exposedFields"] is null ? null : Members(store, "exposedFields");
             if (exposed is not null && fields.Overlaps(exposed))
                 throw Invalid(context, "A member cannot be both encrypted and publicly exposed.");
+            var paths = KeyPaths(store["keyPath"]).Concat(Protocol.Array(store, "indexes")
+                .SelectMany(index => KeyPaths(Protocol.Object(index, "index")["keyPath"]))).ToArray();
+            // The authenticated adapter interprets every store policy, including
+            // public stores and earlier public revisions of a protected history.
+            if (authenticated && paths.Any(path => path.Contains('.') || path == "__magic_record"))
+                throw Invalid(context, "Authenticated primary-key and index paths must use safe top-level fields, including public stores.");
             if (fields.Count == 0 && exposed is null) continue;
             if (Protocol.Boolean(store, "autoIncrement") || store["keyPath"] is null)
                 throw Invalid(context, "Protected stores require an explicit inline primary key.");
             if (fields.Count != 0 && exposed is null && store["recordCodec"] is not null)
                 throw Invalid(context, "Custom record codecs require whole-record protection instead of field-only protection.");
-            foreach (var path in KeyPaths(store["keyPath"]).Concat(Protocol.Array(store, "indexes")
-                         .SelectMany(index => KeyPaths(Protocol.Object(index, "index")["keyPath"]))))
+            foreach (var path in paths)
             {
                 if (path.Contains('.') || fields.Contains(path) || exposed is not null && !exposed.Contains(path))
                     throw Invalid(context, "Primary-key and index members must remain public top-level fields under the declared protection policy.");

@@ -27,9 +27,11 @@ JSON and optional JavaScript, suitable for a fully static Blazor site.
 Start with the [migration guide](docs/guides/migrations.md), [CLI workflow](docs/guides/migration-cli.md),
 [schema declarations](docs/guides/migration-schema.md), and [v3 upgrade guide](docs/upgrading/v3.md).
 This is a breaking major-version preview: old all-tables deployment becomes explicit
-membership, and existing databases require a reviewed adoption path. Protected
-migration adapters, numeric codec cutovers, and key-changing resumable migrations
-are not supported yet. See [test and release acceptance](docs/contributing/migration-testing.md)
+membership, and existing databases require a reviewed adoption path. The preview
+includes [authenticated migrations](docs/guides/encrypted-migrations.md), including
+adding and removing record protection while preserving database identity.
+Data-key rotation, numeric codec cutovers, and key-changing resumable migrations
+remain unsupported. See [test and release acceptance](docs/contributing/migration-testing.md)
 and the [implementation handoff](docs/engineering/v3-handoff.md).
 
 ## Why use Magic IndexedDB?
@@ -174,7 +176,7 @@ Version 1 documentation remains available in the [legacy archive](https://github
 
 ## Schema evolution
 
-Magic IndexedDB does not currently migrate existing browser data when a C# model changes. Plan and test changes to stored names, indexes, primary keys, and required properties against data from the previous version of your application.
+Magic IndexedDB 3 applies reviewed static migration histories when an application opens its database. Model edits require a corresponding CLI-authored package; they do not silently rewrite deployed data. Authenticated migrations support field/whole-record protection changes in both directions, with explicit approval for protection loss. See [encrypted migrations](docs/guides/encrypted-migrations.md).
 
 See [schema evolution and migrations](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/schema-evolution.md) before changing a deployed schema.
 

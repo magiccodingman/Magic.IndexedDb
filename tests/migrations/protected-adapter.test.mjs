@@ -47,9 +47,20 @@ test('legacy protected policy fingerprints stay exact and can be adopted semanti
     const saved = await encryptValue(JSON.stringify(['Magic.IndexedDb/policy', 1, legacy.policyFingerprint]), key, identity.keyId, metadataContext);
     const adapter = await createProtectedMigrationAdapter(identity);
     await adapter.verifyPolicy(saved, model());
+    await adapter.verifyPolicy(saved, model(), { legacyOnly: true });
     const managed = await adapter.createPolicy(model());
     assert.notDeepEqual(saved, managed);
     await adapter.verifyPolicy(managed, model());
+});
+
+test('a managed sentinel cannot become a legacy adoption credential when its journal is missing', async () => {
+    const adapter = await createProtectedMigrationAdapter(identity);
+    const schema = model();
+    const managed = await adapter.createPolicy(schema);
+    await rejects(adapter.verifyPolicy(managed, schema, { legacyOnly: true }), 'MAGDB_PROTECTION_STATE_INVALID');
+    // Ordinary verification still succeeds when the engine separately validates
+    // the complete v3 journal and its encrypted proof.
+    await adapter.verifyPolicy(managed, schema);
 });
 
 test('legacy dual index annotations and lossless policy normalize without weakening native uniqueness', async () => {

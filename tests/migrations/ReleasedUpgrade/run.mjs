@@ -103,7 +103,7 @@ async function load(context) {
 
 const results = [];
 const cutoverCases = versions.includes('2.0.7') ? ['uncooperative-v2-writer', 'cooperative-v2-bridge'] : [];
-const expected = versions.length + cutoverCases.length + 1;
+const expected = versions.length + cutoverCases.length + 2;
 
 async function runCase(name, action) {
     const result = { name, state: 'failed' };
@@ -237,6 +237,11 @@ try {
 
     await runCase('explicit-recovery-in-blazor', async context => {
         deployment = buildMode + '/recovery';
+        await load(context);
+    });
+
+    await runCase('authenticated-migrations-in-blazor', async context => {
+        deployment = buildMode + '/protected';
         await load(context);
     });
 

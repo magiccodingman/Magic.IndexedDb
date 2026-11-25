@@ -1627,7 +1627,7 @@ if (cliFixture) for (const [codecCase, sourceHasCodec] of [['absent-to-null', fa
 
 registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage, recoveryPackage, cliFixture, getOrigin: () => origin });
 registerProtectedRegistrationTests({ test, schema, bundle, jsonAsset, copy, registrationStore, inspect, appendRevision, assets });
-const expectedScenarioCount = cliFixture ? 115 : 111;
+const expectedScenarioCount = cliFixture ? 119 : 115;
 assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
 
 if (listOnly) {

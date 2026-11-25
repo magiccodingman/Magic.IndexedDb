@@ -14,7 +14,8 @@ application revisions are independent. Stable release is intended to be 3.0.0 af
 acceptance. The PR is deliberately draft until local browser/application validation
 and remaining release decisions are complete.
 
-The user authorized implementation, documentation, tests, and a PR. They did not ask
+The user authorized implementation, documentation, tests, and a PR, then expanded
+this same PR to include authenticated migrations and both protection directions. They did not ask
 to merge or publish packages. The release workflow uses the existing trusted publisher for both packages.
 
 ## Implemented boundaries
@@ -30,7 +31,8 @@ to merge or publish packages. The release workflow uses the existing trusted pub
   checkpoints, immutable applied history, blocked/stale handling, and metadata-only
   diagnostic events/inspection.
 - Existing CRUD/LINQ routing connected to readiness. The lossless numeric policy
-  remains checked; encrypted migration requests are explicitly rejected before writes.
+  remains checked; authenticated histories use the protected adapter and journal v3.
+  See the [authenticated extension handoff](protected-migrations-handoff.md).
 - C# observation, inspection, cancellation, retry/resume APIs, README/upgrade/protocol/
   schema/CLI documentation, unit/CLI/package checks, and a real-browser CI matrix.
 
@@ -38,9 +40,10 @@ to merge or publish packages. The release workflow uses the existing trusted pub
 
 Do not describe these as supported or bypass their guards to get a test green:
 
-1. Authenticated protected baseline adoption and record/schema migrations, key rotation,
-   encryption policy changes, and protected codec changes need a dedicated adapter.
-   Existing protected CRUD is retained. Supplying a protected migration manifest fails.
+1. Authenticated baseline adoption, record/schema changes, and protection transitions
+   are implemented in the new extension and require their own acceptance pass.
+   Data-encryption key rotation still needs a two-key provider/protocol contract.
+   Existing protected CRUD is retained; a manifest enables lazy managed authorization.
 2. Resumable key-changing migrations, structural staging/swap, cross-database movement,
    numeric codec conversion, and automatic downgrade/rollback are unsupported.
 3. Explicit recovery handles one interrupted same-codec transform. Other
@@ -67,7 +70,8 @@ Linux WebKit and macOS WebKit. One published artifact set is reused across those
 jobs. Each job requires all seven historical packages to adopt, advance through
 the CLI-produced revision 2 and reopen in trimmed and AOT Blazor builds. Each
 mode also runs two legacy writer cutover cases and the CLI-authored Blazor
-recovery case. Reports identify the source
+recovery case. The authenticated extension adds a published protected lifecycle
+case, bringing the required matrix to 88 cases. Reports identify the source
 SHA, actual engine and host versions, and execution counts. Refer to the current
 PR check runs for exact-head outcomes and downloadable artifacts. The same
 workflow is a prerequisite for the release publisher.
@@ -77,7 +81,8 @@ passed all 18 checks, including 92 protocol cases per browser and 80 released
 fixture cases. The focused follow-up adds both abrupt recovery page-close
 scenarios, runtime rejection of a changed codec identity, and two browser cases
 that consume the installed CLI's published omitted/null codec fixtures. The
-current protocol gate requires 97 cases per browser. The installed CLI also
+earlier protocol gate required 97 cases per browser. The authenticated extension
+adds the cases documented in the current testing guide. The installed CLI also
 checks that authoring rejects a real codec change without changing source history.
 
 The [testing guide](../contributing/migration-testing.md) gives local commands

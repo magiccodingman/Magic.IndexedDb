@@ -1,0 +1,73 @@
+@namespace ProtectedFixture
+@using Magic.IndexedDb
+@using Microsoft.JSInterop
+@inject IMagicIndexedDb Magic
+@inject IMagicIndexedDbEncryptionLifecycle Encryption
+@inject IJSRuntime Js
+<output id="fixture-result" data-state="@state">@message</output>
+
+@code {
+    private string state = "running";
+    private string message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await using var fixture = await Js.InvokeAsync<IJSObjectReference>("import", "./protected-fixture.mjs");
+            await fixture.InvokeVoidAsync("seed");
+            var database = await Magic.Database(ProtectedRepository.Records);
+            var notifications = 0;
+            await using (await Magic.ObserveMigrationsAsync(notification =>
+            {
+                if (notification.SchemaId == "protected-wasm") notifications++;
+                return ValueTask.CompletedTask;
+            }))
+            {
+                var pending = Encryption.EnsureUnlockedAsync(ProtectedRepository.Records);
+                await fixture.InvokeVoidAsync("waitForHook");
+                await Encryption.LockAsync(ProtectedRepository.Records);
+                try
+                {
+                    await pending;
+                    throw new InvalidOperationException("Lock did not revoke the migration.");
+                }
+                catch (JSException error) when (error.Message.Contains("MAGDB_AUTHORIZATION_LOST", StringComparison.Ordinal) ||
+                    error.Message.Contains("MAGDB_CANCELLED", StringComparison.Ordinal)) { }
+                var checkpoint = (await database.InspectMigrationAsync())!.Value.GetProperty("state");
+                Require(checkpoint.GetProperty("status").GetString() == "migrating" &&
+                    checkpoint.GetProperty("active").GetProperty("processedRecords").GetInt32() == 0,
+                    "A revoked transform committed records.");
+                await fixture.InvokeVoidAsync("assertOriginalCiphertext");
+                await fixture.InvokeVoidAsync("releaseHook");
+                Require(await Encryption.EnsureUnlockedAsync(ProtectedRepository.Records), "Retry was not authorized.");
+                Require(notifications > 0, "Migration observation did not run.");
+            }
+
+            await database.OpenAsync();
+            var query = await database.Query<ProtectedRow>();
+            var rows = await query.ToListAsync();
+            Require(rows.Count == 3 && rows.All(row => row.Secret == "Private " + row.Id && row.Name == "Public " + row.Id && row.Visits == 1),
+                "Typed data was lost or a transformation replayed.");
+            await fixture.InvokeVoidAsync("assertFinalPlaintext");
+            var final = (await database.InspectMigrationAsync())!.Value.GetProperty("state");
+            Require(final.GetProperty("protocolVersion").GetInt32() == 3 && final.GetProperty("revision").GetInt32() == 3 &&
+                final.GetProperty("history").GetArrayLength() == 2, "Authenticated lineage was not retained.");
+            await Encryption.LockAsync(ProtectedRepository.Records);
+            Require(await Encryption.EnsureUnlockedAsync(ProtectedRepository.Records), "The public final policy could not be reopened.");
+            Require(FixtureKeys.Requests >= 3, "Explicit locking did not require fresh authorization.");
+            state = "passed";
+            message = "Authenticated legacy adoption, lock/resume, field-to-record encryption and approved declassification passed.";
+        }
+        catch (Exception error)
+        {
+            state = "failed";
+            message = error.ToString();
+        }
+    }
+
+    private static void Require(bool condition, string message)
+    {
+        if (!condition) throw new InvalidOperationException(message);
+    }
+}

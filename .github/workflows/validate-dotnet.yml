@@ -56,6 +56,9 @@ jobs:
           unzip -Z1 "${package}" | grep -F 'staticwebassets/'
           unzip -Z1 "${package}" | grep -Fx 'staticwebassets/migrations/migrationEngine.js'
           unzip -Z1 "${package}" | grep -Fx 'staticwebassets/migrations/protocol.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/migrations/protectedMigrationAdapter.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/utilities/protectionPolicy.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/utilities/protectedStorage.js'
           unzip -Z1 "${package}" | grep -Fx 'staticwebassets/magicDbMethods.js'
 
       - name: Run unit and contract tests

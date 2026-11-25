@@ -7,10 +7,11 @@ dependency. The existing Razor class library imports it as an ES module, so Blaz
 applications do not add a script tag to `index.html`.
 
 This branch is `3.0.0-preview.1`. See [validation and release acceptance](../contributing/migration-testing.md)
-before deploying it to irreplaceable browser data. Protected migration adapters,
-key-changing resumable migrations, and numeric codec cutovers are explicitly
-unsupported in this preview; the engine rejects them instead of bypassing storage
-protections. Existing authenticated encrypted CRUD remains available.
+before deployment. [Authenticated migrations](encrypted-migrations.md) connect the
+existing encryption lifecycle to the same engine, including both directions of
+protection changes and explicit recovery. This extension has its own acceptance
+pass. Data-key rotation, key-changing resumable migrations, and numeric codec
+cutovers remain explicitly unsupported.
 
 ## The three identities
 
@@ -304,8 +305,11 @@ Typical codes are `MAGDB_MODEL_DRIFT`, `MAGDB_ADOPTION_REQUIRED`,
 `MAGDB_ASSET_INVALID`, `MAGDB_ASSET_HASH_MISMATCH`, `MAGDB_HISTORY_REWRITTEN`,
 `MAGDB_DATABASE_NEWER`, `MAGDB_DATABASE_INCOMPATIBLE`, `MAGDB_BLOCKED`,
 `MAGDB_CANCELLED`, `MAGDB_QUOTA_EXCEEDED`, and `MAGDB_RESUME_PACKAGE_REQUIRED`.
-Unsupported protected migrations use `MAGDB_PROTECTED_MIGRATION_UNSUPPORTED` in the
-Blazor adapter and `MAGDB_PROTECTED_ADAPTER_REQUIRED` at the plain engine boundary.
+An unauthenticated protected request uses `MAGDB_PROTECTED_ADAPTER_REQUIRED` or
+`MAGDB_AUTHORIZATION_REQUIRED`. The authenticated path reports
+`MAGDB_AUTHORIZATION_REJECTED`, `MAGDB_AUTHORIZATION_LOST`,
+`MAGDB_PROTECTION_STATE_INVALID`, and `MAGDB_PROTECTION_LOSS_REQUIRES_APPROVAL`
+when the corresponding authorization, proof, or explicit decision is missing.
 
 See [the protocol](../architecture/migration-protocol.md), [CLI diagnostics](migration-cli.md#diagnostics),
 and [the v3 upgrade guide](../upgrading/v3.md) for the other validation boundaries.

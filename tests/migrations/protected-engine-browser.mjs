@@ -122,6 +122,32 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
         assert.deepEqual(await read(page), before);
     });
 
+    for (const removeJournal of [false, true]) for (const removeProof of [false, true])
+        test(`authenticated identity rejects ${removeJournal ? 'deleted' : 'downgraded'} journal with ${removeProof ? 'deleted' : 'retained'} proof`, async ({ page }) => {
+            const source = model({ encryptedFields: ['name'] });
+            await seed(page, source);
+            const plan = planFor(source, copy(source), [{ op: 'setMissing', store: 'clients', path: 'replayed', value: true }],
+                { baseline: source });
+            await page.evaluate(async ({ removeJournal, removeProof }) => {
+                const db = await openRaw('test');
+                try {
+                    const tx = db.transaction(['__magic_migrations__', '__magic_encryption'], 'readwrite');
+                    const done = complete(tx), journal = tx.objectStore('__magic_migrations__');
+                    if (removeJournal) journal.delete('state');
+                    else {
+                        const get = journal.get('state');
+                        get.onsuccess = () => journal.put({ ...get.result, protocolVersion: 1 }, 'state');
+                    }
+                    if (removeProof) tx.objectStore('__magic_encryption').delete('migration-state');
+                    await done;
+                } finally { db.close(); }
+            }, { removeJournal, removeProof });
+            const before = await inspect(page), stored = await read(page);
+            assert.equal((await run(page, plan, { initialize: true })).error?.code, 'MAGDB_PROTECTION_STATE_INVALID');
+            assert.deepEqual(await inspect(page), before);
+            assert.deepEqual(await read(page), stored);
+        });
+
     test('abrupt authenticated migration termination resumes encrypted batches exactly once', async ({ page, context }) => {
         const source = model({ encryptedFields: ['name'] }); await seed(page, source);
         const plan = planFor(source, copy(source), [{ op: 'transform', store: 'clients' }], { module: `

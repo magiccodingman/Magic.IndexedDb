@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateMigration, requireProtectedSchema, losesProtection, canonicalJson } from '../../Magic.IndexedDb/wwwroot/migrations/protocol.js';
+import { validateMigration, requireProtectedSchema, requirePlainSchema, losesProtection, canonicalJson } from '../../Magic.IndexedDb/wwwroot/migrations/protocol.js';
+import { portableProtectionPolicy } from '../../Magic.IndexedDb/wwwroot/utilities/protectionPolicy.js';
 
 const cap = 'authenticatedMigrationsV1';
 const digest = 'sha256:' + 'a'.repeat(64);
@@ -61,6 +62,33 @@ test('authenticated protocol rejects encrypted keys and native indexes', () => {
     const source = model({ encryptedFields: ['notes'] });
     source.stores[0].indexes = [{ name: 'byNotes', keyPath: 'notes', unique: false, multiEntry: false }];
     reject(() => requireProtectedSchema(source), 'MAGDB_PROTECTION_INVALID');
+});
+
+for (const nativePath of ['primary', 'index', 'compound index'])
+test(`authenticated public ${nativePath} validates the adapter's top-level path contract`, () => {
+    const source = model({});
+    delete source.requiredCapabilities; // A public historical snapshot can precede capability enrollment.
+    if (nativePath === 'primary') source.stores[0].keyPath = 'metadata.id';
+    else source.stores[0].indexes.push({ name: 'byMetadata',
+        keyPath: nativePath === 'index' ? 'metadata.kind' : ['id', 'metadata.kind'], unique: false, multiEntry: false });
+    requirePlainSchema(source);
+    reject(() => requireProtectedSchema(source), 'MAGDB_PROTECTION_INVALID');
+    assert.throws(() => portableProtectionPolicy(source), /MAGDB_PROTECTION_POLICY_INVALID/);
+});
+
+test('authenticated public out-of-line stores retain their supported native policy', () => {
+    const source = model({});
+    source.stores[0].keyPath = null;
+    source.stores[0].autoIncrement = true;
+    requireProtectedSchema(source);
+    portableProtectionPolicy(source);
+});
+
+test('authenticated transient public stores reject unsupported nested key paths', () => {
+    const source = model({}), temporary = structuredClone(source.stores[0]);
+    temporary.name = 'temporary'; temporary.keyPath = 'metadata.id';
+    reject(() => validate(source, source, [{ op: 'createStore', definition: temporary },
+        { op: 'deleteStore', store: 'temporary', allowDataLoss: true }], { mode: 'atomic' }), 'MAGDB_PROTECTION_INVALID');
 });
 
 test('authenticated protocol keeps downgrade approvals typed and snapshots unchanged', () => {

@@ -116,12 +116,14 @@ export function requireProtectedSchema(schema) {
             "MAGDB_PROTECTION_INVALID", "Protection members must be unique, safe persisted top-level names.");
         requireCondition(exposed === null || !fields.some(name => exposed.includes(name)),
             "MAGDB_PROTECTION_INVALID", "A protected member cannot also be exposed.");
+        const paths = [store.keyPath, ...store.indexes.map(index => index.keyPath)].flat().filter(path => path !== null);
+        requireCondition(paths.every(path => !path.includes(".") && path !== "__magic_record"),
+            "MAGDB_PROTECTION_INVALID", "Authenticated primary keys and index paths must use safe top-level fields, including public stores.");
         if (!fields.length && exposed === null) continue;
         requireCondition(store.keyPath !== null && !store.autoIncrement, "MAGDB_PROTECTION_INVALID",
             "Protected stores require explicit inline primary keys.");
         requireCondition(exposed !== null || store.recordCodec == null, "MAGDB_PROTECTION_INVALID",
             "A custom record codec requires whole-record protection.");
-        const paths = [store.keyPath, ...store.indexes.map(index => index.keyPath)].flat();
         requireCondition(paths.every(path => !path.includes(".") && !fields.includes(path) && (exposed === null || exposed.includes(path))),
             "MAGDB_PROTECTION_INVALID", "Protected primary keys and index members must remain public top-level fields.");
     }

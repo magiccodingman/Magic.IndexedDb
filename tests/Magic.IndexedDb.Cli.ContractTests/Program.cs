@@ -266,6 +266,54 @@ Test("an authenticated vault stays authenticated while its first model is public
     f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
     await f.Ok("migrations", "add", "Protect"); await f.Publish("protected");
 });
+foreach (var nativePath in new[] { "primary", "index", "compound index" })
+Test($"authenticated public {nativePath} rejects nested paths before writing history", async f =>
+{
+    f.Model["requiredCapabilities"] = new JsonArray("authenticatedMigrationsV1");
+    if (nativePath == "primary") f.Model["stores"]![0]!["keyPath"] = "metadata.id";
+    else f.Model["stores"]![0]!["indexes"]!.AsArray().Add(new JsonObject
+    {
+        ["name"] = "byMetadata", ["keyPath"] = nativePath == "index" ? JsonValue.Create("metadata.kind") : new JsonArray("id", "metadata.kind"),
+        ["unique"] = false, ["multiEntry"] = false
+    });
+    f.Save(); await f.Fail("MAGDB4208", "migrations", "add", "Initial");
+    Check(!File.Exists(f.HistoryPath));
+});
+Test("history-only authentication validates public native paths while ordinary histories retain nested indexes", async f =>
+{
+    f.AddIndex(); f.Model["stores"]![0]!["indexes"]![0]!["keyPath"] = "metadata.kind"; f.Save();
+    await f.Initial(); await f.Publish("plain");
+    var history = f.History(); history["requiredCapabilities"] = new JsonArray("authenticatedMigrationsV1"); f.WriteHistory(history);
+    await f.Fail("MAGDB4208", "migrations", "validate");
+    await f.Fail("MAGDB4208", "migrations", "publish", "--output", Path.Combine(f.Root, "authenticated"));
+    Check(!File.Exists(f.Published("authenticated")));
+});
+Test("later authenticated edges and authoring validate every earlier public snapshot", async f =>
+{
+    f.AddIndex(); f.Model["stores"]![0]!["indexes"]![0]!["keyPath"] = "metadata.kind"; f.Save();
+    await f.Initial();
+    f.Model["stores"]![0]!["indexes"] = new JsonArray(); f.Save();
+    await f.Ok("migrations", "add", "RemoveNestedIndex");
+    f.ChangeMigration(m => m["requiredCapabilities"] = new JsonArray("authenticatedMigrationsV1"));
+    await f.Fail("MAGDB4208", "migrations", "validate");
+    f.ChangeMigration(m => m["requiredCapabilities"] = new JsonArray());
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
+    await f.Fail("MAGDB4208", "migrations", "add", "Protect");
+    Check(f.History()["targetRevision"]!.GetValue<int>() == 2);
+});
+Test("authenticated transient public stores obey the same native path policy", async f =>
+{
+    f.Model["requiredCapabilities"] = new JsonArray("authenticatedMigrationsV1"); f.Save(); await f.Initial();
+    await f.Code(3, "migrations", "add", "Temporary", "--empty");
+    var store = f.Model["stores"]![0]!.DeepClone(); store["name"] = "temporary"; store["keyPath"] = "metadata.id";
+    f.ChangeMigration(m =>
+    {
+        m["mode"] = "atomic";
+        m["operations"] = new JsonArray(new JsonObject { ["op"] = "createStore", ["definition"] = store },
+            new JsonObject { ["op"] = "deleteStore", ["store"] = "temporary", ["allowDataLoss"] = true });
+    });
+    await f.Fail("MAGDB4208", "migrations", "validate");
+});
 Test("publication seals authenticated history even for an all-public model", async f =>
 {
     await f.Initial();

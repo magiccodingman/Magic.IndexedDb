@@ -433,6 +433,8 @@ async function authenticateSnapshot(options, snapshot, schema) {
         return;
     }
     checkAuthorization(options);
+    requireCondition(!snapshot?.protectionState || snapshot?.state?.protocolVersion === 3,
+        "MAGDB_PROTECTION_STATE_INVALID", "An authenticated journal proof cannot be adopted as legacy progress.");
     if (snapshot?.state?.protocolVersion === 3) {
         await options.protection.verifyState(snapshot.protectionState, snapshot.state);
         if (snapshot.state.status === "ready") await options.protection.verifyPolicy(snapshot.protectionPolicy, schema);
@@ -440,7 +442,7 @@ async function authenticateSnapshot(options, snapshot, schema) {
     } else if (snapshot?.protectionPolicy) {
         requireCondition(!snapshot.state || snapshot.state.status === "ready", "MAGDB_PROTECTION_STATE_INVALID",
             "An unauthenticated interrupted journal cannot be adopted as protected progress.");
-        await options.protection.verifyPolicy(snapshot.protectionPolicy, schema);
+        await options.protection.verifyPolicy(snapshot.protectionPolicy, schema, { legacyOnly: true });
     } else {
         requireCondition(!snapshot?.hasProtectionMetadata, "MAGDB_PROTECTION_STATE_INVALID",
             "Authenticated metadata is missing its policy; initialization cannot replace a damaged identity.");

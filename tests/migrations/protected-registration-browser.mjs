@@ -36,6 +36,10 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
         const result = await page.evaluate(async ({ config, physical }) => {
             const api = await import('/engine/magicDB.js');
             await api.createDb(config);
+            // Deferred authorization must use the registration snapshot, even
+            // if a caller later reuses or mutates its original configuration.
+            config.migrationSchema.schemaId = 'caller-mutated-schema';
+            config.migrationSchema.stores[0].encryptedFields = [];
             const beforeAuthorization = await engine.inspectDatabase(physical);
             await api.unlockProtectedDatabase(config.name, 'test-key', new Uint8Array(32).fill(41), true);
             const afterAuthorization = await engine.inspectDatabase(physical);

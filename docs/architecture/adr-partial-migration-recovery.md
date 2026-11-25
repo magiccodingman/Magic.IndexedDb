@@ -6,11 +6,14 @@ acceptance requires implementation review and application-specific rollout evide
 ## Boundary
 
 An application explicitly selects an approved recovery for one interrupted
-resumable custom transform on one unprotected store. The original edge preserves
+resumable custom transform on one store. The original edge preserves
 native layout, primary keys, numeric format and existing field representations.
 Unrelated store contracts must match. A package may handle added or removed fields
-on the affected store. Structural work, multiple operations, protection or codec
-changes require another recovery strategy.
+on the affected store. Structural work, multiple operations, and record-codec
+changes require another recovery strategy. The authenticated extension supports
+source/target protection changes on the affected store under the same data key;
+it decodes each partition using its original policy and encrypts repair output
+under the target policy. See the [authenticated contract](adr-authenticated-migrations.md).
 
 For the affected store, an omitted `recordCodec` and an explicit JSON
 `null` both mean there is no record codec. The CLI and browser compare
@@ -70,18 +73,20 @@ using the same publication lock as original history.
 
 ## Journal and transactions
 
-A v1 journal retains its existing meaning even under a v2 manifest. Recovery
+A v1 journal retains its existing meaning even under a v2 manifest. Ordinary recovery
 admission bumps the native database version and writes a **v2** journal with
 status `recovering`, the original `active` checkpoint and a separate
 `recovery` checkpoint. A v1 engine rejects a v2 journal. A cooperating handle
-that was already open detects the native version change.
+that was already open detects the native version change. Authenticated databases
+retain **v3** journals, with a separately authenticated complete journal and an
+active policy fence. Their private recovery audit records are encrypted.
 
 | State | Durable action |
 | --- | --- |
 | `migrating` at the committed revision | Verify the source journal, installed layout and numeric policy, then admit only the requested approved binding. |
 | `recovering`, `repair` phase | Preserve the original boundary. The inclusive prefix calls `repairProcessed` and the untouched suffix calls `repairUnprocessed`. An empty boundary means the entire store is unprocessed. An exhausted original cursor means all records were processed. The engine validates native key/count consistency and commits batch records and progress in one transaction. |
 | `recovering`, `verify` phase | Scan the entire store again using a separate cursor and require the verifier to return exactly `true` for each row. Business verification belongs to the application. The engine validates progress, keys, layout, numeric policy and journal identity. |
-| `ready` at the original edge target | Commit readiness and append a recovered outcome retaining the original edge digest. Keep the original and recovery checkpoints in a private audit record. Future manifests must retain the approved binding. Later ordinary writes to the journal keep format v2 and the recovered outcome. |
+| `ready` at the original edge target | Commit readiness and append a recovered outcome retaining the original edge digest. Keep the original and recovery checkpoints in a private audit record. Future manifests must retain the approved binding. Later revisions keep journal v2 for ordinary databases or v3 for authenticated databases, and preserve the recovered outcome. |
 
 For example, recovered history contains:
 

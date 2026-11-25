@@ -18,8 +18,15 @@ Treat these as persisted-data changes:
 - Changing a database between Legacy and lossless numeric storage, or changing a numeric codec version
 - Adding required data that older records do not contain
 - Changing constructor requirements for materialization
+- Adding/removing field encryption, switching to/from whole-record protection,
+  or changing its public allowlist
 
 Test every such change against a copy of realistic data created by the previously released application.
+
+The [authenticated migration workflow](encrypted-migrations.md) handles supported
+protection changes under the same data key. Removing protection requires an
+explicit approval in migration history; changing an attribute alone does not
+rewrite or declassify existing data.
 
 String-backed enum names avoid ordinal changes when members are reordered, but enabling a string-enum converter does not rewrite existing numeric records. A database containing both `1` and `"Active"` requires an explicit migration strategy; a filter for one representation does not automatically query both.
 
