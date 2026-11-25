@@ -63,13 +63,28 @@ function attachConnection(db) {
     return db;
 }
 
-function openExisting(name) {
+function openExisting(name, signal) {
+    abortCheck(signal);
     return new Promise((resolve, reject) => {
         let absent = false;
         const request = indexedDB.open(name);
+        const cleanup = () => signal?.removeEventListener("abort", cancel);
+        const cancel = () => {
+            cleanup();
+            reject(new MigrationError("MAGDB_CANCELLED", "Migration cancelled while waiting for IndexedDB.", {}, true));
+        };
+        signal?.addEventListener("abort", cancel, { once: true });
         request.onupgradeneeded = () => { absent = true; request.transaction.abort(); };
-        request.onerror = () => absent ? resolve(null) : reject(request.error);
-        request.onsuccess = () => resolve(attachConnection(request.result));
+        request.onerror = () => {
+            cleanup();
+            if (absent) resolve(null);
+            else reject(request.error);
+        };
+        request.onsuccess = () => {
+            cleanup();
+            if (signal?.aborted) request.result.close();
+            else resolve(attachConnection(request.result));
+        };
     });
 }
 
@@ -98,8 +113,8 @@ async function inspectOpen(db) {
     return { name: db.name, nativeVersion: db.version, stores, state: state ?? null, numericPolicy: numericPolicy ?? null };
 }
 
-async function inspectDatabaseInternal(name) {
-    const db = await openExisting(name);
+async function inspectDatabaseInternal(name, signal) {
+    const db = await openExisting(name, signal);
     if (!db) return null;
     try { return await inspectOpen(db); } finally { db.close(); }
 }
@@ -171,22 +186,42 @@ function upgrade(options, version, apply) {
     });
 }
 
+async function fetchBytes(url, signal, code, message) {
+    abortCheck(signal);
+    let response;
+    try {
+        response = await fetch(url, { signal, cache: "no-cache", credentials: "same-origin" });
+    } catch (cause) {
+        abortCheck(signal);
+        throw new MigrationError(code, message, {}, true, cause);
+    }
+    if (!response.ok) throw new MigrationError(code, message, { status: response.status }, true);
+    try {
+        return await response.arrayBuffer();
+    } catch (cause) {
+        abortCheck(signal);
+        throw new MigrationError(code, message, {}, true, cause);
+    }
+}
+
 async function fetchAsset(reference, base, signal) {
     abortCheck(signal);
     const url = new URL(reference.path, base);
     requireCondition(url.origin === new URL(base).origin && ["http:", "https:"].includes(url.protocol),
         "MAGDB_ASSET_ORIGIN", "Migration assets must be hosted on the manifest origin.");
-    const response = await fetch(url, { signal, cache: "no-cache", credentials: "same-origin" });
-    if (!response.ok) throw new MigrationError("MAGDB_ASSET_UNAVAILABLE", "A required migration asset could not be loaded.", { status: response.status }, true);
-    const bytes = await response.arrayBuffer();
+    const bytes = await fetchBytes(url, signal, "MAGDB_ASSET_UNAVAILABLE", "A required migration asset could not be loaded.");
     requireCondition(await sha256(bytes) === reference.sha256, "MAGDB_ASSET_HASH_MISMATCH", "Migration asset bytes differ from the manifest.");
     return { bytes, url: url.href };
 }
 
+function decodeJson(bytes) {
+    try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
+    catch (cause) { throw new MigrationError("MAGDB_ASSET_INVALID", "A migration asset is not valid UTF-8 JSON.", {}, false, cause); }
+}
+
 async function jsonAsset(reference, base, signal) {
     const { bytes, url } = await fetchAsset(reference, base, signal);
-    try { return { document: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)), url }; }
-    catch (cause) { throw new MigrationError("MAGDB_ASSET_INVALID", "A migration asset is not valid UTF-8 JSON.", {}, false, cause); }
+    return { document: decodeJson(bytes), url };
 }
 
 async function loadTransform(operation, base, signal) {
@@ -421,9 +456,8 @@ async function ensureLocked(options) {
     requireCondition(new URL(base).origin === globalThis.location.origin && ["http:", "https:"].includes(new URL(base).protocol),
         "MAGDB_ASSET_ORIGIN", "The application-pinned manifest must use the application's HTTP(S) origin.");
     if (options.manifestUrl) {
-        const response = await fetch(base, { signal: options.signal, cache: "no-cache", credentials: "same-origin" });
-        if (!response.ok) throw new MigrationError("MAGDB_MANIFEST_UNAVAILABLE", "The application-pinned manifest is unavailable.", { status: response.status }, true);
-        manifest = await response.json();
+        const bytes = await fetchBytes(base, options.signal, "MAGDB_MANIFEST_UNAVAILABLE", "The application-pinned manifest is unavailable.");
+        manifest = decodeJson(bytes);
     } else if (options.manifest) manifest = structuredClone(options.manifest);
     else manifest = null;
 
@@ -445,7 +479,7 @@ async function ensureLocked(options) {
         requireCondition(target.hash === expectedHash, "MAGDB_MODEL_DRIFT", "The application's resolved model differs from its published target schema.");
     }
     const targetRevision = manifest?.targetRevision ?? 1;
-    let snapshot = await inspectDatabaseInternal(options.name);
+    let snapshot = await inspectDatabaseInternal(options.name, options.signal);
     let baseline;
     if (snapshot && !snapshot.state) {
         requireCondition(manifest, "MAGDB_ADOPTION_REQUIRED", "Existing unmanaged databases require an explicit validated adoption baseline.");
@@ -514,7 +548,7 @@ async function ensureLocked(options) {
                 requireCondition(!connection.objectStoreNames.contains(metadataStore), "MAGDB_STATE_INVALID", "Reserved metadata already exists.");
                 connection.createObjectStore(metadataStore).put(readyState(options.schema.schemaId, baseline.revision, baseline.hash), stateKey);
             });
-        } else db = await openExisting(options.name);
+        } else db = await openExisting(options.name, options.signal);
         requireCondition(db, "MAGDB_DATABASE_MISSING", "Database disappeared before migration.");
         for (const step of steps) {
             abortCheck(options.signal);

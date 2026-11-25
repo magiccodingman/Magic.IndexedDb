@@ -813,6 +813,15 @@ test('public recovery diagnostics redact the durable record-key checkpoint', asy
     assert.ok(!JSON.stringify(diagnostics).includes(privateKey));
     assert.equal(diagnostics.state.active.hasCheckpoint, true);
     assert.equal(Object.hasOwn(diagnostics.state.active, 'lastKey'), false);
+    const partial = [{ ...original[0], visited: true }, original[1]];
+    assert.deepEqual(await read(page), partial);
+    assert.equal((await runPlan(page, plan, { batchSize: 1 })).error?.code, 'MAGDB_MIGRATION_FAILED');
+    const replacement = bundle(model, model, [{ op: 'transform', store: 'clients' }], {
+        mode: 'resumable', module: 'export function transform(row) { return {...row, fixed: true}; }'
+    });
+    assert.equal((await runPlan(page, replacement, { batchSize: 1 })).error?.code, 'MAGDB_RESUME_PACKAGE_REQUIRED');
+    assert.deepEqual(await inspect(page), diagnostics);
+    assert.deepEqual(await read(page), partial);
 });
 
 test('resumable key-changing hook is rejected without skipping records', async ({ page }) => {
@@ -913,6 +922,45 @@ test('cancelling a blocked upgrade settles promptly and aborts a late opening', 
     await blocker.close();
 });
 
+test('a retry queued behind a cancelled native upgrade remains cancellable', async ({ page, context }) => {
+    const model = schema(); const ready = await seed(page, model);
+    const plan = bundle(model, model, []);
+    const blocker = await loadPage(context);
+    await blocker.evaluate(async () => { window.heldDatabase = await openRaw('test'); });
+    const options = { name: 'test', schema: model, manifestUrl: plan.url };
+    const first = await page.evaluate(async options => {
+        const controller = new AbortController();
+        try {
+            await engine.ensureDatabase({ ...options, signal: controller.signal,
+                onEvent(event) { if (event.phase === 'blocked') controller.abort(); } });
+        } catch (error) { return error.code; }
+    }, options);
+    assert.equal(first, 'MAGDB_CANCELLED');
+    await page.evaluate(options => {
+        window.retryController = new AbortController();
+        window.retryOpening = false;
+        const open = indexedDB.open;
+        indexedDB.open = function (...args) {
+            window.retryOpening = true;
+            return open.apply(this, args);
+        };
+        window.retryPending = tryEnsure({ ...options, signal: retryController.signal })
+            .finally(() => { indexedDB.open = open; });
+    }, options);
+    await page.waitForFunction(() => window.retryOpening);
+    const retry = await page.evaluate(() => {
+        retryController.abort();
+        return new Promise(resolve => {
+            const timeout = setTimeout(() => resolve(null), 2_000);
+            retryPending.then(result => { clearTimeout(timeout); resolve(result); });
+        });
+    });
+    await blocker.evaluate(() => heldDatabase.close());
+    assert.equal(retry?.error?.code, 'MAGDB_CANCELLED', 'Cancellation waited for a different tab to release its connection.');
+    await unchanged(page, ready);
+    assert.equal((await runPlan(page, plan)).ok, true);
+});
+
 test('observer exceptions cannot fail a committed migration', async ({ page }) => {
     const result = await page.evaluate(async model => {
         const remove = engine.subscribeMigrationEvents(() => { throw new Error('Observer fault'); });
@@ -952,17 +1000,18 @@ test('cancellation after a committed checkpoint leaves resumable state', async (
     const plan = bundle(model, model, [{ op: 'transform', store: 'clients' }], {
         mode: 'resumable', module: 'export function transform(row) { return {...row, visits:row.visits+1}; }'
     });
-    const interrupted = await page.evaluate(async options => {
-        const controller = new AbortController();
-        try {
-            await engine.ensureDatabase({ ...options, signal: controller.signal,
-                onEvent(event) { if (event.phase === 'checkpoint') controller.abort(); } });
-            return { ok: true };
-        } catch { return { ok: false }; }
-    }, { name: 'test', schema: model, manifestUrl: plan.url, batchSize: 2 });
-    assert.equal(interrupted.ok, false);
-    const partial = await read(page);
-    assert.deepEqual(partial.map(r => r.visits), [1, 1, 0, 0, 0, 0]);
+    for (const expected of [[1, 1, 0, 0, 0, 0], [1, 1, 1, 1, 0, 0]]) {
+        const interrupted = await page.evaluate(async options => {
+            const controller = new AbortController();
+            try {
+                await engine.ensureDatabase({ ...options, signal: controller.signal,
+                    onEvent(event) { if (event.phase === 'checkpoint') controller.abort(); } });
+                return { ok: true };
+            } catch { return { ok: false }; }
+        }, { name: 'test', schema: model, manifestUrl: plan.url, batchSize: 2 });
+        assert.equal(interrupted.ok, false);
+        assert.deepEqual((await read(page)).map(row => row.visits), expected);
+    }
     const resumed = await runPlan(page, plan, { batchSize: 2 });
     assert.equal(resumed.ok, true, JSON.stringify(resumed));
     assert.ok((await read(page)).every(r => r.visits === 1));
@@ -1005,7 +1054,117 @@ test('cancelling pending custom module initialization leaves the old database in
     expectFailure(result); await unchanged(page, ready);
 });
 
-if (process.env.MAGIC_CLI_FIXTURE) test('installed CLI output boots and upgrades through the browser protocol', async ({ page }) => {
+if (process.env.MAGIC_CLI_FIXTURE) test('dedicated workers and tabs share migration ownership', async ({ page }) => {
+    const model = schema(); await seed(page, model);
+    const plan = bundle(model, model, [{ op: 'transform', store: 'clients' }], {
+        mode: 'resumable',
+        module: 'export function transform(row) { return {...row, visits:(row.visits ?? 0)+1}; }'
+    });
+    const workerUrl = plan.base + '/worker.js';
+    assets.set(workerUrl, { type: 'text/javascript', body: `
+        import { ensureDatabase } from '/engine/migrations/migrationEngine.js';
+        self.onmessage = async ({ data }) => {
+            try { self.postMessage({ ok: true, value: await ensureDatabase(data) }); }
+            catch (error) { self.postMessage({ ok: false, code: error.code, message: error.message }); }
+        };
+    ` });
+    const result = await page.evaluate(async ({ workerUrl, options }) => {
+        const workers = [new Worker(workerUrl, { type: 'module' }), new Worker(workerUrl, { type: 'module' })];
+        try {
+            return await Promise.all([tryEnsure(options), ...workers.map(worker => new Promise((resolve, reject) => {
+                worker.onmessage = event => resolve(event.data);
+                worker.onerror = event => reject(new Error(event.message));
+                worker.postMessage(options);
+            }))]);
+        } finally { workers.forEach(worker => worker.terminate()); }
+    }, { workerUrl, options: { name: 'test', schema: model, manifestUrl: plan.url, batchSize: 1 } });
+    assert.ok(result.every(item => item.ok), JSON.stringify(result));
+    assert.deepEqual((await read(page)).map(row => row.visits), [1, 1]);
+});
+
+test('service worker cache must supply every needed asset and matching bytes', async ({ page }) => {
+    const model = schema(); const ready = await seed(page, model);
+    const plan = bundle(model, model, [{ op: 'transform', store: 'clients' }], {
+        module: 'export function transform(row) { return {...row, visits:(row.visits ?? 0)+1}; }'
+    });
+    const manifest = plan.base + '/manifest.json';
+    const hook = plan.base + '/migrations/transform.js';
+    const serviceWorker = '/migration-offline-fixture.js';
+    assets.set(serviceWorker, { type: 'text/javascript', body: `
+        self.addEventListener('install', () => self.skipWaiting());
+        self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+        self.addEventListener('fetch', event => {
+            if (new URL(event.request.url).pathname.startsWith('/fixtures/')) {
+                event.respondWith(caches.match(event.request).then(hit => hit ?? new Response(null, { status: 504 })));
+            }
+        });
+    ` });
+    await page.evaluate(async ({ serviceWorker, paths }) => {
+        const cache = await caches.open('immutable-migration-fixture');
+        await cache.addAll(paths);
+        await navigator.serviceWorker.register(serviceWorker);
+        if (!navigator.serviceWorker.controller) await new Promise(resolve =>
+            navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
+    }, { serviceWorker, paths: [manifest, ...plan.manifest.schemas.map(asset => plan.base + '/' + asset.path),
+        plan.base + '/' + plan.manifest.migrations[0].path] });
+    const offline = await runPlan(page, plan);
+    assert.equal(offline.error?.code, 'MAGDB_ASSET_UNAVAILABLE');
+    assert.equal(offline.error.retryable, true);
+    await unchanged(page, ready);
+    await page.evaluate(hook => caches.open('immutable-migration-fixture').then(cache =>
+        cache.put(hook, new Response('export function transform(row) { return row; }'))), hook);
+    assert.equal((await runPlan(page, plan)).error?.code, 'MAGDB_ASSET_HASH_MISMATCH');
+    await unchanged(page, ready);
+    await page.evaluate(({ hook, bytes }) => caches.open('immutable-migration-fixture').then(cache =>
+        cache.put(hook, new Response(bytes))), { hook, bytes: assets.get(hook).body });
+    assert.equal((await runPlan(page, plan)).ok, true);
+    assert.deepEqual((await read(page)).map(row => row.visits), [1, 1]);
+});
+
+test('a network failure is reported as an unavailable deployment asset', async ({ page }) => {
+    const model = schema(); const ready = await seed(page, model);
+    const plan = bundle(model, model, []);
+    const schemaUrl = plan.base + '/' + plan.manifest.schemas[1].path;
+    await page.route(url => url.pathname === schemaUrl, route => route.abort('failed'));
+    const result = await runPlan(page, plan);
+    assert.equal(result.error?.code, 'MAGDB_ASSET_UNAVAILABLE');
+    assert.equal(result.error.retryable, true);
+    await unchanged(page, ready);
+});
+
+test('invalid manifest JSON rejects before creating or mutating a database', async ({ page }) => {
+    const model = schema(); const ready = await seed(page, model);
+    const plan = bundle(model, model, []);
+    assets.set(new URL(plan.url).pathname, { type: 'application/json', body: '<truncated manifest' });
+    const result = await runPlan(page, plan);
+    assert.equal(result.error?.code, 'MAGDB_ASSET_INVALID');
+    assert.equal(result.error.retryable, false);
+    await unchanged(page, ready);
+});
+
+test('quota error aborts a resumable batch and preserves its previous checkpoint', async ({ page }) => {
+    const model = schema(); const original = [1, 2, 3, 4].map(id => ({ id, name: 'Customer', visits: 0 }));
+    await seed(page, model, original);
+    const plan = bundle(model, model, [{ op: 'transform', store: 'clients' }], {
+        mode: 'resumable', module: 'export function transform(row) { return {...row, visits:row.visits+1}; }'
+    });
+    const result = await page.evaluate(async options => {
+        const put = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function (row, ...keys) {
+            if (this.name === 'clients' && row.id === 4) throw new DOMException('Synthetic quota fault', 'QuotaExceededError');
+            return put.call(this, row, ...keys);
+        };
+        try { return await tryEnsure(options); }
+        finally { IDBObjectStore.prototype.put = put; }
+    }, { name: 'test', schema: model, manifestUrl: plan.url, batchSize: 2 });
+    assert.equal(result.error?.code, 'MAGDB_QUOTA_EXCEEDED');
+    assert.equal((await inspect(page)).state.active.processedRecords, 2);
+    assert.deepEqual((await read(page)).map(row => row.visits), [1, 1, 0, 0]);
+    assert.equal((await runPlan(page, plan, { batchSize: 2 })).ok, true);
+    assert.deepEqual((await read(page)).map(row => row.visits), [1, 1, 1, 1]);
+});
+
+test('installed CLI output boots and upgrades through the browser protocol', async ({ page }) => {
     const prefix = '/cli/';
     const manifestFile = path.resolve(process.env.MAGIC_CLI_FIXTURE);
     const manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
@@ -1054,6 +1213,7 @@ const report = { browser: browserName, startedAt: new Date().toISOString(), scen
 try {
     browser = await playwright[browserName].launch({ headless: true,
         ...(process.env.MAGIC_BROWSER_EXECUTABLE ? { executablePath: process.env.MAGIC_BROWSER_EXECUTABLE } : {}) });
+    report.browserVersion = browser.version();
     for (const scenario of tests) {
         const context = await browser.newContext();
         const consoleLog = []; const pageErrors = [];
