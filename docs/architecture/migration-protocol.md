@@ -133,8 +133,9 @@ must not mutate databases or produce side effects outside the engine.
 
 Connections close on `versionchange`. The Blazor/JavaScript adapter marks previously
 ready handles incompatible and checks journal identity/revision/native version
-before exposing a table for ordinary work. An older application cannot reinterpret
-a newer database as its own schema. During resumable work, ordinary managed access
+before exposing a table for ordinary work. An older cooperating managed client cannot reinterpret
+a newer journal as its own schema. Previously shipped unmanaged writers require
+an [application-owned cutover](../guides/legacy-writer-cutover.md). During resumable work, ordinary managed access
 fails until the journal returns to ready. The protocol cannot prevent unrelated
 same-origin code from directly using the native IndexedDB API; do not run an
 independent writer against a migrating database.

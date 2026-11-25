@@ -8,13 +8,22 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const root = path.resolve(import.meta.dirname, '../..');
-const browserName = process.argv[2] ?? 'chromium';
+const listOnly = process.argv[2] === '--list';
+const browserName = listOnly ? 'chromium' : (process.argv[2] ?? 'chromium');
+const cliFixture = process.env.MAGIC_CLI_FIXTURE === undefined ? null : path.resolve(process.env.MAGIC_CLI_FIXTURE);
+let cliManifest;
+if (cliFixture !== null) {
+    try {
+        cliManifest = JSON.parse(await readFile(cliFixture, 'utf8'));
+        assert.equal(cliManifest.targetRevision, 2);
+        assert.ok([1, 2].every(revision => cliManifest.schemas.some(schema => schema.revision === revision)));
+    } catch (cause) {
+        throw new Error('MAGIC_CLI_FIXTURE must point to a readable revision-2 CLI fixture manifest.', { cause });
+    }
+}
 if (!['chromium', 'firefox', 'webkit'].includes(browserName)) throw new Error('Choose chromium, firefox, or webkit.');
 const playwrightEntry = path.resolve(process.argv[3] ?? 'E2eTest/bin/Release/net10.0/.playwright/package/index.mjs');
 const output = path.resolve(process.argv[4] ?? `artifacts/migration-browser/${browserName}`);
-await access(playwrightEntry);
-await mkdir(output, { recursive: true });
-const playwright = await import(pathToFileURL(playwrightEntry).href);
 const assets = new Map();
 const requests = [];
 const tests = [];
@@ -813,9 +822,23 @@ test('public recovery diagnostics redact the durable record-key checkpoint', asy
     assert.ok(!JSON.stringify(diagnostics).includes(privateKey));
     assert.equal(diagnostics.state.active.hasCheckpoint, true);
     assert.equal(Object.hasOwn(diagnostics.state.active, 'lastKey'), false);
+    const readinessCode = await page.evaluate(async state => {
+        const db = await openRaw('test');
+        try {
+            await engine.assertDatabaseReady(db, { ...state.state, nativeVersion: state.nativeVersion });
+        } catch (error) { return error.code; }
+        finally { db.close(); }
+    }, diagnostics);
+    assert.equal(readinessCode, 'MAGDB_DATABASE_INCOMPATIBLE');
     const partial = [{ ...original[0], visited: true }, original[1]];
     assert.deepEqual(await read(page), partial);
-    assert.equal((await runPlan(page, plan, { batchSize: 1 })).error?.code, 'MAGDB_MIGRATION_FAILED');
+    const retry = await runPlan(page, plan, { batchSize: 1 });
+    assert.equal(retry.error?.code, 'MAGDB_HOOK_FAILED');
+    assert.equal(retry.error.retryable, false);
+    const failureEvent = await page.evaluate(() => events.findLast(event => event.phase === 'failed'));
+    assert.equal(failureEvent.code, 'MAGDB_HOOK_FAILED');
+    assert.equal(failureEvent.retryable, false);
+    assert.ok(!JSON.stringify({ retry, failureEvent }).includes('stop after one committed batch'));
     const replacement = bundle(model, model, [{ op: 'transform', store: 'clients' }], {
         mode: 'resumable', module: 'export function transform(row) { return {...row, fixed: true}; }'
     });
@@ -1054,7 +1077,7 @@ test('cancelling pending custom module initialization leaves the old database in
     expectFailure(result); await unchanged(page, ready);
 });
 
-if (process.env.MAGIC_CLI_FIXTURE) test('dedicated workers and tabs share migration ownership', async ({ page }) => {
+test('dedicated workers and tabs share migration ownership', async ({ page }) => {
     const model = schema(); await seed(page, model);
     const plan = bundle(model, model, [{ op: 'transform', store: 'clients' }], {
         mode: 'resumable',
@@ -1158,17 +1181,17 @@ test('quota error aborts a resumable batch and preserves its previous checkpoint
         finally { IDBObjectStore.prototype.put = put; }
     }, { name: 'test', schema: model, manifestUrl: plan.url, batchSize: 2 });
     assert.equal(result.error?.code, 'MAGDB_QUOTA_EXCEEDED');
+    assert.equal(result.error.retryable, true);
     assert.equal((await inspect(page)).state.active.processedRecords, 2);
     assert.deepEqual((await read(page)).map(row => row.visits), [1, 1, 0, 0]);
     assert.equal((await runPlan(page, plan, { batchSize: 2 })).ok, true);
     assert.deepEqual((await read(page)).map(row => row.visits), [1, 1, 1, 1]);
 });
 
-test('installed CLI output boots and upgrades through the browser protocol', async ({ page }) => {
+if (cliFixture) test('installed CLI output boots and upgrades through the browser protocol', async ({ page }) => {
     const prefix = '/cli/';
-    const manifestFile = path.resolve(process.env.MAGIC_CLI_FIXTURE);
-    const manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
-    assert.equal(manifest.targetRevision, 2);
+    const manifestFile = cliFixture;
+    const manifest = cliManifest;
     const first = JSON.parse(await readFile(path.resolve(path.dirname(manifestFile), manifest.schemas.find(s => s.revision === 1).path), 'utf8'));
     const target = JSON.parse(await readFile(path.resolve(path.dirname(manifestFile), manifest.schemas.find(s => s.revision === 2).path), 'utf8'));
     const ready = await page.evaluate(model => engine.ensureDatabase({ name: 'cli-package', schema: model }), first);
@@ -1178,6 +1201,14 @@ test('installed CLI output boots and upgrades through the browser protocol', asy
     });
     assert.equal(result.revision, 2);
 });
+
+if (listOnly) {
+    console.log(JSON.stringify(tests.map(scenario => scenario.name)));
+    process.exit(0);
+}
+await access(playwrightEntry);
+await mkdir(output, { recursive: true });
+const playwright = await import(pathToFileURL(playwrightEntry).href);
 
 const mime = file => file.endsWith('.json') ? 'application/json' : file.endsWith('.html') ? 'text/html' : 'text/javascript';
 const server = createServer(async (request, response) => {
@@ -1198,8 +1229,8 @@ const server = createServer(async (request, response) => {
         let directory; let relative;
         if (pathname.startsWith('/engine/')) {
             directory = path.join(root, 'Magic.IndexedDb/wwwroot'); relative = pathname.slice('/engine/'.length);
-        } else if (pathname.startsWith('/cli/') && process.env.MAGIC_CLI_FIXTURE) {
-            directory = path.dirname(path.resolve(process.env.MAGIC_CLI_FIXTURE)); relative = pathname.slice('/cli/'.length);
+        } else if (pathname.startsWith('/cli/') && cliFixture) {
+            directory = path.dirname(cliFixture); relative = pathname.slice('/cli/'.length);
         } else { response.writeHead(404); response.end('Fixture not found'); return; }
         const file = path.resolve(directory, relative);
         if (!file.startsWith(directory + path.sep)) { response.writeHead(403); response.end(); return; }

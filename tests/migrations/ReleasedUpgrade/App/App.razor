@@ -11,7 +11,20 @@
     {
         try
         {
-#if MANAGED
+#if FORWARD
+            await CheckDatabase(false);
+            await CheckDatabase(true);
+            foreach (var declaration in new[] { FixtureRepository.West, FixtureRepository.East })
+            {
+                var database = await Magic.Database(declaration);
+                var inspection = await database.InspectMigrationAsync();
+                Require(inspection?.GetProperty("state").GetProperty("revision").GetInt32() == 2,
+                    "Typed inspection could not read the forward migration journal.");
+                await database.CloseAsync();
+            }
+            await CheckDatabase(false);
+            await CheckDatabase(true);
+#elif MANAGED
             var adoption = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             await using (await Magic.ObserveMigrationsAsync(notification =>
             {
@@ -71,6 +84,11 @@
         var rows = (await invoices.Where(row => row.Account == "AC-4").ToListAsync()).OrderBy(row => row.Sequence).ToList();
         Require(rows.Select(row => row.Id).SequenceEqual(new[] { offset + 2, offset + 1 }), "Incorrect indexed query or order.");
         Require(await invoices.CountAsync() == 3, "Unexpected invoice count.");
+#if FORWARD
+        var migrated = await invoices.Where(row => row.MigrationCount == 1).ToListAsync();
+        Require(migrated.Select(row => row.Id).Order().SequenceEqual(new[] { offset + 1, offset + 2, offset + 3 }),
+            "The forward index did not return all transformed invoices exactly once.");
+#endif
         var settled = rows[1];
         Require(settled.AmountMinor == amount && settled.Tax == tax && settled.Description == "Dépôt 東京 🧾" &&
             settled.Reference == 4821 && settled.State == InvoiceState.Settled, "Invoice contract changed.");

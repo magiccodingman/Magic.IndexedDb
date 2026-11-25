@@ -266,6 +266,15 @@ Fresh clients fetch the target schema rather than all historical migration bodie
 JavaScript. Blazor surfaces the code in the interop exception and emits the structured
 failure event. An application can choose its own retry UI and telemetry destination.
 
+`retryable: true` means there is a known operational path to retry the same
+immutable package after the relevant condition is cleared, for example recovering
+assets, freeing quota or restarting after cancellation. It does not promise
+success or imply an automatic retry. `retryable: false` calls for diagnosis or
+developer action first. A thrown or rejected application transform reports
+`MAGDB_HOOK_FAILED` with `retryable: false` regardless of its exception name.
+The diagnostic event carries the code and retry flag without the original cause.
+See the [proposal for explicitly recovering a faulty partial migration](../architecture/adr-partial-migration-recovery.md).
+
 Typical codes are `MAGDB_MODEL_DRIFT`, `MAGDB_ADOPTION_REQUIRED`,
 `MAGDB_LEGACY_SCHEMA_UNKNOWN`, `MAGDB_MANIFEST_UNAVAILABLE`, `MAGDB_ASSET_UNAVAILABLE`,
 `MAGDB_ASSET_INVALID`, `MAGDB_ASSET_HASH_MISMATCH`, `MAGDB_HISTORY_REWRITTEN`,

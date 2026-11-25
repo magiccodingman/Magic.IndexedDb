@@ -27,6 +27,7 @@ jobs:
     permissions:
       contents: read
 
+  # Includes the packaged 2.x adoption/forward/cutover matrix on all CI platforms.
   migration-validation:
     uses: ./.github/workflows/validate-migrations.yml
     permissions:

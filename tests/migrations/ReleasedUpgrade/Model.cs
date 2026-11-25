@@ -10,10 +10,15 @@ using Magic.IndexedDb.Migrations;
 public sealed class FixtureRepository : IMagicRepository
 {
 #if MANAGED
+#if FORWARD
+    private const string Release = "db/forward/";
+#else
+    private const string Release = "db/use/";
+#endif
     public static readonly IndexedDbSet West = new IndexedDbSet("fixture-west")
-        .WithSchemaId("west").Include<Audit>().WithMigrations("db/use/west/manifest.json");
+        .WithSchemaId("west").Include<Audit>().WithMigrations(Release + "west/manifest.json");
     public static readonly IndexedDbSet East = new IndexedDbSet("fixture-east")
-        .WithSchemaId("east").Include<Invoice>().WithMigrations("db/use/east/manifest.json");
+        .WithSchemaId("east").Include<Invoice>().WithMigrations(Release + "east/manifest.json");
 #else
     public static readonly IndexedDbSet West = new("fixture-west");
     public static readonly IndexedDbSet East = new("fixture-east");
@@ -49,6 +54,9 @@ public sealed class Invoice : MagicTableTool<Invoice>, IMagicTable<FixturePlaces
 #endif
     public int Reference { get; set; }
     public string Description { get; set; } = "";
+#if FORWARD
+    [MagicIndex] public int MigrationCount { get; set; }
+#endif
 }
 
 public enum InvoiceState { Issued, Settled, Voided }

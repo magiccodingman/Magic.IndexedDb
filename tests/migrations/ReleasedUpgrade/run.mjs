@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { platform, release, arch, version as osVersion } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -9,13 +11,23 @@ import { pathToFileURL } from 'node:url';
 const directory = path.resolve(process.argv[2] ?? 'artifacts/released-upgrade');
 const driver = path.resolve(process.argv[3] ?? 'tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/index.mjs');
 const browserName = process.argv[4] ?? 'chromium';
+const build = JSON.parse(await readFile(path.join(directory, 'build.json'), 'utf8'));
+const buildMode = process.argv[5] ?? (build.modes.length === 1 ? build.modes[0] : 'trimmed');
+assert.ok(build.modes.includes(buildMode), 'The requested build mode was not published.');
+const sourceSha = process.env.MAGIC_UPGRADE_SOURCE_SHA ??
+    execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+assert.equal(build.sourceSha, sourceSha, 'Fixture provenance does not match the checkout.');
 const playwright = await import(pathToFileURL(driver));
+const playwrightVersion = JSON.parse(await readFile(path.join(path.dirname(driver), 'package.json'), 'utf8')).version;
 const versions = (await readFile(path.join(directory, 'historical-versions.txt'), 'utf8')).trim().split(/\s+/);
+assert.equal(new Set(versions).size, versions.length);
 assert.ok(versions.every(version => /^2\.0\.[1-7]$/.test(version)), 'The build did not record valid historical app versions.');
-const types = { '.wasm': 'application/wasm', '.js': 'text/javascript', '.json': 'application/json', '.html': 'text/html' };
+if (process.env.MAGIC_UPGRADE_REQUIRE_ALL === '1')
+    assert.deepEqual(versions, ['2.0.1', '2.0.2', '2.0.3', '2.0.4', '2.0.5', '2.0.6', '2.0.7']);
+const types = { '.wasm': 'application/wasm', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.html': 'text/html' };
 let deployment;
 const server = createServer(async (request, response) => {
-    const root = path.join(directory, 'published', deployment, 'wwwroot');
+    const root = path.join(directory, 'published', ...deployment.split('/'), 'wwwroot');
     const url = new URL(request.url, 'http://localhost');
     const asset = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
     const file = asset.startsWith(root + path.sep) && await stat(asset).catch(() => null);
@@ -81,7 +93,7 @@ async function load(context) {
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto(origin);
+    assert.ok((await page.goto(origin)).ok(), 'The requested Blazor deployment is missing.');
     const result = page.locator('#fixture-result[data-state=passed], #fixture-result[data-state=failed]');
     try { await result.waitFor({ timeout: 60_000 }); }
     catch (error) { throw new Error(errors.join('\n') || 'Blazor did not report a fixture result.', { cause: error }); }
@@ -90,9 +102,65 @@ async function load(context) {
 }
 
 const results = [];
+const cutoverCases = versions.includes('2.0.7') ? ['uncooperative-v2-writer', 'cooperative-v2-bridge'] : [];
+const expected = versions.length + cutoverCases.length;
+
+async function runCase(name, action) {
+    const result = { name, state: 'failed' };
+    results.push(result);
+    const context = await browser.newContext();
+    try {
+        await action(context, result);
+        result.state = 'passed';
+        console.log('PASS', name);
+    } catch (error) {
+        result.error = error.stack;
+        console.error('FAIL', name, error);
+    } finally { await context.close(); }
+}
+
+async function readManifest(schema, contract) {
+    const root = path.join(directory, 'published', buildMode, contract + '-forward', 'wwwroot/db/forward', schema);
+    return JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8'));
+}
+
+async function verifyForward(page, previous, name, schema, contract) {
+    const after = await snapshot(page, name);
+    assert.equal(after.version, previous.version + 1);
+    const manifest = await readManifest(schema, contract);
+    const [edge] = manifest.migrations;
+    assert.equal(manifest.targetRevision, 2);
+    assert.equal(manifest.migrations.length, 1);
+    const [journal] = after.data.__magic_migrations__.rows;
+    assert.equal(after.data.__magic_migrations__.rows.length, 1);
+    assert.equal(journal.revision, 2);
+    assert.equal(journal.status, 'ready');
+    assert.equal(journal.schemaId, schema);
+    assert.equal(journal.active, null);
+    assert.deepEqual(journal.history, [{ id: edge.id, sha256: edge.sha256 }]);
+    const expectedInvoices = structuredClone(previous.data.invoices);
+    expectedInvoices.rows = expectedInvoices.rows.map(row => ({ ...row, MigrationCount: 1 }));
+    expectedInvoices.indexes.push({ name: 'MigrationCount', keyPath: 'MigrationCount', unique: false, multiEntry: false });
+    expectedInvoices.indexes.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+    assert.deepEqual(after.data.invoices, expectedInvoices);
+    assert.deepEqual(after.data.audit, previous.data.audit);
+    if (name === losslessEast) {
+        // The exact codec values stay unchanged. Only the physical policy's
+        // invoice index list changes, and managed reopen verifies that policy.
+        const oldPolicy = previous.data.__magic_numeric_policy.rows[0];
+        const newPolicy = after.data.__magic_numeric_policy.rows[0];
+        const expectedPolicy = structuredClone(oldPolicy);
+        expectedPolicy.schema.find(store => store.name === 'invoices').indexes = expectedInvoices.indexes;
+        assert.deepEqual(newPolicy, expectedPolicy);
+    }
+    assert.equal(await nextAuditKey(page, name), 3);
+    return after;
+}
+
 const losslessEast = '__magic_numeric_v1__:' +
     createHash('sha256').update(JSON.stringify(['fixture-east'])).digest('hex').toUpperCase();
 let browser;
+let infrastructureFailure;
 try {
     browser = await playwright[browserName].launch();
     for (const version of versions) {
@@ -111,7 +179,8 @@ try {
             for (const name of Object.values(names)) before[name] = await snapshot(oldPage, name);
             await oldPage.close();
             paths.length = 0;
-            deployment = version === '2.0.7' ? 'codecs' : 'legacy';
+            const contract = version === '2.0.7' ? 'codecs' : 'legacy';
+            deployment = buildMode + '/' + contract;
             const newPage = await load(context);
             for (const [schema, name] of Object.entries(names)) {
                 const previous = before[name];
@@ -143,8 +212,21 @@ try {
             for (const schema of ['east', 'west']) assert.ok(paths.includes('/db/use/' + schema + '/manifest.json'));
             assert.ok(paths.includes('/_content/Magic.IndexedDb/migrations/migrationEngine.js'));
             assert.ok(paths.includes('/_content/Magic.IndexedDb/migrations/protocol.js'));
+            await newPage.close();
+            paths.length = 0;
+            deployment += '-forward';
+            const forward = await load(context);
+            const migrated = {};
+            for (const [schema, name] of Object.entries(names)) {
+                migrated[name] = await verifyForward(forward,
+                    { version: before[name].version + 1, data: before[name].data }, name, schema, contract);
+                assert.ok(paths.includes('/db/forward/' + schema + '/manifest.json'));
+            }
+            await forward.close();
+            const reopened = await load(context);
+            for (const name of Object.values(names)) assert.deepEqual(await snapshot(reopened, name), migrated[name]);
             result.state = 'passed';
-            result.nativeVersions = Object.fromEntries(Object.values(names).map(name => [name, [before[name].version, before[name].version + 1]]));
+            result.nativeVersions = Object.fromEntries(Object.values(names).map(name => [name, [before[name].version, before[name].version + 1, migrated[name].version]]));
             result.recordsPerDatabase = 5;
             console.log('PASS', version, result.nativeVersions);
         } catch (error) {
@@ -152,11 +234,84 @@ try {
             console.error('FAIL', version, error);
         } finally { await context.close(); }
     }
+
+    if (cutoverCases.length) {
+        await runCase(cutoverCases[0], async context => {
+            deployment = '2.0.7';
+            const old = await load(context);
+            const module = await old.evaluate(() =>
+                performance.getEntriesByType('resource').find(resource => resource.name.includes('/magicDB.js'))?.name);
+            assert.ok(module);
+            deployment = buildMode + '/codecs';
+            const adopted = await load(context);
+            await old.evaluate(async module => (await import(module)).addItem({
+                dbName: 'fixture-west', storeName: 'invoices', record: { invoice_id: 901, Account: 'uncooperative', Sequence: 1 }
+            }), module);
+            assert.deepEqual((await snapshot(adopted, 'fixture-west')).data.invoices.keys, [1, 2, 3, 901]);
+        });
+
+        await runCase(cutoverCases[1], async context => {
+            deployment = '2.0.7';
+            const old = await load(context);
+            await old.evaluate(async () => {
+                window.bridge = await import('/cutover.js');
+                window.worker = new Worker('/cutover-worker.js', { type: 'module' });
+                await new Promise((resolve, reject) => {
+                    worker.onmessage = event => event.data === 'ready' ? resolve() : reject(new Error(event.data));
+                    worker.onerror = event => reject(new Error(event.message));
+                });
+            });
+            assert.equal(await old.evaluate(async () => {
+                try { await bridge.beginCutover(() => false, () => { throw new Error('Unexpected initialization'); }); }
+                catch (error) { return error.message; }
+            }), 'APP_CUTOVER_NOT_APPROVED');
+            await old.evaluate(() => bridge.legacyWrite(() => Promise.resolve()));
+            const before = await snapshot(old, 'fixture-west');
+
+            await old.evaluate(() => {
+                window.inFlight = bridge.legacyWrite(() => new Promise(resolve => { window.finishWrite = resolve; }));
+                window.cutover = bridge.beginCutover(() => true,
+                    () => new Promise(resolve => { window.finishInitialization = resolve; }));
+            });
+            await old.waitForFunction(() => typeof window.finishWrite === 'function');
+            assert.equal(await old.evaluate(() => typeof window.finishInitialization), 'undefined');
+            await old.evaluate(() => finishWrite());
+            await old.waitForFunction(() => typeof window.finishInitialization === 'function');
+            deployment = buildMode + '/codecs';
+            const adopted = await load(context);
+            await old.evaluate(async () => { finishInitialization(); await cutover; });
+            await context.setOffline(true);
+            try {
+                const tabResult = await old.evaluate(async () => {
+                    try { await bridge.legacyWrite(() => { throw new Error('Legacy write was allowed'); }); }
+                    catch (error) { return error.message; }
+                });
+                const workerResult = await old.evaluate(() => new Promise(resolve => {
+                    worker.onmessage = event => resolve(event.data);
+                    worker.postMessage(902);
+                }));
+                assert.equal(tabResult, 'APP_LEGACY_WRITES_STOPPED');
+                assert.equal(workerResult, 'APP_LEGACY_WRITES_STOPPED');
+            } finally { await context.setOffline(false); }
+            const after = await snapshot(adopted, 'fixture-west');
+            assert.deepEqual(after.data.invoices, before.data.invoices);
+        });
+    }
+} catch (error) {
+    infrastructureFailure = error.stack;
+    console.error(error);
 } finally {
     await mkdir(directory, { recursive: true });
-    const report = { browser: browserName, browserVersion: browser?.version(), results };
-    await writeFile(path.join(directory, 'upgrade-' + browserName + '.json'), JSON.stringify(report, null, 2) + '\n');
+    const report = { sourceSha, runtimeVersion: build.runtimeVersion, cliVersion: build.cliVersion,
+        sdkVersion: build.sdkVersion, packageVersions: versions, buildMode,
+        platform: platform(), platformRelease: release(), platformVersion: osVersion(), architecture: arch(),
+        nodeVersion: process.version, playwrightVersion,
+        browser: browserName, browserVersion: browser?.version(),
+        expected, executed: results.length, skipped: 0, missing: expected - results.length,
+        failures: results.filter(result => result.state !== 'passed').length,
+        ...(infrastructureFailure && { infrastructureFailure }), results };
+    await writeFile(path.join(directory, 'upgrade-' + buildMode + '-' + browserName + '.json'), JSON.stringify(report, null, 2) + '\n');
     if (browser) await browser.close();
     await new Promise(resolve => server.close(resolve));
 }
-if (results.length !== versions.length || results.some(result => result.state !== 'passed')) process.exitCode = 1;
+if (infrastructureFailure || results.length !== expected || results.some(result => result.state !== 'passed')) process.exitCode = 1;

@@ -239,9 +239,22 @@ async function loadTransform(operation, base, signal) {
     return transform;
 }
 
+function hookFailure(cause) {
+    return new MigrationError("MAGDB_HOOK_FAILED",
+        "A migration transform failed. Developer review is required before another attempt.", {}, false, cause);
+}
+
 function transformRecord(operation, record, hook, context) {
     requireCondition(record && typeof record === "object" && !Array.isArray(record), "MAGDB_RECORD_INVALID", "A field transform requires an object record.");
-    if (operation.op === "transform") return hook(structuredClone(record), Object.freeze(context));
+    if (operation.op === "transform") {
+        const input = structuredClone(record);
+        try {
+            const result = hook(input, Object.freeze(context));
+            if (result && typeof result.then === "function")
+                return Promise.resolve(result).catch(cause => { throw hookFailure(cause); });
+            return result;
+        } catch (cause) { throw hookFailure(cause); }
+    }
     const value = structuredClone(record);
     if (operation.op === "setMissing" && !Object.hasOwn(value, operation.path)) value[operation.path] = structuredClone(operation.value);
     if (operation.op === "renameField" && Object.hasOwn(value, operation.from)) {
@@ -440,9 +453,10 @@ export async function ensureDatabase(options) {
         return await navigator.locks.request(`magic-indexeddb:migrate:${options.name}`, { mode: "exclusive", signal: options.signal },
             () => ensureLocked(options));
     } catch (cause) {
-        const error = cause instanceof MigrationError ? cause : new MigrationError(
-            cause?.name === "QuotaExceededError" ? "MAGDB_QUOTA_EXCEEDED" : cause?.name === "AbortError" ? "MAGDB_CANCELLED" : "MAGDB_MIGRATION_FAILED",
-            "Migration did not complete. Inspect its state and retry with the same immutable package.", {}, true, cause);
+        const error = cause instanceof MigrationError ? cause
+            : cause?.name === "QuotaExceededError" ? new MigrationError("MAGDB_QUOTA_EXCEEDED", "Free storage before retrying the same package.", {}, true, cause)
+            : options.signal?.aborted ? new MigrationError("MAGDB_CANCELLED", "Migration cancelled; committed checkpoints are retained.", {}, true, cause)
+            : new MigrationError("MAGDB_MIGRATION_FAILED", "Migration did not complete. Inspect its state and diagnose the failure before retrying.", {}, false, cause);
         notify(options, "failed", { code: error.code, retryable: error.retryable, documentationUrl: error.documentationUrl });
         throw error;
     }

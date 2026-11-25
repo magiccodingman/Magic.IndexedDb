@@ -44,8 +44,7 @@ Do not describe these as supported or bypass their guards to get a test green:
 2. Resumable key-changing migrations, structural staging/swap, cross-database movement,
    numeric codec conversion, and automatic downgrade/rollback are unsupported.
 3. There is no generic repair operation that replaces a partially executed resumable
-   migration with different code. The original hash is required to resume. Design and
-   validate any emergency repair protocol before stable release if it is required.
+   migration with different code. The original hash is required to resume. Review the proposed emergency repair contract before stable release.
 4. Fresh bootstrap creates schema only, with no historical data/seed hook replay.
    History pruning/compaction needs an explicit future retention contract.
 5. The CLI's project input is an opt-in executable exporter, not arbitrary Roslyn
@@ -55,66 +54,41 @@ Do not describe these as supported or bypass their guards to get a test green:
 7. Custom modules must be self-contained and need CSP `blob:` permission. Pin/cache
    immutable assets deliberately for offline use. Magic does not manage service workers.
 
-## Evidence and commands
+## Evidence and rollout
 
-The creating environment can execute .NET unit/build/package checks and Node protocol
-checks. Its process sandbox rejects Chromium startup (socket/ptrace permissions), so
-no local real-browser scenario should be counted as a pass merely because the harness
-was built. Use the PR's GitHub Actions artifacts and your local machine for browser
-execution evidence. See [migration testing](../contributing/migration-testing.md).
+The [reviewed hardening revision](https://github.com/magiccodingman/Magic.IndexedDb/commit/422bf0b7fab92cf70d6334d061736a95976310f2)
+passed all 12 then-existing CI jobs. Separately, local Chrome, Firefox and Linux
+WebKit ran 42 installed-package adoption cases across both managed build modes.
+Those runs covered adoption through revision 1.
 
-```sh
-dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj -c Release
-bash .github/scripts/test-migration-cli.sh
-node --test tests/migrations/protocol.test.mjs
-dotnet build tests/migrations/BrowserDriver/BrowserDriver.csproj -c Release
-node tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/cli.js install --with-deps chromium firefox webkit
-MAGIC_CLI_FIXTURE=artifacts/migration-cli/published/cli-fixture/manifest.json node tests/migrations/run.mjs chromium tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/index.mjs artifacts/migration-browser/chromium
-```
+The next validation gate runs the released-package fixture on Chromium, Firefox,
+Linux WebKit and macOS WebKit. One published artifact set is reused across those
+jobs. Each job requires all seven historical packages to adopt, advance through
+the CLI-produced revision 2 and reopen in trimmed and AOT Blazor builds. Each
+mode also runs the two legacy writer cutover cases. Reports identify the source
+SHA, actual engine and host versions, and execution counts. Refer to the current
+PR check runs for exact-head outcomes and downloadable artifacts. The same
+workflow is a prerequisite for the release publisher.
 
-Repeat the final command for Firefox and WebKit. Run the existing complete browser
-and .NET workflows too, including WASM/AOT and numeric/encryption tests. The isolated
-protocol driver does not replace Blazor integration coverage.
+The [testing guide](../contributing/migration-testing.md) gives local commands
+for both standalone and CLI-configured protocol runs and for the released
+packages. The quota case injects a quota failure inside a real IndexedDB
+transaction. The service-worker test controls which exact assets are served
+from Cache Storage. The bridge covers a loaded tab and worker while offline.
+Real disk exhaustion and production PWA install, activation and cache rollout
+remain unverified.
 
-For environments where MSBuild worker sockets are blocked, .NET commands may need
-`-m:1 -nodeReuse:false -p:UseSharedCompilation=false` and
-`DOTNET_CLI_USE_MSBUILD_SERVER=0`. Browser startup restrictions cannot be represented
-as successful execution or worked around by weakening application safeguards.
+## Decisions before stable release
 
-## Next agent's task
-
-Use your existing source directory. Fetch the PR branch, preserve unrelated local
-work, and work on `feat/v3-managed-migrations`. Read the PR description, this file,
-[the protocol](../architecture/migration-protocol.md), [upgrade guide](../upgrading/v3.md),
-and [testing guide](../contributing/migration-testing.md) before changing behavior.
-
-First reproduce all CI and local browser results. Record exact source SHA, OS,
-.NET SDK, browser/Playwright versions, commands, executed counts, skips, infrastructure
-failures, and artifact paths. Do not report a validation-only pass as a browser pass.
-Fix concrete defects and add regressions for the failure rather than loosening gates.
-
-Then test actual 2.x installations using published historical packages, realistic
-records, complete formerly all-table layouts, legacy converters, native versions,
-lossless policies, and protected storage. The constructed-layout tests in this branch
-do not prove every released package upgrade path. Verify multiple project exporters,
-multiple logical schemas, tenant instances, custom codecs, trimmed/AOT builds, and
-fresh bootstrap compared with every supported upgrade path.
-
-Stress interrupted atomic and resumable work, repeated crashes around checkpoints,
-concurrent tabs/workers, deliberately blocked native upgrades, quota errors, stale
-apps/service workers, offline/partially cached assets, tampered metadata, incomplete
-release uploads, and immutable applied/pending migration bytes. Check that diagnostics
-contain no record values/keys and disposed event handlers do not remain subscribed.
-
-Review unsupported capabilities as explicit release decisions. If implementing one,
-require a complete adapter/protocol design and meaningful browser evidence. Do not
-remove a protection check or introduce an automatic reset. Recovery for faulty
-partially committed migrations deserves a specific design and tests before claiming
-production readiness.
-
-Keep commits on the PR branch. Do not merge, publish NuGet, create a stable release
-tag, or enable CLI publishing credentials. The repository's release workflow already
-requires migration validation; the user will prepare the separate CLI publisher.
+- Review the [application-owned cutover](../guides/legacy-writer-cutover.md).
+  Previously shipped uncooperative clients can write after adoption. A final
+  2.x bridge helps installations where every active writer receives and honors it.
+- Review the [partial recovery proposal](../architecture/adr-partial-migration-recovery.md).
+  A deterministic hook failure now calls for developer intervention. An ordinary
+  later revision cannot recover the interrupted edge. Keep resumable support in
+  preview and hold stable release pending review of the explicit recovery contract.
+- Keep the preview PR draft. The maintainer owns final release and separate
+  CLI publisher configuration.
 
 ## Required response for peer review
 

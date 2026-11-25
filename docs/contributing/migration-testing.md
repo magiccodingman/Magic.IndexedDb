@@ -34,7 +34,7 @@ under `artifacts/migration-browser` (or the optional third argument).
 ## Validate the portable documents without a browser
 
 ```bash
-node --test tests/migrations/protocol.test.mjs
+node --test tests/migrations/protocol.test.mjs tests/migrations/registration.test.mjs
 ```
 
 These tests check canonical JSON and SHA-256, unsupported capabilities, unsafe
@@ -65,19 +65,33 @@ With the Wasm workload and Playwright browsers installed, run this from the
 repository root. Choose a new output directory for each build.
 
 ```bash
-MAGIC_UPGRADE_AOT=true bash tests/migrations/ReleasedUpgrade/build.sh artifacts/released-upgrade
-node tests/migrations/ReleasedUpgrade/run.mjs artifacts/released-upgrade \
-  tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/index.mjs chromium
+MAGIC_UPGRADE_AOT=both bash tests/migrations/ReleasedUpgrade/build.sh artifacts/released-upgrade
+for mode in trimmed aot; do
+  MAGIC_UPGRADE_REQUIRE_ALL=1 node tests/migrations/ReleasedUpgrade/run.mjs artifacts/released-upgrade \
+    tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/index.mjs chromium "$mode"
+done
 ```
 
-The fixture uses released NuGet binaries, a locally packed preview runtime and
-CLI, and two independently built app/exporter configurations. Each package runs
-at one HTTP origin before the server switches to v3, using the same browser
-context and database names. It checks typed data invariants, raw records, native
-keys and indexes, the numeric policy, the adoption journal, and the static
-modules loaded by Blazor. Use `firefox` or `webkit` to repeat on those engines.
-The historical binaries run in a .NET 10 fixture host. Set `MAGIC_UPGRADE_AOT=false`
-to publish trimmed v3 apps without AOT.
+Use `firefox` or `webkit` on supported platforms. The historical binaries run
+in a .NET 10 fixture host. Build both modes with `MAGIC_UPGRADE_AOT=both`, or
+select `false` for trimmed and `true` for AOT. For a short local probe, supply
+specific historical versions after the output path and omit
+`MAGIC_UPGRADE_REQUIRE_ALL`. The package versions for the locally packed runtime
+and installed CLI come from their projects.
+
+The seven stable 2.x packages create the data. Two pinned v3 releases on the
+same origin then adopt at revision 1 and apply a CLI-generated revision 2 that
+backfills and indexes invoices. Close/reopen checks verify data, exact converters
+and Lossless values, native keys and schema, and one committed history entry.
+A non-idempotent fixture transform verifies that reopening does not replay it.
+Two additional 2.0.7 cases cover an uncooperative writer and a cooperating
+tab/worker bridge.
+
+The migration workflow builds the historical and managed static assets once
+and shares them with Chromium, Firefox, Linux WebKit and macOS WebKit jobs.
+Each configuration requires nine cases per mode, seven adoption/forward
+upgrades and two cutover cases, with no skips. It uploads reports and build
+metadata. The release workflow requires migration validation, including this gate.
 
 ## What the suite checks
 
@@ -119,7 +133,7 @@ Use reports from the exact commit under review for execution evidence.
 | Boundary | Preview behavior | Automated coverage and remaining evidence |
 | --- | --- | --- |
 | Plain managed schemas | Fresh target bootstrap, atomic changes, and resumable transforms with stable keys | Portable document tests plus native browser scenarios, including rollback, interruption, and multiple releases |
-| Same-format Lossless storage | Keeps the reserved numeric namespace and persisted numeric policy | Existing numeric E2E fixtures plus managed registration, tamper, and reopen scenarios; historical package upgrade fixtures still required |
+| Same-format Lossless storage | Keeps the reserved numeric namespace and persisted numeric policy | Existing numeric E2E fixtures plus managed registration, tamper, and reopen scenarios; released 2.0.7 Lossless adoption, forward migration and reopen |
 | Existing protected bootstrap and CRUD | Continues through the authenticated storage path | Existing encryption E2E fixtures plus ciphertext-preservation coverage after a rejected manifest |
 | Protected migration manifests | Explicitly rejected with `MAGDB_PROTECTED_MIGRATION_UNSUPPORTED` before provisioning or writes | Public registration rejection tests; no authenticated migration execution is claimed |
 | Legacy adoption | Requires an explicit baseline whose physical layout and codec policy match | Constructed native layouts and the separate released-package Blazor fixture |

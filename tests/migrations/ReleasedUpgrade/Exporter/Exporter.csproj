@@ -7,7 +7,7 @@
     <MagicIndexedDbDesignTime>true</MagicIndexedDbDesignTime>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Magic.IndexedDb" Version="3.0.0-preview.1" />
+    <PackageReference Include="Magic.IndexedDb" Version="$(MagicPackage)" />
     <Compile Include="../Model.cs" Link="Model.cs" />
   </ItemGroup>
 </Project>

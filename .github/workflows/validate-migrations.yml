@@ -36,7 +36,7 @@ jobs:
           node-version: 24
 
       - name: Validate canonical JSON and portable document safety
-        run: node --test tests/migrations/protocol.test.mjs
+        run: node --test tests/migrations/protocol.test.mjs tests/migrations/registration.test.mjs
 
   packaged-cli:
     name: Packaged CLI contract
@@ -149,3 +149,126 @@ jobs:
           path: artifacts/migration-browser
           if-no-files-found: warn
           overwrite: true
+
+  released-upgrade-build:
+    name: Build released-package upgrade fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Publish historical, trimmed and AOT fixtures
+        env:
+          MAGIC_UPGRADE_AOT: both
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          dotnet workload install wasm-tools 2>&1 | tee artifacts/released-upgrade-build.log
+          bash tests/migrations/ReleasedUpgrade/build.sh artifacts/released-upgrade 2>&1 | tee -a artifacts/released-upgrade-build.log
+          tar -C artifacts/released-upgrade -czf artifacts/released-upgrade.tar.gz published historical-versions.txt build.json
+      - name: Upload browser-ready builds
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: released-upgrade-builds
+          path: artifacts/released-upgrade.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: released-upgrade-build-evidence
+          path: |
+            artifacts/released-upgrade-build.log
+            artifacts/released-upgrade/build.json
+            artifacts/released-upgrade/historical-versions.txt
+          if-no-files-found: error
+          overwrite: true
+
+  released-upgrade-browser:
+    name: Released upgrades ${{ matrix.label }}
+    needs: released-upgrade-build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: Chromium, os: ubuntu-latest, browser: chromium }
+          - { label: Firefox, os: ubuntu-latest, browser: firefox }
+          - { label: Linux WebKit, os: ubuntu-latest, browser: webkit }
+          - { label: macOS WebKit, os: macos-15, browser: webkit }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: released-upgrade-builds
+          path: artifacts
+      - name: Prepare fixture and browser driver
+        env:
+          BROWSER: ${{ matrix.browser }}
+          RUNNER_PLATFORM: ${{ runner.os }}
+        run: |
+          mkdir -p artifacts/released-upgrade
+          tar -C artifacts/released-upgrade -xzf artifacts/released-upgrade.tar.gz
+          dotnet build tests/migrations/BrowserDriver/BrowserDriver.csproj -c Release
+          driver=tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package
+          if [[ "$RUNNER_PLATFORM" == Linux ]]; then
+            node "$driver/cli.js" install --with-deps "$BROWSER"
+          else
+            node "$driver/cli.js" install "$BROWSER"
+          fi
+      - name: Require every released upgrade and cutover scenario
+        env:
+          MAGIC_UPGRADE_REQUIRE_ALL: 1
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          set -o pipefail
+          driver=tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/index.mjs
+          fixture=artifacts/released-upgrade
+          status=0
+          for mode in trimmed aot; do
+            node tests/migrations/ReleasedUpgrade/run.mjs "$fixture" "$driver" "$BROWSER" "$mode" 2>&1 | tee "$fixture/$mode.log" || status=1
+          done
+          exit "$status"
+      - name: Upload execution reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: released-upgrade-${{ matrix.browser }}-${{ runner.os }}
+          path: |
+            artifacts/released-upgrade/build.json
+            artifacts/released-upgrade/upgrade-*.json
+            artifacts/released-upgrade/*.log
+          if-no-files-found: error
+          overwrite: true
+
+  released-upgrade-gate:
+    name: Released-package upgrade gate
+    if: always()
+    needs: [released-upgrade-build, released-upgrade-browser]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the build and entire browser matrix
+        env:
+          BUILD_RESULT: ${{ needs.released-upgrade-build.result }}
+          BROWSER_RESULT: ${{ needs.released-upgrade-browser.result }}
+        run: test "$BUILD_RESULT" = success && test "$BROWSER_RESULT" = success
