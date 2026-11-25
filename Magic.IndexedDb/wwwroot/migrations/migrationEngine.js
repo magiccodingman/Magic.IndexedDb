@@ -697,7 +697,7 @@ async function recoverLocked(options, snapshot, manifest, base, model) {
 
     if (state.revision >= edge.toRevision) {
         const completed = state.history[edge.fromRevision - (state.revision - state.history.length)];
-        requireCondition(state.status === "ready" && completed?.id === edge.id && completed.sha256 === edge.sha256,
+        requireCondition(completed?.id === edge.id && completed.sha256 === edge.sha256,
             "MAGDB_RECOVERY_NOT_APPLICABLE", "The journal does not establish a completed original edge.");
         await fetchAsset(document.module, url, options.signal);
         return result(completed.outcome === "recovered" ? "alreadyRecovered" : "alreadyCompletedOriginal", state.revision);

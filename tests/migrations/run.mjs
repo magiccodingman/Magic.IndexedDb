@@ -1366,6 +1366,20 @@ test('explicit recovery never reruns a genuinely completed original edge or clai
     assert.deepEqual(await read(page), recoveryRows.map(row => ({ ...row, value: 11, afterOriginal: true })));
     assert.equal((await runPlan(page, plan, { name: 'bootstrap' })).value?.revision, 3);
     assert.equal((await repair(page, plan, approved, { name: 'bootstrap' })).error?.code, 'MAGDB_RECOVERY_NOT_APPLICABLE');
+    const pending = appendRevision(plan, model,
+        [{ op: 'setMissing', store: 'clients', path: 'unrelatedStep', value: true }], 'resumable');
+    const interrupted = await page.evaluate(async options => {
+        const controller = new AbortController();
+        try {
+            await engine.ensureDatabase({ ...options, signal: controller.signal,
+                onEvent: event => { if (event.phase === 'checkpoint') controller.abort(); } });
+        } catch (error) { return error.code; }
+    }, recoveryOptions(pending, approved));
+    assert.equal(interrupted, 'MAGDB_CANCELLED');
+    const later = await inspect(page);
+    assert.equal(later.state.status, 'migrating');
+    assert.equal((await repair(page, pending, approved)).value?.outcome, 'alreadyCompletedOriginal');
+    assert.deepEqual(await inspect(page), later);
 });
 
 test('cancel during recovery before writes and after checkpoints without replay', async ({ page, context }) => {
