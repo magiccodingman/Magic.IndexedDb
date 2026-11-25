@@ -8,8 +8,14 @@ namespace Magic.IndexedDb.Models;
 
 internal class MagicContractResolver<T> : JsonConverter<T>
 {
+    private static readonly ConcurrentDictionary<Type, bool> AutoIncrementKeys = new();
+
     public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
+        // JSON null is a real JsonElement value, distinct from default/Undefined.
+        if (typeToConvert == typeof(JsonElement))
+            return (T)(object)ReadJsonElement(ref reader);
+
         // ✅ Return default(T) if null is encountered
         if (reader.TokenType == JsonTokenType.Null)
         {
@@ -27,19 +33,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         if (IsDictionaryType(typeToConvert))
             return (T?)DeserializePassthrough(ref reader, typeToConvert, options);
 
-        // ✅ Explicitly check if the type is `JsonElement`
-        if (typeToConvert == typeof(JsonElement))
-        {
-            JsonElement element = JsonSerializer.Deserialize<JsonElement>(ref reader); // Extract JsonElement
-
-            // ✅ Re-run null check for JsonElement
-            if (IsSimpleJsonNull(element))
-                return default;
-
-            // ✅ Re-run primitive check for JsonElement
-            if (IsSimpleJsonElement(element))
-                return (T?)(object)element; // 🚀 Directly cast JsonElement to T
-        }
+        typeToConvert = Nullable.GetUnderlyingType(typeToConvert) ?? typeToConvert;
 
         // ✅ Handle root-level arrays correctly
         if (reader.TokenType == JsonTokenType.StartArray)
@@ -111,18 +105,6 @@ internal class MagicContractResolver<T> : JsonConverter<T>
         return obj;
     }
 
-    private bool IsSimpleJsonElement(JsonElement element)
-    {
-        return element.ValueKind == JsonValueKind.String ||
-               element.ValueKind == JsonValueKind.Number ||
-               element.ValueKind == JsonValueKind.True ||
-               element.ValueKind == JsonValueKind.False;
-    }
-    private bool IsSimpleJsonNull(JsonElement element)
-    {
-        return element.ValueKind == JsonValueKind.Null;
-    }
-
     /// <summary>
     /// Recursively reads a complex object while correctly mapping JSON properties to C# properties.
     /// </summary>
@@ -180,7 +162,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
                 try
                 {
-                    object? value = ReadPropertyValue(ref reader, mpe, options);
+                    object? value = ReadMappedProperty(ref reader, mpe, type, options);
                     propertyValues[csharpPropertyName] = value;
                 }
                 catch (Exception ex) when (ex is not JsonException)
@@ -209,15 +191,40 @@ internal class MagicContractResolver<T> : JsonConverter<T>
     /// <summary>
     /// Reads and assigns a property value, detecting collections, simple types, and complex objects.
     /// </summary>
+    internal object? ReadMappedProperty(ref Utf8JsonReader reader, MagicPropertyEntry property,
+        Type ownerType, JsonSerializerOptions options)
+    {
+        if (!MagicNumericSerialization.IsLossless(options) ||
+            !MagicNumericSerialization.IsNativeAutoIncrementKey(property.Property, ownerType))
+            return ReadPropertyValue(ref reader, property, options);
+
+        if (MagicConverterHelper.HasCustomConverter(property.Property, options))
+            throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
+
+        return MagicNumericSerialization.ReadNativeKey(ref reader, property.Property.PropertyType);
+    }
+
     private object? ReadPropertyValue(ref Utf8JsonReader reader, MagicPropertyEntry mpe, JsonSerializerOptions options)
     {
+        if (MagicConverterHelper.HasCustomConverter(mpe.Property, options))
+            return DeserializePassthrough(ref reader, mpe.Property.PropertyType,
+                MagicConverterHelper.ForProperty(mpe.Property, options));
+
         return ReadValue(ref reader, mpe.Property.PropertyType, options);
     }
 
     private object? ReadValue(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
     {
+        if (type == typeof(JsonElement))
+            return ReadJsonElement(ref reader);
+
+        if (MagicConverterHelper.HasCustomConverter(type, options))
+            return DeserializePassthrough(ref reader, type, options);
+
         if (reader.TokenType == JsonTokenType.Null)
             return null;
+
+        type = Nullable.GetUnderlyingType(type) ?? type;
 
         // A dictionary is both a JSON object and an IEnumerable. Its object shape
         // must win before the collection path at every nesting level.
@@ -295,11 +302,23 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             $"Collection type {collectionType.FullName} cannot be restored from a JSON array.");
     }
 
+    private static JsonElement ReadJsonElement(ref Utf8JsonReader reader)
+    {
+        using var document = JsonDocument.ParseValue(ref reader);
+        return document.RootElement.Clone();
+    }
+
     public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
     {
         if (value == null)
         {
             writer.WriteNullValue();
+            return;
+        }
+
+        if (value is JsonElement element)
+        {
+            element.WriteTo(writer);
             return;
         }
 
@@ -339,8 +358,15 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
         var type = value.GetType();
 
+        if (value is JsonElement element)
+        {
+            element.WriteTo(writer);
+            return true;
+        }
+
         // Handle simple or primitive types directly
-        if (type == typeof(string) || PropertyMappingCache.IsSimpleType(type))
+        if (type == typeof(string) || PropertyMappingCache.IsSimpleType(type) ||
+            MagicConverterHelper.HasCustomConverter(type, options))
         {
             WriteSimpleType(writer, value, options);
             return true;
@@ -423,7 +449,12 @@ internal class MagicContractResolver<T> : JsonConverter<T>
     private void SerializeComplexProperties(Utf8JsonWriter writer, object value, Dictionary<string, MagicPropertyEntry> properties, JsonSerializerOptions options)
     {
         var type = value.GetType();
-        var cache = PropertyMappingCache.GetTypeOfTProperties(type);
+        bool autoIncrement = AutoIncrementKeys.GetOrAdd(type, candidate =>
+        {
+            SchemaHelper.EnsureSchemaIsCached(candidate);
+            return SchemaHelper._schemaCache.TryGetValue(candidate, out var table) &&
+                   table?.GetKeys().AutoIncrement == true;
+        });
 
         foreach (var (propertyName, mpe) in properties)
         {
@@ -444,7 +475,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
             }
 
             // Skip default primary key if needed
-            if (mpe.PrimaryKey && IsDefaultValue(propValue, mpe))
+            if (mpe.PrimaryKey && autoIncrement && IsDefaultValue(propValue, mpe))
                 continue;
 
             // Figure out the actual output property name
@@ -455,6 +486,22 @@ internal class MagicContractResolver<T> : JsonConverter<T>
                     : mpe.JsPropertyName);
 
             writer.WritePropertyName(finalPropertyName);
+
+            if (MagicNumericSerialization.IsLossless(options) && mpe.PrimaryKey && autoIncrement)
+            {
+                if (MagicConverterHelper.HasCustomConverter(mpe.Property, options))
+                    throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
+                MagicNumericSerialization.SerializeNativeKey(propValue, mpe.Property.PropertyType).WriteTo(writer);
+                continue;
+            }
+
+            if (MagicConverterHelper.HasCustomConverter(mpe.Property, options))
+            {
+                JsonSerializer.Serialize(writer, propValue, mpe.Property.PropertyType,
+                    GetPassthroughOptions(mpe.Property.PropertyType,
+                        MagicConverterHelper.ForProperty(mpe.Property, options)));
+                continue;
+            }
 
             // Handle primitives/collections
             if (SerializeIEnumerable(writer, propValue, options) || SerializeSimple(writer, propValue, options))

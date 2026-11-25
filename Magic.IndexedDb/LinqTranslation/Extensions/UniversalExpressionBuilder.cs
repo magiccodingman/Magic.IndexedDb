@@ -4,6 +4,7 @@ using Magic.IndexedDb.Models;
 using Magic.IndexedDb.Models.UniversalOperations;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Text.Json;
 
@@ -13,10 +14,16 @@ public class UniversalExpressionBuilder<T>
 {
     private static readonly ConcurrentDictionary<Type, bool> StringBackedEnumCache = new();
     private readonly Expression<Func<T, bool>> _predicate;
+    private readonly MagicJsonSerializationSettings _settings;
 
-    public UniversalExpressionBuilder(Expression<Func<T, bool>> predicate)
+    public UniversalExpressionBuilder(Expression<Func<T, bool>> predicate) : this(predicate, new MagicJsonSerializationSettings())
+    {
+    }
+
+    internal UniversalExpressionBuilder(Expression<Func<T, bool>> predicate, MagicJsonSerializationSettings settings)
     {
         _predicate = predicate;
+        _settings = settings;
     }
 
     /// <summary>
@@ -169,6 +176,7 @@ public class UniversalExpressionBuilder<T>
             if (leftExpr == null || rightVal == null)
                 throw new InvalidOperationException($"Cannot parse method call: {call}");
 
+            ValidateObjectEqualityOperand(call, leftExpr, rightVal.Value);
             var cond = BuildConditionFromMemberAndConstant(leftExpr, rightVal, operation, caseSensitive);
 
             return new FilterNode
@@ -249,7 +257,37 @@ public class UniversalExpressionBuilder<T>
             _ => throw new InvalidOperationException($"Unsupported NOT binary: {bin}")
         };
 
-        return BuildComparisonLeaf(bin, forceOperation: invertedOp);
+        var comparison = BuildComparisonLeaf(bin, forceOperation: invertedOp);
+        if (bin.IsLifted && !bin.IsLiftedToNull && bin.NodeType is
+            ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual or
+            ExpressionType.LessThan or ExpressionType.LessThanOrEqual)
+        {
+            var left = GetComparableParameterMember(bin.Left);
+            var member = left ?? GetComparableParameterMember(bin.Right);
+            if (member is not null && Nullable.GetUnderlyingType(member.Type) is not null)
+            {
+                // Lifted relational comparisons are false for null; negating them
+                // must preserve that null case instead of only flipping the operator.
+                if (ToConst(left is null ? bin.Left : bin.Right).Value is null)
+                    return HandleConstantBoolean(Expression.Constant(true));
+
+                return new FilterNode
+                {
+                    NodeType = FilterNodeType.Logical,
+                    Operator = FilterLogicalOperator.Or,
+                    Children =
+                    [
+                        new FilterNode
+                        {
+                            NodeType = FilterNodeType.Condition,
+                            Condition = BuildConditionFromMemberAndConstant(member, Expression.Constant(null), "IsNull")
+                        },
+                        comparison
+                    ]
+                };
+            }
+        }
+        return comparison;
     }
 
     private FilterNode HandleNotMethod(MethodCallExpression call)
@@ -265,6 +303,7 @@ public class UniversalExpressionBuilder<T>
         if (leftExpr == null || rightVal == null)
             throw new InvalidOperationException($"Cannot parse NOT method: {call}");
 
+        ValidateObjectEqualityOperand(call, leftExpr, rightVal.Value);
         var cond = BuildConditionFromMemberAndConstant(leftExpr, rightVal, inverted, caseSensitive);
 
         return new FilterNode
@@ -352,6 +391,9 @@ public class UniversalExpressionBuilder<T>
         if (memberPath.Count < 2)
             return false;
 
+        if (memberPath.Count != 2)
+            throw new InvalidOperationException("Length queries require a direct persisted property; nested members are not supported.");
+
         SearchPropEntry spe = PropertyMappingCache.GetTypeOfTProperties(typeof(T));
 
         //string rootPropName = memberPath[memberPath.Count - 2]; // i.e., "Name"
@@ -359,6 +401,9 @@ public class UniversalExpressionBuilder<T>
 
         MagicPropertyEntry mpe = spe.GetPropertyByCsharpName(rootPropName);
         string jsProp = mpe.JsPropertyName;
+
+        if (MagicConverterHelper.HasCustomConverter(mpe.Property))
+            throw new InvalidOperationException("Length queries are not supported for custom-converted properties.");
 
             
         var value = ToConst(bin.Right).Value;
@@ -416,6 +461,9 @@ public class UniversalExpressionBuilder<T>
 
         var finalSegment = memberPath[^1];
 
+        if (memberPath.Count > 2 && !(memberPath.Count == 3 && memberPath[1] == "Value"))
+            throw new InvalidOperationException("Date component queries require a direct persisted property; nested members are not supported.");
+
         SearchPropEntry spe = PropertyMappingCache.GetTypeOfTProperties(typeof(T));
 
         string rootPropName = ExtractRootProperty(memberPath);
@@ -425,6 +473,9 @@ public class UniversalExpressionBuilder<T>
 
         if (!IsDateType(mpe.Property.PropertyType))
             return false;
+
+        if (MagicConverterHelper.HasCustomConverter(mpe.Property))
+            throw new InvalidOperationException("Date component queries are not supported for custom-converted properties.");
 
         bool isNullableDate = Nullable.GetUnderlyingType(mpe.Property.PropertyType) != null;
         var rightUnwrapped = UnwrapConvert(bin.Right);
@@ -504,77 +555,60 @@ public class UniversalExpressionBuilder<T>
         if (rawConst is not DateTime dt)
             throw new InvalidOperationException("Expected DateTime constant for .Date comparison");
 
-        DateTime startOfDay = dt.Date;
-        DateTime nextDay = startOfDay.AddDays(1);
+        var startOfDay = dt.Date;
+        DateTime? nextDay = startOfDay < DateTime.MaxValue.Date ? startOfDay.AddDays(1) : null;
+        var isMidnight = dt == startOfDay;
 
-        if (op is "Equal")
-        {
-            return new FilterNode
-            {
-                NodeType = FilterNodeType.Logical,
-                Operator = FilterLogicalOperator.And,
-                Children = new List<FilterNode>
-                {
-                    new FilterNode
-                    {
-                        NodeType = FilterNodeType.Condition,
-                        Condition = new FilterCondition(jsProp, "GreaterThanOrEqual", startOfDay, false, false)
-                    },
-                    new FilterNode
-                    {
-                        NodeType = FilterNodeType.Condition,
-                        Condition = new FilterCondition(jsProp, "LessThan", nextDay, false, false)
-                    }
-                }
-            };
-        }
-
-        if (op is "NotEqual")
-        {
-            var children = new List<FilterNode>();
-
-            if (isNullableDate)
-            {
-                children.Add(new FilterNode
-                {
-                    NodeType = FilterNodeType.Condition,
-                    Condition = new FilterCondition(jsProp, "IsNull", null, false, false)
-                });
-            }
-
-            children.Add(new FilterNode
-            {
-                NodeType = FilterNodeType.Condition,
-                Condition = new FilterCondition(jsProp, "LessThan", startOfDay, false, false)
-            });
-            children.Add(new FilterNode
-            {
-                NodeType = FilterNodeType.Condition,
-                Condition = new FilterCondition(jsProp, "GreaterThanOrEqual", nextDay, false, false)
-            });
-
-            return new FilterNode
-            {
-                NodeType = FilterNodeType.Logical,
-                Operator = FilterLogicalOperator.Or,
-                Children = children
-            };
-        }
-
-        var (finalOperation, boundary) = op switch
-        {
-            "GreaterThan" => ("GreaterThanOrEqual", nextDay),
-            "GreaterThanOrEqual" => ("GreaterThanOrEqual", startOfDay),
-            "LessThan" => ("LessThan", startOfDay),
-            "LessThanOrEqual" => ("LessThan", nextDay),
-            _ => throw new InvalidOperationException($"Unsupported operator '{op}' for .Date")
-        };
-
-        return new FilterNode
+        FilterNode Condition(string operation, object? value) => new()
         {
             NodeType = FilterNodeType.Condition,
-            Condition = new FilterCondition(jsProp, finalOperation, boundary, false, false)
+            Condition = new FilterCondition(jsProp, operation, value, false, false)
         };
+
+        FilterNode Combine(FilterLogicalOperator logical, List<FilterNode> children) =>
+            children.Count == 1 ? children[0] : new FilterNode
+            {
+                NodeType = FilterNodeType.Logical,
+                Operator = logical,
+                Children = children
+            };
+
+        // A .Date value is always midnight, so equality against a timestamp with
+        // a time component cannot match. Do not silently round the operand.
+        if (!isMidnight && op is "Equal" or "NotEqual")
+            return HandleConstantBoolean(Expression.Constant(op == "NotEqual"));
+
+        if (op == "Equal")
+        {
+            var children = new List<FilterNode> { Condition("GreaterThanOrEqual", startOfDay) };
+            if (nextDay.HasValue) children.Add(Condition("LessThan", nextDay.Value));
+            return Combine(FilterLogicalOperator.And, children);
+        }
+
+        if (op == "NotEqual")
+        {
+            var children = new List<FilterNode>();
+            if (isNullableDate) children.Add(Condition("IsNull", null));
+            children.Add(Condition("LessThan", startOfDay));
+            if (nextDay.HasValue) children.Add(Condition("GreaterThanOrEqual", nextDay.Value));
+            return Combine(FilterLogicalOperator.Or, children);
+        }
+
+        if (op == "GreaterThanOrEqual" && isMidnight)
+            return Condition("GreaterThanOrEqual", startOfDay);
+        if (op == "LessThan" && isMidnight)
+            return Condition("LessThan", startOfDay);
+
+        if (op is "GreaterThan" or "GreaterThanOrEqual")
+            return nextDay.HasValue
+                ? Condition("GreaterThanOrEqual", nextDay.Value)
+                : HandleConstantBoolean(Expression.Constant(false));
+        if (op is "LessThan" or "LessThanOrEqual")
+            return nextDay.HasValue
+                ? Condition("LessThan", nextDay.Value)
+                : isNullableDate ? Condition("IsNotNull", null) : HandleConstantBoolean(Expression.Constant(true));
+
+        throw new InvalidOperationException($"Unsupported operator '{op}' for .Date");
     }
 
 
@@ -648,8 +682,12 @@ public class UniversalExpressionBuilder<T>
             return false;
 
         // Case 1: Static-style => myArray.Contains(x.SomeProp)
-        if (call.Object == null && call.Arguments.Count == 2)
+        if (call.Object == null && call.Arguments.Count is 2 or 3 &&
+            (call.Method.DeclaringType == typeof(Enumerable) || call.Method.DeclaringType == typeof(MemoryExtensions)))
         {
+            if (call.Arguments.Count == 3 && ToConst(call.Arguments[2]).Value is not null)
+                throw new InvalidOperationException("Collection membership with a custom equality comparer is not supported.");
+
             var maybeCollection = UnwrapCollectionConversion(call.Arguments[0]);
             var maybeProp = call.Arguments[1];
 
@@ -663,17 +701,9 @@ public class UniversalExpressionBuilder<T>
                     var propInfo = typeof(T).GetProperty(propExpr.Member.Name);
                     if (propInfo == null) return false;
 
-                    string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
-
                     flattened = enumerable
                         .Cast<object?>()
-                        .Select(val => new FilterCondition(
-                            universalProp,
-                            "Equal",
-                            val,
-                            val is string,
-                            val is string
-                        ));
+                        .Select(val => BuildConditionFromMemberAndConstant(propExpr, Expression.Constant(val), "Equal"));
                     return true;
                 }
             }
@@ -681,23 +711,16 @@ public class UniversalExpressionBuilder<T>
 
         // Case 2: Instance-style => x.CollectionProperty.Contains(10)
         if (call.Object is MemberExpression collectionMember &&
+            IsParameterMember(collectionMember) &&
             call.Arguments.Count == 1 &&
             call.Arguments[0] is ConstantExpression constant)
         {
             var propInfo = typeof(T).GetProperty(collectionMember.Member.Name);
             if (propInfo == null) return false;
 
-            string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
-
             flattened = new[]
             {
-                new FilterCondition(
-                    universalProp,
-                    "Contains",
-                    constant.Value,
-                    constant.Value is string,
-                    constant.Value is string
-                )
+                BuildConditionFromMemberAndConstant(collectionMember, constant, "Contains")
             };
             return true;
         }
@@ -725,6 +748,24 @@ public class UniversalExpressionBuilder<T>
     // Internal Helpers
     // ------------------------------
 
+    private void ValidateObjectEqualityOperand(MethodCallExpression call, MemberExpression member, object? value)
+    {
+        if (_settings.NumericStorageMode != MagicNumericStorageMode.Lossless || value is null ||
+            call.Method.Name != "Equals" || call.Method.GetParameters() is not [{ ParameterType: var argumentType }] ||
+            argumentType != typeof(object))
+            return;
+
+        var type = Nullable.GetUnderlyingType(member.Type) ?? member.Type;
+        if ((type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal)) &&
+            value.GetType() != type)
+        {
+            // Scalar Equals(object) requires the same CLR type. Encoding a boxed
+            // number must not turn it into a matching string or another numeric type.
+            throw new InvalidOperationException(
+                "Lossless queries do not support scalar Equals(object) operands with a different CLR type. Use a matching typed operand.");
+        }
+    }
+
     private FilterCondition BuildConditionFromMemberAndConstant(
         MemberExpression? memberExpr,
         ConstantExpression? constExpr,
@@ -736,6 +777,9 @@ public class UniversalExpressionBuilder<T>
             throw new InvalidOperationException("Cannot build filter condition from null expressions.");
         }
 
+        if (!IsParameterMember(memberExpr))
+            throw new InvalidOperationException("Queries require a direct persisted property; nested or captured members are not supported as the query target.");
+
         var propInfo = typeof(T).GetProperty(memberExpr.Member.Name);
         if (propInfo == null)
         {
@@ -743,9 +787,31 @@ public class UniversalExpressionBuilder<T>
         }
 
         object? val = NormalizeEnumComparisonValue(propInfo, constExpr.Value, operation);
+        var options = _settings.GetOptionsWithNumericConverters();
+        var hasCustomConverter = MagicConverterHelper.HasCustomConverter(propInfo, options);
+        if (_settings.NumericStorageMode == MagicNumericStorageMode.Lossless &&
+            MagicNumericSerialization.IsNativeAutoIncrementKey(propInfo, typeof(T)))
+        {
+            if (hasCustomConverter)
+                throw new InvalidOperationException("A lossless native auto-increment key cannot use a custom JSON converter.");
+            val = MagicNumericSerialization.SerializeNativeKey(val, propInfo.PropertyType);
+        }
+        else if (hasCustomConverter)
+        {
+            if (operation is not "Equal" and not "NotEqual")
+                throw new InvalidOperationException("Custom-converted properties support equality comparisons only; their stored representation may change other query semantics.");
+            var converted = MagicConverterHelper.SerializePropertyValue(propInfo, val, options);
+            if (converted.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+                throw new InvalidOperationException("Equality queries require a scalar representation for custom-converted properties.");
+            val = converted;
+        }
+        else if (_settings.NumericStorageMode == MagicNumericStorageMode.Lossless)
+        {
+            val = NormalizeNumericComparisonValue(propInfo.PropertyType, val);
+        }
 
         string universalProp = PropertyMappingCache.GetJsPropertyName<T>(propInfo);
-        bool isString = val is string;
+        bool isString = val is string or JsonElement { ValueKind: JsonValueKind.String };
         bool effectiveCaseSensitivity = caseSensitive ?? isString;
 
         return new FilterCondition(
@@ -755,6 +821,29 @@ public class UniversalExpressionBuilder<T>
             isString,
             effectiveCaseSensitivity
         );
+    }
+
+    private static object? NormalizeNumericComparisonValue(Type declaredType, object? value)
+    {
+        if (value is null) return null;
+        var type = Nullable.GetUnderlyingType(declaredType) ?? declaredType;
+        if (type.IsEnum || (type != typeof(long) && type != typeof(ulong) && type != typeof(decimal)))
+            return value;
+        if (value.GetType() == type) return value;
+
+        // Do not use Convert's rounding of fractional values for an integral
+        // member. Unsupported mixed numeric comparisons must fail explicitly.
+        if (value is double or float ||
+            (type != typeof(decimal) && value is decimal number && number != decimal.Truncate(number)))
+            throw new InvalidOperationException("Lossless numeric query operands must convert exactly to the persisted property's numeric type.");
+        try
+        {
+            return Convert.ChangeType(value, type, CultureInfo.InvariantCulture);
+        }
+        catch (Exception error) when (error is OverflowException or InvalidCastException or FormatException)
+        {
+            throw new InvalidOperationException("The query operand is outside the persisted property's numeric type.", error);
+        }
     }
 
     private static object? NormalizeEnumComparisonValue(
@@ -824,7 +913,8 @@ public class UniversalExpressionBuilder<T>
 
     private static bool ExtractCaseSensitivity(MethodCallExpression call)
     {
-        if (call.Arguments.Count > 1 && call.Arguments[1] is ConstantExpression cmp && cmp.Value is StringComparison cmpVal)
+        if (call.Arguments.Count > 1 && call.Arguments[1].Type == typeof(StringComparison) &&
+            ToConst(call.Arguments[1]).Value is StringComparison cmpVal)
         {
             return cmpVal is StringComparison.Ordinal
                 or StringComparison.CurrentCulture
@@ -871,9 +961,25 @@ public class UniversalExpressionBuilder<T>
         Type memberType = Nullable.GetUnderlyingType(convertedMember.Type) ?? convertedMember.Type;
         Type conversionType = Nullable.GetUnderlyingType(conversion.Type) ?? conversion.Type;
 
-        return memberType.IsEnum && IsIntegralType(conversionType)
+        return memberType.IsEnum && IsIntegralType(conversionType) &&
+               IsLosslessIntegralConversion(Enum.GetUnderlyingType(memberType), conversionType)
             ? convertedMember
             : null;
+    }
+
+    private static bool IsLosslessIntegralConversion(Type source, Type target)
+    {
+        if (source == target) return true;
+        return Type.GetTypeCode(source) switch
+        {
+            TypeCode.SByte => Type.GetTypeCode(target) is TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64,
+            TypeCode.Byte => Type.GetTypeCode(target) is TypeCode.Int16 or TypeCode.UInt16 or TypeCode.Int32 or TypeCode.UInt32 or TypeCode.Int64 or TypeCode.UInt64,
+            TypeCode.Int16 => Type.GetTypeCode(target) is TypeCode.Int32 or TypeCode.Int64,
+            TypeCode.UInt16 => Type.GetTypeCode(target) is TypeCode.Int32 or TypeCode.UInt32 or TypeCode.Int64 or TypeCode.UInt64,
+            TypeCode.Int32 => Type.GetTypeCode(target) is TypeCode.Int64,
+            TypeCode.UInt32 => Type.GetTypeCode(target) is TypeCode.Int64 or TypeCode.UInt64,
+            _ => false
+        };
     }
 
     private static bool IsIntegralType(Type type)
@@ -887,13 +993,12 @@ public class UniversalExpressionBuilder<T>
 
     private static ConstantExpression ToConst(Expression expr)
     {
-        expr = StripConvert(expr);
-
         return expr switch
         {
             ConstantExpression c => c,
 
-            NewExpression or MemberExpression or MethodCallExpression =>
+            NewExpression or MemberExpression or MethodCallExpression or
+                UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } =>
                 Expression.Constant(Expression.Lambda(expr).Compile().DynamicInvoke()),
 
             _ => throw new InvalidOperationException($"Unsupported or non-constant expression: {expr}")

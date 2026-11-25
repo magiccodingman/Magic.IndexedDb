@@ -1,5 +1,7 @@
+using E2eTestWebApp.TestPages;
 using Magic.IndexedDb;
 using System.Diagnostics;
+using TestBase.Numeric;
 
 namespace E2eTestWebApp;
 
@@ -18,6 +20,11 @@ public class Program
         _ = builder.Services.AddRazorComponents().AddInteractiveServerComponents();
         // Deliberately tiny in tests so every streamed entity exercises multi-chunk transport.
         _ = builder.Services.AddMagicBlazorDB(64, true);
+        _ = builder.Services.AddMagicIndexedDbEncryption<FixtureEncryptionKeyProvider>(_ =>
+            [new(EncryptionTestRepository.Database.DatabaseName, "synthetic-test-account", "fixture-key"),
+             new(NumericProtectedRepository.Database.DatabaseName, "synthetic-numeric-account", "fixture-key")]);
+        _ = builder.Services.AddMagicIndexedDbNumericStorage(
+            new(NumericRepository.Lossless.DatabaseName), new(NumericProtectedRepository.Database.DatabaseName));
         _ = builder.Services.AddSingleton(new DbStore()
         {
             Name = "OpenTest.RegisteredOpen2",

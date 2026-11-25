@@ -42,14 +42,10 @@ export function validateQueryAdditions(queryAdditionsPre, indexCache) {
         }
 
         if (addition.additionFunction === QUERY_ADDITIONS.TAKE_LAST) {
-            const hasPriorOrder = queryAdditions
-                .slice(0, i)
-                .some(prev => prev.additionFunction === QUERY_ADDITIONS.ORDER_BY || prev.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING);
-
-            if (hasPriorOrder) {
-                debugLog(`TAKE_LAST requires ORDER_BY but no ORDER_BY or ORDER_BY_DESCENDING found before index ${i}`);
-                requiresCursor = true;
-            }
+            // Reversing a Dexie collection twice around limit() restores its
+            // original traversal; it does not select the tail then reorder it.
+            // Apply tail selection once to the completed candidate sequence.
+            requiresCursor = true;
         }
 
         // Check for conflicts with previously seen additions
@@ -194,6 +190,19 @@ export function isValidQueryAdditions(arr) {
  */
 export function isSupportedIndexedOperation(conditions) {
     for (const condition of conditions) {
+        const values = condition.operation === QUERY_OPERATIONS.IN
+            ? condition.value
+            : [condition.value];
+        if (!Array.isArray(values) || values.some(value => !isIndexedDbKey(value))) {
+            return false;
+        }
+        if (condition.operation === QUERY_OPERATIONS.STARTS_WITH && typeof condition.value !== "string") {
+            return false;
+        }
+        if (condition.isString === true && condition.caseSensitive === false &&
+            ![QUERY_OPERATIONS.EQUAL, QUERY_OPERATIONS.STARTS_WITH].includes(condition.operation)) {
+            return false;
+        }
         switch (condition.operation) {
             case QUERY_OPERATIONS.EQUAL:
             case QUERY_OPERATIONS.GREATER_THAN:
@@ -208,4 +217,15 @@ export function isSupportedIndexedOperation(conditions) {
         }
     }
     return true;
+}
+
+function isIndexedDbKey(value) {
+    try {
+        indexedDB.cmp(value, value);
+        return true;
+    } catch {
+        // Null, undefined, booleans and ordinary objects are valid predicate
+        // operands but are absent from native IndexedDB indexes.
+        return false;
+    }
 }

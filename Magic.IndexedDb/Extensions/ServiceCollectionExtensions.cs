@@ -1,6 +1,7 @@
 ﻿using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.JSInterop;
 
 namespace Magic.IndexedDb;
@@ -61,6 +62,45 @@ public static class ServiceCollectionExtensions
         return Register(services, jsMessageSizeBytes, isDebug, tables, repositories);
     }
 
+    /// <summary>Registers account-bound encryption policies and an application-supplied key provider.</summary>
+    public static IServiceCollection AddMagicIndexedDbEncryption<TProvider>(this IServiceCollection services,
+        Func<IServiceProvider, IEnumerable<MagicEncryptionOptions>> configure)
+        where TProvider : class, IMagicEncryptionKeyProvider
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        services.AddScoped<IMagicEncryptionKeyProvider, TProvider>();
+        services.AddScoped(sp => configure(sp).Select(options => new EncryptionConfiguration(options))
+            .ToDictionary(config => config.Request.DatabaseName, StringComparer.Ordinal));
+        services.AddScoped<IMagicIndexedDbEncryption>(sp =>
+            (IMagicIndexedDbEncryption)sp.GetRequiredService<IMagicIndexedDb>());
+        services.AddScoped<IMagicIndexedDbEncryptionLifecycle>(sp =>
+            (IMagicIndexedDbEncryptionLifecycle)sp.GetRequiredService<IMagicIndexedDb>());
+        services.AddScoped<IMagicEncryptionContexts>(sp =>
+            new MagicEncryptionContexts((MagicDbFactory)sp.GetRequiredService<IMagicIndexedDb>()));
+        return services;
+    }
+
+    /// <summary>Registers an application key provider for runtime account activation.</summary>
+    public static IServiceCollection AddMagicIndexedDbEncryption<TProvider>(this IServiceCollection services)
+        where TProvider : class, IMagicEncryptionKeyProvider =>
+        services.AddMagicIndexedDbEncryption<TProvider>(_ => []);
+
+    /// <summary>Registers per-database numeric storage. Unlisted databases retain the Legacy format.</summary>
+    /// <remarks>Lossless databases use a separate physical namespace. Existing Legacy data requires an explicit migration or rebuild.</remarks>
+    public static IServiceCollection AddMagicIndexedDbNumericStorage(this IServiceCollection services,
+        params MagicNumericStorageOptions[] databases)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(databases);
+        var existing = services.Where(descriptor => descriptor.ServiceType == typeof(NumericStorageConfiguration))
+            .Select(descriptor => (NumericStorageConfiguration)descriptor.ImplementationInstance!)
+            .SelectMany(configuration => configuration.Modes.Select(pair => new MagicNumericStorageOptions(pair.Key, pair.Value)));
+        var configuration = new NumericStorageConfiguration(existing.Concat(databases));
+        services.RemoveAll<NumericStorageConfiguration>();
+        services.AddSingleton(configuration);
+        return services;
+    }
+
     private static Type[] ValidateSchemaTypes(IEnumerable<Type> types, string parameterName,
         Func<Type, bool> isValidType, string expectedType)
     {
@@ -95,7 +135,9 @@ public static class ServiceCollectionExtensions
         Type[]? tableTypes = null, Type[]? repositoryTypes = null)
     {
         services.AddScoped<IMagicIndexedDb>(sp =>
-            new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes, isDebug, tableTypes, repositoryTypes));
+            new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes, isDebug, tableTypes, repositoryTypes,
+                sp.GetService<Dictionary<string, EncryptionConfiguration>>(), sp.GetService<IMagicEncryptionKeyProvider>(),
+                numericStorage: sp.GetService<NumericStorageConfiguration>()));
 
         if (isDebug)
         {

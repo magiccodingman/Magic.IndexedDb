@@ -55,9 +55,9 @@ public abstract partial class TestBase<TPage> : ContextTest
     }
 
     protected async ValueTask<string> RunTestPageMethodAsync(
-        Expression<Func<TPage, Func<Task<string>>>> method)
+        Expression<Func<TPage, Func<Task<string>>>> method, TimeSpan? completionTimeout = null)
     {
-        var result = await RunTestPageMethodCoreAsync(method, capturePlannerTrace: false);
+        var result = await RunTestPageMethodCoreAsync(method, capturePlannerTrace: false, completionTimeout);
         return result.Output;
     }
 
@@ -69,7 +69,7 @@ public abstract partial class TestBase<TPage> : ContextTest
 
     private async ValueTask<PlannerTraceRunResult> RunTestPageMethodCoreAsync(
         Expression<Func<TPage, Func<Task<string>>>> method,
-        bool capturePlannerTrace)
+        bool capturePlannerTrace, TimeSpan? completionTimeout = null)
     {
         var page = await this.Context.NewPageAsync();
 
@@ -98,7 +98,8 @@ public abstract partial class TestBase<TPage> : ContextTest
         await this.Expect(page.GetByTestId("output")).ToHaveValueAsync("");
 
         await page.GetByTestId("run").ClickAsync();
-        await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(AnyCharacter());
+        await this.Expect(page.GetByTestId("output")).ToHaveValueAsync(AnyCharacter(),
+            completionTimeout is { } timeout ? new() { Timeout = (float)timeout.TotalMilliseconds } : null);
 
         var output = await page.GetByTestId("output").InputValueAsync();
         string? traceJson = null;

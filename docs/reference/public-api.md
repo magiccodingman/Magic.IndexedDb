@@ -12,9 +12,16 @@ IServiceCollection AddMagicBlazorDB(
 IServiceCollection AddMagicBlazorDB(
     long jsMessageSizeBytes,
     bool isDebug);
+
+IServiceCollection AddMagicIndexedDbNumericStorage(
+    params MagicNumericStorageOptions[] databases);
 ```
 
 `BlazorInteropMode.WASM` uses a 15 MiB message limit. `BlazorInteropMode.SignalR` uses 31 KiB.
+
+`new MagicNumericStorageOptions(databaseName)` selects `MagicNumericStorageMode.Lossless`
+for that logical database. Unlisted databases remain `Legacy`. Configure a new
+database or plan an explicit cutover using the [lossless numbers guide](../guides/lossless-numbers.md).
 
 ## `IMagicIndexedDb`
 
@@ -95,7 +102,7 @@ Task ClearTable();
 
 `AddAsync` and `AddRangeAsync` do not return generated primary keys or assign an auto-incremented key to the supplied objects. Updates and deletes require populated primary keys.
 
-`UpdateAsync` is update-only and returns `0` or `1`. `UpdateRangeAsync` uses bulk-put/upsert behavior and returns the input count after success. `DeleteRangeAsync` returns the number of requested keys, not a count of keys proven to have existed. If a range operation fails partway through, earlier writes may already have succeeded. See [adding, updating, and deleting records](writes-and-transactions.md).
+`UpdateAsync` is update-only and returns `0` or `1`. `UpdateRangeAsync` uses bulk-put/upsert behavior and returns the input count after success. These replacement calls abort their browser transaction on a write failure, preserving the original rows and rolling back earlier replacements in the same batch. Ordinary bulk inserts can still partially succeed, and cancellation does not undo a browser write. `DeleteRangeAsync` returns the number of requested keys, not a count of keys proven to have existed. See [adding, updating, and deleting records](writes-and-transactions.md).
 
 ## Staged query interfaces
 

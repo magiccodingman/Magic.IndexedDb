@@ -1,0 +1,144 @@
+@using System.Diagnostics
+@using System.Text.Json
+@inject IMagicIndexedDb Magic
+@inject IMagicIndexedDbEncryption Encryption
+@inject IJSRuntime JavaScript
+
+<h1>Numeric WebAssembly validation</h1>
+<p>Generated values only. The published CI build enables WebAssembly AOT compilation.</p>
+<pre id="numeric-wasm-results" data-state="@_report.State">@ReportJson</pre>
+
+@code {
+    private readonly NumericWasmReport _report = new();
+    private string ReportJson => JsonSerializer.Serialize(_report, NumericWasmReportJsonContext.Default.NumericWasmReport);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            if (!OperatingSystem.IsBrowser()) throw new InvalidOperationException("These tests must execute inside WebAssembly.");
+            await using var diagnostics = await JavaScript.InvokeAsync<IJSObjectReference>(
+                "import", "./_content/Magic.IndexedDb/magicDbMethods.js");
+
+            await Run(nameof(NumericFixture.RoundTripAndStream), () => NumericFixture.RoundTripAndStream(Magic));
+            await Run(nameof(NumericFixture.IndexedPredicatesAndOrdering), () => NumericFixture.IndexedPredicatesAndOrdering(Magic), "compound-index");
+            await Run(nameof(NumericFixture.ExplicitKeysAndBulkCrud), () => NumericFixture.ExplicitKeysAndBulkCrud(Magic));
+            await Run(nameof(NumericFixture.CanonicalUniqueIndexes), () => NumericFixture.CanonicalUniqueIndexes(Magic), "single-index");
+            await Run(nameof(NumericFixture.NativeAutoIncrementKeys), () => NumericFixture.NativeAutoIncrementKeys(Magic));
+            await Run(nameof(NumericFixture.ProtectedPublicAccess), () => NumericFixture.ProtectedPublicAccess(Magic, Encryption));
+
+            await Run(nameof(NumericFixture.ProjectionRepresentations), () => NumericFixture.ProjectionRepresentations(Magic));
+            await Run(nameof(NumericFixture.CoveredProjection), () => NumericFixture.CoveredProjection(Magic));
+            var projectionTrace = await diagnostics.InvokeAsync<JsonElement>("getLastQueryPlannerTrace");
+            RequireCoveredProjection(projectionTrace);
+
+            _report.Benchmark = await NumericBenchmark.RunAsync(Magic, async () =>
+            {
+                await RequireNativePlan(diagnostics, "single-index");
+            });
+            _report.ProjectionBenchmark = await BenchmarkProjection(diagnostics);
+            _report.State = "passed";
+
+            async Task Run(string name, Func<Task<string>> scenario, string? nativeStrategy = null)
+            {
+                var watch = Stopwatch.StartNew();
+                var result = new NumericScenarioResult { Name = name };
+                _report.Scenarios.Add(result);
+                await InvokeAsync(StateHasChanged);
+                try
+                {
+                    var output = await scenario();
+                    if (output != "OK") throw new InvalidOperationException("Unexpected fixture result: " + output);
+                    if (nativeStrategy is not null)
+                        result.PlannerTrace = await RequireNativePlan(diagnostics, nativeStrategy);
+                    result.State = "passed";
+                }
+                catch (Exception error)
+                {
+                    result.State = "failed";
+                    result.Error = error.ToString();
+                    throw;
+                }
+                finally
+                {
+                    result.ElapsedMilliseconds = watch.Elapsed.TotalMilliseconds;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (Exception error)
+        {
+            _report.State = "failed";
+            _report.Failure = error.ToString();
+            Console.Error.WriteLine(error);
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task<List<ProjectionBenchmarkResult>> BenchmarkProjection(IJSObjectReference diagnostics)
+    {
+        const int count = 1000;
+        var table = await Magic.Query<NumericValueRecord>();
+        await table.ClearTable();
+        await table.AddRangeAsync(Enumerable.Range(1, count).Select(id => new NumericValueRecord
+        {
+            Id = id, Signed = id, Amount = id,
+            Nested = new() { ProjectionRecords = [new(id, new string('x', 512), new(22, 0.125m))] }
+        }));
+        var candidates = table.Where(row => row.Signed > 0);
+        var coverage = candidates.Select(row => new { row.Id, row.Signed });
+        var nonCovered = candidates.Select(row => new { row.Id, row.Converted });
+        var scenarios = new (string Name, Func<Task<int>> Run)[]
+        {
+            ("entity", async () => (await candidates.ToListAsync()).Count),
+            ("record-projection", async () => (await nonCovered.ToListAsync()).Count),
+            ("covered-projection", async () => (await coverage.ToListAsync()).Count)
+        };
+        var elapsed = scenarios.Select(_ => new List<double>()).ToArray();
+        var bytes = new int[scenarios.Length];
+        for (int round = 0; round < 6; round++)
+        {
+            for (int step = 0; step < scenarios.Length; step++)
+            {
+                int index = (step + round) % scenarios.Length;
+                var watch = Stopwatch.StartNew();
+                if (await scenarios[index].Run() != count)
+                    throw new InvalidOperationException("Projection benchmark returned the wrong row count.");
+                watch.Stop();
+                var trace = await diagnostics.InvokeAsync<JsonElement>("getLastQueryPlannerTrace");
+                if (index == 2) RequireCoveredProjection(trace);
+                bytes[index] = trace.GetProperty("stages").EnumerateArray()
+                    .Last(stage => stage.GetProperty("stage").GetString() == "interop-result")
+                    .GetProperty("details").GetProperty("payloadBytes").GetInt32();
+                if (round > 0) elapsed[index].Add(watch.Elapsed.TotalMilliseconds);
+            }
+        }
+        return scenarios.Select((scenario, index) =>
+            new ProjectionBenchmarkResult(scenario.Name, count, elapsed[index].Order().ElementAt(2), bytes[index])).ToList();
+    }
+
+    private static void RequireCoveredProjection(JsonElement trace)
+    {
+        var stages = trace.GetProperty("stages").EnumerateArray()
+            .Where(stage => stage.GetProperty("stage").GetString() == "projection-execution").ToArray();
+        if (stages.Length == 0 || stages.Any(stage =>
+            stage.GetProperty("details").GetProperty("strategy").GetString() != "index-covered" ||
+            stage.GetProperty("details").GetProperty("fullRecordReads").GetInt32() != 0))
+            throw new InvalidOperationException("Expected a key-only projection: " + trace.GetRawText());
+    }
+
+    private static async Task<JsonElement> RequireNativePlan(IJSObjectReference diagnostics, string strategy)
+    {
+        var trace = await diagnostics.InvokeAsync<JsonElement>("getLastQueryPlannerTrace");
+        if (trace.ValueKind != JsonValueKind.Object || !trace.TryGetProperty("stages", out var stages))
+            throw new InvalidOperationException("The numeric query did not produce a planner trace.");
+        var entries = stages.EnumerateArray().ToArray();
+        if (!entries.Any(entry => entry.GetProperty("stage").GetString() == "branch-classified" &&
+                entry.GetProperty("details").GetProperty("strategy").GetString() == strategy) ||
+            !entries.Any(entry => entry.GetProperty("stage").GetString() == "indexed-execution") ||
+            entries.Any(entry => entry.GetProperty("stage").GetString() == "cursor-execution"))
+            throw new InvalidOperationException("Expected native numeric index execution: " + trace.GetRawText());
+        return trace;
+    }
+}

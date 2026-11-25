@@ -41,3 +41,29 @@ The records are the important result. Avoid asserting every detail of the chosen
 The .NET tests verify the predicate tree produced from C#. Browser tests then verify what happens after that tree reaches JavaScript and IndexedDB. This split helps narrow a failure to expression translation or browser execution.
 
 The planner targets IndexedDB 2.0 behavior. It does not rely on features that only exist in the IndexedDB 3.0 draft.
+
+
+For a projected query, `projection-execution` reports `index-covered` with
+`fullRecordReads: 0` when that branch traverses only keys. A `record` stage
+means the branch needed stored values. A mixed query may report both.
+`interop-result.payloadBytes` measures the UTF-8 result body for materialized
+entity and projected reads. The covered-projection regression also checks native
+IndexedDB calls, independently of the planner's trace.
+
+
+### Published WASM projection benchmark
+
+The AOT fixture emits `projectionBenchmark` in `numeric-wasm-report.json`.
+The fixture compares the same indexed filter over 1,000 rows. In the local
+Linux Chromium run on a Ryzen 9 7950X3D, five measured repetitions gave:
+
+| Result | Median elapsed | UTF-8 interop result |
+| --- | ---: | ---: |
+| Complete entities | 218.3 ms | 1,264,894 bytes |
+| Projection with an uncovered property | 37.5 ms | 27,894 bytes |
+| Projection covered by the index and primary key | 38.4 ms | 47,894 bytes |
+
+The projected shapes differ in field encoding and byte count. These measurements
+show the reduced transfer size of both projections. The covered branch's
+zero value reads are shown by its trace and the native IndexedDB regression.
+The browser fixture did not provide a reliable peak memory measurement.

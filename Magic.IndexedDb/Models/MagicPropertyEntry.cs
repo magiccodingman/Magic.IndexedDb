@@ -97,6 +97,11 @@ public struct MagicPropertyEntry
         var method = property.GetSetMethod(nonPublic: true);
         if (method == null) return (_, __) => { };
 
+        // Unboxing a value type in the compiled expression below creates a copy.
+        // Reflection assigns into the existing boxed instance being materialized.
+        if (property.DeclaringType!.IsValueType)
+            return (instance, value) => property.SetValue(instance, value);
+
         var instanceParam = Expression.Parameter(typeof(object), "instance");
         var valueParam = Expression.Parameter(typeof(object), "value");
 

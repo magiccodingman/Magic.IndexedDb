@@ -10,11 +10,16 @@ internal class MagicJsInvoke
 {
     private readonly IJSObjectReference _jsModule;
     private readonly long _jsMessageSizeBytes;
+    private readonly MagicJsonSerializationSettings _settings;
+    private readonly MagicJsonSerializationSettings _responseSettings;
 
-    public MagicJsInvoke(IJSObjectReference jsModule, long jsMessageSizeBytes)
+    public MagicJsInvoke(IJSObjectReference jsModule, long jsMessageSizeBytes,
+        MagicJsonSerializationSettings? settings = null, MagicJsonSerializationSettings? responseSettings = null)
     {
         _jsModule = jsModule;
         _jsMessageSizeBytes = jsMessageSizeBytes;
+        _settings = settings ?? new MagicJsonSerializationSettings { UseCamelCase = true };
+        _responseSettings = responseSettings ?? _settings;
     }
 
     internal async Task CallJsAsync(string modulePath, string functionName,
@@ -59,8 +64,7 @@ internal class MagicJsInvoke
         bool isVoid,
         params object[] args)
     {
-        var response = await _jsModule.InvokeAsync<T>("JsHandler", isVoid, modulePath, functionName, args);
-        return response;
+        return await InvokeBrowserAsync(_jsModule.InvokeAsync<T>("JsHandler", isVoid, modulePath, functionName, args));
     }
 
 
@@ -90,7 +94,7 @@ internal class MagicJsInvoke
     private async Task<T?> TrueMagicStreamJsAsync<T>(string modulePath, string functionName,
         CancellationToken token, bool isVoid, params ITypedArgument[] args)
     {
-        var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+        var settings = _settings;
 
         var package = new MagicJsPackage
         {
@@ -112,15 +116,15 @@ internal class MagicJsInvoke
         using var dotNetHelper = DotNetObjectReference.Create(this);
 
         // Send to JS
-        await using var responseStreamRef = await _jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler",
-            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes);
+        await using var responseStreamRef = await InvokeBrowserAsync(_jsModule.InvokeAsync<IJSStreamReference>("streamedJsHandler",
+            token, streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes));
 
         // 🚀 Convert the stream reference back to JSON in C#
         await using var responseStream = await responseStreamRef.OpenReadStreamAsync(long.MaxValue, token);
         using var reader = new StreamReader(responseStream);
 
         string jsonResponse = await reader.ReadToEndAsync(token);
-        return MagicSerializationHelper.DeserializeObject<T>(jsonResponse, settings);
+        return MagicSerializationHelper.DeserializeObject<T>(jsonResponse, _responseSettings);
     }
 
     private async IAsyncEnumerable<T?> MagicYieldJsAsync<T>(
@@ -128,7 +132,7 @@ internal class MagicJsInvoke
         [EnumeratorCancellation] CancellationToken token, 
         params ITypedArgument[] args)
     {
-        var settings = new MagicJsonSerializationSettings() { UseCamelCase = true };
+        var settings = _settings;
 
         var package = new MagicJsPackage
         {
@@ -151,17 +155,18 @@ internal class MagicJsInvoke
 
         // Register before starting JavaScript so an immediate first chunk cannot race registration.
         MagicJsChunkProcessor.RegisterInstance(instanceId);
-        var producerTask = _jsModule.InvokeVoidAsync(
-            "streamedJsHandler", producerCancellation.Token,
-            streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes)
-            .AsTask();
+        Task producerTask = Task.CompletedTask;
 
         bool isCompleted = false;
 
         try
         {
+            producerTask = ObserveProducerAsync(_jsModule.InvokeVoidAsync(
+                "streamedJsHandler", producerCancellation.Token,
+                streamRef, instanceId, dotNetHelper, _jsMessageSizeBytes));
             while (!isCompleted)
             {
+                token.ThrowIfCancellationRequested();
                 string? completedItem;
                 try
                 {
@@ -185,7 +190,7 @@ internal class MagicJsInvoke
                     T? deserializedItem;
                     try
                     {
-                        deserializedItem = MagicSerializationHelper.DeserializeObject<T>(completedItem, settings);
+                        deserializedItem = MagicSerializationHelper.DeserializeObject<T>(completedItem, _responseSettings);
                     }
                     catch (Exception deserializationError)
                     {
@@ -210,20 +215,49 @@ internal class MagicJsInvoke
         }
         finally
         {
-            producerCancellation.Cancel();
-            if (!producerTask.IsCompleted)
+            try
             {
-                try
+                producerCancellation.Cancel();
+                if (!producerTask.IsCompleted)
                 {
-                    await producerTask;
-                }
-                catch (OperationCanceledException) when (producerCancellation.IsCancellationRequested)
-                {
-                    // Expected when enumeration is canceled or disposed before completion.
+                    try
+                    {
+                        await producerTask;
+                    }
+                    catch (OperationCanceledException) when (producerCancellation.IsCancellationRequested)
+                    {
+                        // Expected when enumeration is canceled or disposed before completion.
+                    }
                 }
             }
+            finally
+            {
+                MagicJsChunkProcessor.RemoveInstance(instanceId);
+            }
+        }
+    }
 
-            MagicJsChunkProcessor.RemoveInstance(instanceId);
+    private static async ValueTask<T> InvokeBrowserAsync<T>(ValueTask<T> invocation)
+    {
+        try
+        {
+            return await invocation;
+        }
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_LOCKED:", StringComparison.Ordinal))
+        {
+            throw new MagicEncryptionLockedException(error);
+        }
+    }
+
+    private static async Task ObserveProducerAsync(ValueTask invocation)
+    {
+        try
+        {
+            await invocation;
+        }
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_LOCKED:", StringComparison.Ordinal))
+        {
+            throw new MagicEncryptionLockedException(error);
         }
     }
 

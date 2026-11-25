@@ -1,10 +1,14 @@
 ﻿using System.Text.Json;
+using Magic.IndexedDb.Helpers;
 
 namespace Magic.IndexedDb.Models;
 
 public class MagicJsonSerializationSettings
 {
     private JsonSerializerOptions _options = new();
+
+    /// <summary>Controls wide numeric values for direct serialization calls. Database services use their registered database policy.</summary>
+    public MagicNumericStorageMode NumericStorageMode { get; set; }
 
     public JsonSerializerOptions Options
     {
@@ -29,8 +33,21 @@ public class MagicJsonSerializationSettings
     /// </summary>
     public JsonSerializerOptions GetOptionsWithResolver<T>()
     {
-        var newOptions = new JsonSerializerOptions(Options); // Clone settings
-        newOptions.Converters.Add(new MagicContractResolver<T>()); // Ensure the correct resolver is added
+        var newOptions = GetOptionsWithNumericConverters();
+        // An application converter owns this type's complete JSON representation.
+        if (!MagicConverterHelper.HasCustomConverter(typeof(T), newOptions))
+            newOptions.Converters.Add(new MagicContractResolver<T>());
         return newOptions;
+    }
+
+    internal JsonSerializerOptions GetOptionsWithNumericConverters()
+    {
+        if (!Enum.IsDefined(NumericStorageMode))
+            throw new ArgumentOutOfRangeException(nameof(NumericStorageMode));
+        var options = new JsonSerializerOptions(Options);
+        if (NumericStorageMode == MagicNumericStorageMode.Lossless &&
+            !options.Converters.Any(converter => converter is MagicNumericConverterFactory))
+            options.Converters.Add(new MagicNumericConverterFactory());
+        return options;
     }
 }

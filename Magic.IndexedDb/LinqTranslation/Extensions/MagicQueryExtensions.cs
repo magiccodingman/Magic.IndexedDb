@@ -131,12 +131,12 @@ internal class MagicQueryExtensions<T> :
         );
     }
 
-    private FilterNode GetCollectedBinaryJsonExpressions()
+    internal FilterNode GetCollectedBinaryJsonExpressions()
     {
         Expression<Func<T, bool>> preprocessedPredicate = PreprocessPredicate();
 
 
-        var builder = new UniversalExpressionBuilder<T>(preprocessedPredicate);
+        var builder = new UniversalExpressionBuilder<T>(preprocessedPredicate, MagicQuery.Manager.Settings(MagicQuery.DatabaseName));
         var result = builder.Build();
         return result;
     }

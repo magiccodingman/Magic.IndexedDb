@@ -23,6 +23,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [`Where` versus `Cursor`](guides/where-vs-cursor.md) — when Magic can attempt index optimization and when to request a cursor explicitly
 - [Ordering and pagination](guides/ordering-and-pagination.md) — `OrderBy`, `Take`, `Skip`, `TakeLast`, and `StableOrdering`
 - [Streaming results](guides/streaming.md) — choosing between `ToListAsync()` and `AsAsyncEnumerable()`
+- [Lossless numbers](guides/lossless-numbers.md) — exact `long`, `ulong`, and `decimal` storage with native indexes and explicit compatibility policy
 - [Database management](guides/database-management.md) — open, close, delete, existence, and quota operations
 - [Schema evolution](guides/schema-evolution.md) — the current migration status and how to change persisted models safely
 
@@ -40,6 +41,7 @@ Start with the four pages below. The guides and reference pages are there when y
 
 - [How the query engine works](architecture/query-engine.md)
 - [Universal predicate language](architecture/universal-predicate-language.md)
+- [Encryption at rest design](architecture/encryption-at-rest.md)
 
 ## Contributing
 

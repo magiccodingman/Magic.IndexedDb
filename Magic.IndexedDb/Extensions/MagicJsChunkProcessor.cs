@@ -1,83 +1,82 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 
 namespace Magic.IndexedDb.Extensions;
 
 public static class MagicJsChunkProcessor
 {
-    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, Dictionary<int, string>>> _chunkedMessages = new();
-    private static readonly ConcurrentDictionary<string, ConcurrentQueue<string>> _instanceCompleteItems = new();
-    private static readonly ConcurrentDictionary<string, SortedDictionary<int, string>> _instanceOrderedItems = new();
-
-    public static void RegisterInstance(string instanceId)
+    private sealed class StreamState
     {
-        _chunkedMessages.TryAdd(instanceId, new ConcurrentDictionary<string, Dictionary<int, string>>());
-        _instanceCompleteItems.TryAdd(instanceId, new ConcurrentQueue<string>());
-        _instanceOrderedItems.TryAdd(instanceId, new SortedDictionary<int, string>());
+        public readonly Dictionary<string, Dictionary<int, string>> Messages = new();
+        public readonly SortedDictionary<int, string> Completed = new();
+        public bool CompletionReceived;
+        public bool Removed;
     }
 
-    public static void AddChunk(string instanceId, string chunkInstanceId, int yieldOrderIndex, string chunk, int chunkIndex, int totalChunks)
+    private static readonly ConcurrentDictionary<string, StreamState> _instances = new();
+
+    public static void RegisterInstance(string instanceId) =>
+        _instances.TryAdd(instanceId, new StreamState());
+
+    public static void AddChunk(string instanceId, string chunkInstanceId, int yieldOrderIndex,
+        string chunk, int chunkIndex, int totalChunks)
     {
-        // ✅ Ensure the instance exists before proceeding
-        var messageStore = _chunkedMessages.GetOrAdd(instanceId, _ => new ConcurrentDictionary<string, Dictionary<int, string>>());
-        var orderedItems = _instanceOrderedItems.GetOrAdd(instanceId, _ => new SortedDictionary<int, string>());
-        var completedQueue = _instanceCompleteItems.GetOrAdd(instanceId, _ => new ConcurrentQueue<string>());
+        // A late browser callback must not resurrect a disposed/cancelled stream.
+        if (!_instances.TryGetValue(instanceId, out var state)) return;
 
-        if (chunkInstanceId == "STREAM_COMPLETE")
+        lock (state)
         {
-            completedQueue.Enqueue("STREAM_COMPLETE");
-            return;
-        }
-
-        // ✅ Ensure chunkInstanceId exists
-        var messageChunks = messageStore.GetOrAdd(chunkInstanceId, _ => new Dictionary<int, string>());
-        messageChunks[chunkIndex] = chunk;
-
-        // ✅ Check if all chunks are received
-        if (messageChunks.Count == totalChunks)
-        {
-            var fullMessage = string.Join("", messageChunks.OrderBy(kvp => kvp.Key).Select(kvp => kvp.Value));
-
-            lock (orderedItems)
+            if (state.Removed) return;
+            if (chunkInstanceId == "STREAM_COMPLETE")
             {
-                orderedItems[yieldOrderIndex] = fullMessage;
+                state.CompletionReceived = true;
+                return;
             }
 
-            messageStore.TryRemove(chunkInstanceId, out _); // ✅ Corrected removal
+            if (!state.Messages.TryGetValue(chunkInstanceId, out var chunks))
+                state.Messages[chunkInstanceId] = chunks = new Dictionary<int, string>();
+            chunks[chunkIndex] = chunk;
+
+            if (chunks.Count == totalChunks)
+            {
+                state.Completed[yieldOrderIndex] = string.Join("", chunks.OrderBy(pair => pair.Key).Select(pair => pair.Value));
+                state.Messages.Remove(chunkInstanceId);
+            }
         }
     }
 
     public static string? GetCompletedItem(string instanceId)
     {
-        var orderedItems = _instanceOrderedItems.GetOrAdd(instanceId, _ => new SortedDictionary<int, string>());
-        var completedQueue = _instanceCompleteItems.GetOrAdd(instanceId, _ => new ConcurrentQueue<string>());
+        if (!_instances.TryGetValue(instanceId, out var state)) return null;
 
-        lock (orderedItems)
+        lock (state)
         {
-            // If we still have items to return, prioritize them
-            if (orderedItems.Count > 0)
+            if (state.Removed) return null;
+            if (state.Completed.Count > 0)
             {
-                var firstKey = orderedItems.Keys.First();
-                var message = orderedItems[firstKey];
-
-                orderedItems.Remove(firstKey);
-                return message;
+                var first = state.Completed.First();
+                state.Completed.Remove(first.Key);
+                return first.Value;
             }
-        }
 
-        // Only return "STREAM_COMPLETE" if ALL items have been returned
-        if (completedQueue.TryPeek(out var completedMarker) && completedMarker == "STREAM_COMPLETE")
-        {
-            completedQueue.TryDequeue(out _); // Remove completion marker now that we're truly done
-            return "STREAM_COMPLETE";
+            // A completion marker cannot hide a partially transferred record.
+            // The consumer detects an incomplete stream once the producer ends.
+            if (state.CompletionReceived && state.Messages.Count == 0)
+            {
+                state.CompletionReceived = false;
+                return "STREAM_COMPLETE";
+            }
+            return null;
         }
-
-        return null;
     }
 
     public static void RemoveInstance(string instanceId)
     {
-        _chunkedMessages.TryRemove(instanceId, out _);
-        _instanceCompleteItems.TryRemove(instanceId, out _);
-        _instanceOrderedItems.TryRemove(instanceId, out _);
+        if (!_instances.TryRemove(instanceId, out var state)) return;
+        lock (state)
+        {
+            state.Removed = true;
+            state.Messages.Clear();
+            state.Completed.Clear();
+        }
     }
 }
