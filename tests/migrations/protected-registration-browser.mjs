@@ -108,6 +108,28 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
         assert.equal(saved.state.protocolVersion, 3);
     });
 
+    test('locking an all-public managed vault fences a public patch started before lock', async ({ page }) => {
+        const physical = '__magic_protected__:managed-public-lock';
+        const target = model([]);
+        const config = configuration(physical, 'route', target, initial(target).url);
+        const result = await page.evaluate(async ({ config, physical }) => {
+            const api = await import('/engine/magicDB.js');
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'test-key', new Uint8Array(32).fill(45), true);
+            await api.ensureProtectedMigration(config.name);
+            await api.addItem({ dbName: config.name, storeName: 'clients',
+                record: { id: 1, name: 'Original', secret: 'Public by policy' } });
+            const patch = api.patchPublicRecord(config.name, 'clients', 1, { name: 'Late patch' });
+            api.lockProtectedDatabase(config.name);
+            let outcome;
+            try { outcome = { updated: await patch }; }
+            catch (error) { outcome = { message: error.message }; }
+            return { outcome, rows: await readRows(physical) };
+        }, { config, physical });
+        assert.match(result.outcome.message ?? '', /MAGIC_ENCRYPTION_LOCKED/, JSON.stringify(result));
+        assert.deepEqual(result.rows, [{ id: 1, name: 'Original', secret: 'Public by policy' }]);
+    });
+
     test('locking an active authenticated wrapper migration revokes writes and permits authorized retry', async ({ page }) => {
         const physical = '__magic_protected__:managed-lock';
         const source = model();

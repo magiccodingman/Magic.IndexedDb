@@ -263,7 +263,8 @@ class ProtectedTable {
         if (names.some(name => this.policy.keyPaths.includes(name))) {
             throw new Error("A Magic public patch cannot change the primary key.");
         }
-        return this.fencedWrite(table => table.update(primaryKey, changes));
+        const update = table => table.update(primaryKey, changes);
+        return this.managed ? this.mutate(update) : this.fencedWrite(update);
     }
 
     async *query(predicate, additions, forceCursor, projection = null) {

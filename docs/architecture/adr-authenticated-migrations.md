@@ -174,6 +174,8 @@ Successful readiness pins the ready journal and proof. Protected CRUD compares
 the expected policy, numeric policy, and journal/proof bytes. Protected writes
 include these metadata stores in their native transaction. Managed access remains unavailable
 while a migration or recovery is incomplete.
+Public patches on managed storage also pin the session lease through the write
+boundary, including when the target policy makes every record member public.
 
 ## Execution and crash consistency
 

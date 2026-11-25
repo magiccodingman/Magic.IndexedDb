@@ -31,8 +31,8 @@ fail, if an unhandled browser exception appears, or if the expected scenario cou
 is not executed. JSON and JUnit reports, failure logs, and screenshots are written
 under `artifacts/migration-browser` (or the optional third argument).
 
-The standalone suite currently registers 121 cases. Installed CLI fixtures add
-four, for 125 cases per browser, including authenticated transitions and recovery. The two CLI recovery cases use published neutral
+The standalone suite currently registers 122 cases. Installed CLI fixtures add
+four, for 126 cases per browser, including authenticated transitions and recovery. The two CLI recovery cases use published neutral
 schema snapshots where the affected store's optional `recordCodec` changes
 between omission and explicit null in each direction.
 The required jobs also load the reviewed, pinned v1 engine to verify it rejects
