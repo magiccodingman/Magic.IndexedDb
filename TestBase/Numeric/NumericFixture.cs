@@ -1,5 +1,8 @@
 using System.Linq.Expressions;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Magic.IndexedDb;
+using Magic.IndexedDb.Migrations;
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.SchemaAnnotations;
 
@@ -30,6 +33,65 @@ public static class NumericFixture
         Require(legacyRow.Signed == 42 && legacyRow.Unsigned == 43 && legacyRow.Amount == 1.5m,
             "Legacy database isolation changed ordinary numeric values.");
         CheckRows(expected, await query.ToListAsync(), "lossless after legacy write");
+        return "OK";
+    }
+
+    public static async Task<string> CoveredProjection(IMagicIndexedDb magic)
+    {
+        var query = await SeedValues(magic, Rows());
+        var primary = await query.Where(row => row.Id == 8).Select(row => row.Id).ToListAsync();
+        Require(primary.SequenceEqual([8]), "Filtered primary key projection lost the record.");
+        var secondary = await query.Where(row => row.Signed == AboveSafeInteger || row.Id == 8)
+            .Select(row => row.Id).ToListAsync();
+        var expected = Rows().Where(row => row.Signed == AboveSafeInteger || row.Id == 8).Select(row => row.Id).Order();
+        Require(secondary.Order().SequenceEqual(expected), "Covered OR branches lost or duplicated a primary key.");
+        var keyAndValue = await query.Where(row => row.Signed == AboveSafeInteger)
+            .Select(row => new { row.Id, row.Signed }).ToListAsync();
+        Require(keyAndValue.Count == expected.Count() && keyAndValue.All(row => row.Signed == AboveSafeInteger),
+            "Secondary index projection lost the matching value.");
+        var result = await query.Where(row => row.Signed == AboveSafeInteger &&
+                                              row.Amount == 9_007_199_254_740_993.000000000001m)
+            .Select(row => new { row.Id, row.Signed, row.Amount }).ToListAsync();
+        Require(result.Count == 1 && result[0].Id == 8 && result[0].Signed == AboveSafeInteger &&
+                result[0].Amount == 9_007_199_254_740_993.000000000001m,
+            "Covered compound projection lost numeric values or the primary key.");
+        return "OK";
+    }
+
+    public static async Task<string> ProjectionRepresentations(IMagicIndexedDb magic)
+    {
+        var query = await magic.Query<NumericValueRecord>();
+        await query.ClearTable();
+        var record = new ProjectionRecord(AboveSafeInteger, "named", new(ulong.MaxValue, SmallestDecimal))
+        {
+            Mutable = "updated"
+        };
+        await query.AddAsync(new()
+        {
+            Id = 1, Signed = AboveSafeInteger, Amount = SmallestDecimal, OptionalLong = null,
+            SignedStatus = (NumericLongStatus)AboveSafeInteger, Converted = 27,
+            Nested = new() { ProjectionRecords = [record] }
+        });
+        var row = (await query.ToListAsync()).Single();
+        Require(row.Nested.ProjectionRecords.Single() == record, "Record inheritance or nested struct persistence failed.");
+        var projected = (await query.Select(item => new
+        {
+            item.Signed, item.Amount, item.OptionalLong, item.SignedStatus, item.Converted, item.Nested
+        }).ToListAsync()).Single();
+        Require(projected.Signed == row.Signed && projected.Amount == row.Amount &&
+                projected.OptionalLong is null && projected.SignedStatus == row.SignedStatus &&
+                projected.Converted == 27 && projected.Nested.ProjectionRecords.Single() == record,
+            "Projection did not use entity materialization contracts.");
+
+        var withNull = await query.OrderBy(item => item.OptionalLong).Select(item => item.OptionalLong).ToListAsync();
+        Require(withNull.Count == 1 && withNull[0] is null, "Sparse index projection lost a null row.");
+
+        var legacy = await magic.Query<NumericValueRecord>(_ => NumericRepository.Legacy);
+        await legacy.ClearTable();
+        await legacy.AddAsync(new() { Id = 100, Signed = 42, Amount = 1.5m });
+        Require((await legacy.Select(item => item.Signed).ToListAsync()).Single() == 42 &&
+                (await query.Select(item => item.Signed).ToListAsync()).Single() == AboveSafeInteger,
+            "Projection mixed Legacy and Lossless settings.");
         return "OK";
     }
 
@@ -125,6 +187,8 @@ public static class NumericFixture
         await query.ClearTable();
         await query.AddAsync(new() { Label = "first" });
         await query.AddAsync(new() { Label = "second" });
+        Require((await query.OrderBy(row => row.Key).Select(row => row.Key).ToListAsync()).SequenceEqual([1L, 2L]),
+            "Native keys were decoded as lossless strings by the projection.");
         Require((await query.OrderBy(row => row.Key).ToListAsync()).Select(row => row.Key).SequenceEqual([1L, 2L]),
             "Fresh native auto-increment keys did not round-trip as 1 and 2.");
 
@@ -309,6 +373,24 @@ public sealed class NumericPayload
     public long[] SignedValues { get; set; } = [];
     public List<decimal> DecimalValues { get; set; } = [];
     public Dictionary<string, ulong> ByName { get; set; } = [];
+    public List<ProjectionRecord> ProjectionRecords { get; set; } = [];
+}
+
+public abstract record ProjectionRecordBase(long Signed);
+public sealed record ProjectionRecord(long Signed, [property: MagicName("stored_label")] string Label,
+    ProjectionMeasure Measure) : ProjectionRecordBase(Signed)
+{
+    public string Mutable { get; set; } = "";
+}
+public readonly record struct ProjectionMeasure(ulong Unsigned, decimal Amount);
+
+public sealed class ProjectionIntConverter : JsonConverter<int>
+{
+    public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        int.Parse(reader.GetString()!.AsSpan(1), System.Globalization.CultureInfo.InvariantCulture);
+
+    public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options) =>
+        writer.WriteStringValue("p" + value.ToString(System.Globalization.CultureInfo.InvariantCulture));
 }
 
 public sealed class NumericValueRecord : MagicTableTool<NumericValueRecord>, IMagicTable<NumericRepository>
@@ -321,6 +403,9 @@ public sealed class NumericValueRecord : MagicTableTool<NumericValueRecord>, IMa
     [MagicIndex] public NumericLongStatus SignedStatus { get; set; }
     [MagicIndex] public NumericUnsignedStatus UnsignedStatus { get; set; }
     public NumericPayload Nested { get; set; } = new();
+    [JsonConverter(typeof(ProjectionIntConverter))]
+    [MagicStorageCodec("projection-int-prefix", 1)]
+    public int Converted { get; set; }
     public NumericRepository Databases { get; } = new();
     public IndexedDbSet GetDefaultDatabase() => NumericRepository.Lossless;
     public string GetTableName() => nameof(NumericValueRecord);

@@ -59,6 +59,19 @@ The cursor skips a row when it cannot evaluate the predicate because a required 
 
 One field inside a compound primary key is not independently orderable merely because it participates in that compound key. Ordering by such a component uses the cursor unless a standalone ordinary or unique index exists for the property.
 
+### Projected queries
+
+The planner carries the requested fields into execution. A native branch can
+traverse index keys and primary keys without loading record values if they cover
+both the result and any remaining filter conditions. Explicit `Cursor(...)`
+uses the record cursor even for an unfiltered primary-key-only projection.
+Key-only execution never
+adds a secondary index to a scan that would omit null, missing, or unindexable
+rows. An uncovered branch reads records and retains the selected fields and
+primary-key identity for deduplication. A projected cursor can retain its output
+during predicate evaluation, then apply ordering and pagination without fetching
+the selected records a second time.
+
 ## 7. Result transport
 
 `ToListAsync()` collects the query into a list and applies the requested ordering.

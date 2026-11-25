@@ -6,7 +6,9 @@ PR: https://github.com/magiccodingman/Magic.IndexedDb/pull/147
 
 Branch: `feat/v3-managed-migrations`, based on the repository's default branch
 `master` at `b8036f2` (including the recent correctness, encryption, and lossless
-numeric work). This is a development preview for the next major release:
+numeric work), then merged with `5acef19` to include the subsequently merged
+projection/record-DTO work from PR #145. Its custom converter fixture explicitly
+declares the new versioned storage codec. This is a development preview for the next major release:
 `Magic.IndexedDb` and `Magic.IndexedDb.Cli` use `3.0.0-preview.1`; protocol v1 and
 application revisions are independent. Stable release is intended to be 3.0.0 after
 acceptance. The PR is deliberately draft until local browser/application validation

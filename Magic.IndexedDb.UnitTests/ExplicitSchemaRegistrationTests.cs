@@ -4,6 +4,7 @@ using Magic.IndexedDb.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using TestBase.Models;
+using TestBase.Numeric;
 using TestBase.Repository;
 
 namespace Magic.IndexedDb.UnitTests;
@@ -47,6 +48,37 @@ public sealed class ExplicitSchemaRegistrationTests
         var employee = runtime.CreatedDatabases.Single(database => database.GetProperty("name").GetString() == "Employee");
         CollectionAssert.AreEqual(new[] { "Person" }, employee.GetProperty("storeSchemas").EnumerateArray()
             .Select(schema => schema.GetProperty("tableName").GetString()).ToArray());
+        Assert.AreEqual(2, runtime.CreatedDatabases.Count);
+    }
+
+    [TestMethod]
+    public async Task NumericProjectionFixture_AllowsUnrelatedDatabaseStartupAndExportsItsConverterContract()
+    {
+        var runtime = new RecordingJsRuntime();
+        var services = new ServiceCollection().AddSingleton<IJSRuntime>(runtime);
+        services.AddMagicBlazorDB(BlazorInteropMode.WASM, false,
+            [typeof(Person), typeof(NumericValueRecord)], [typeof(IndexDbContext), typeof(NumericRepository)]);
+        services.AddMagicIndexedDbNumericStorage(new MagicNumericStorageOptions(NumericRepository.Lossless.DatabaseName));
+        await using var provider = services.BuildServiceProvider();
+        var db = provider.GetRequiredService<IMagicIndexedDb>();
+
+        // The first query resolves all registered models. A new unversioned
+        // converter in the shared fixture must fail this test even when its own
+        // database has not been requested yet.
+        await db.Query<Person>();
+        Assert.AreEqual("Client", runtime.CreatedDatabases.Single().GetProperty("name").GetString());
+
+        var query = await db.Query<NumericValueRecord>();
+        Assert.AreEqual(NumericRepository.Lossless.DatabaseName, query.DatabaseName);
+        var numeric = runtime.CreatedDatabases.Single(database =>
+            database.GetProperty("migrationSchema").GetProperty("schemaId").GetString() == NumericRepository.Lossless.SchemaId);
+        var schema = numeric.GetProperty("migrationSchema");
+        Assert.AreEqual("lossless-v1", schema.GetProperty("numericFormat").GetString());
+        var fields = schema.GetProperty("stores").EnumerateArray()
+            .Single(store => store.GetProperty("name").GetString() == nameof(NumericValueRecord))
+            .GetProperty("fields").EnumerateArray().ToDictionary(field => field.GetProperty("name").GetString()!);
+        Assert.AreEqual("custom", fields[nameof(NumericValueRecord.Converted)].GetProperty("type").GetString());
+        Assert.AreEqual("projection-int-prefix:1", fields[nameof(NumericValueRecord.Converted)].GetProperty("codec").GetString());
         Assert.AreEqual(2, runtime.CreatedDatabases.Count);
     }
 
@@ -190,6 +222,11 @@ public sealed class ExplicitSchemaRegistrationTests
                 case IndexedDbFunctions.CLOSE_ALL:
                     return default!;
                 case "JsHandler":
+                    if ((string)args![2]! == IndexedDbFunctions.CREATE_LEGACY)
+                    {
+                        CreatedDatabases.Add(((JsonElement)((object[])args[3]!)[0]).Clone());
+                        return (T)(object)true;
+                    }
                     Assert.AreEqual(IndexedDbFunctions.COUNT_TABLE, (string)args![2]!);
                     CountedDatabases.Add((string)((object[])args[3]!)[0]);
                     return (T)(object)0;

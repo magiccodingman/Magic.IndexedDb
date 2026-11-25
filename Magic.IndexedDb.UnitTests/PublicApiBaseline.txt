@@ -301,6 +301,11 @@ class Magic.IndexedDb.MagicNumericStorageOptions : System.IEquatable<Magic.Index
   method System.Void Deconstruct(out System.String DatabaseName, out Magic.IndexedDb.MagicNumericStorageMode Mode)
   property Magic.IndexedDb.MagicNumericStorageMode Mode { get; set; }
   property System.String DatabaseName { get; set; }
+class Magic.IndexedDb.MagicProjectedQuery<TResult>
+  method System.Collections.Generic.IAsyncEnumerable<TResult> AsAsyncEnumerable(System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<System.Collections.Generic.List<TResult>> ToListAsync(System.Threading.CancellationToken cancellationToken = null)
+static class Magic.IndexedDb.MagicProjectionExtensions
+  method static Magic.IndexedDb.MagicProjectedQuery<TResult> Select<T, TResult>(Magic.IndexedDb.IMagicExecute<T> source, System.Linq.Expressions.Expression<System.Func<T, TResult>> selector)
 class Magic.IndexedDb.MagicTableTool<T>
   ctor Magic.IndexedDb.MagicTableTool<T>()
 class Magic.IndexedDb.MagicUniqueIndexAttribute : Magic.IndexedDb.Interfaces.IColumnNamed, System.Attribute

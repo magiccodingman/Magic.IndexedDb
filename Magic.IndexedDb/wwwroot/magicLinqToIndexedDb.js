@@ -27,7 +27,7 @@ export async function magicQueryAsync(db, table, universalSerializedPredicate,
 }
 
 export async function* magicQueryYield(db, table, universalSerializedPredicate,
-    queryAdditions = [], forceCursor = false) {
+    queryAdditions = [], forceCursor = false, projection = null) {
 
     if (!table || !(table instanceof table.constructor)) {
         throw new Error("A valid Dexie table instance must be provided.");
@@ -54,6 +54,9 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
 
     let indexCache = buildIndexMetadata(table);
     let primaryKeys = [...indexCache.compoundKeys];
+    const output = projection ? record => selectFields(record, projection) : record => record;
+    const retainedFields = projection ? [...new Set([...projection, ...primaryKeys])] : null;
+    const retain = retainedFields ? record => selectFields(record, retainedFields) : null;
 
     const explicitOrder = queryAdditions.find(addition =>
         addition.additionFunction === QUERY_ADDITIONS.ORDER_BY ||
@@ -84,6 +87,22 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
 
     if (isFilterEmpty) {
         debugLog("No filtering or query additions. Fetching entire table.");
+        if (projection) {
+            const primary = indexFields(table.schema.primKey);
+            if (!forceCursor && covers(primary, projection)) {
+                const keys = await table.toCollection().primaryKeys();
+                traceQueryPlannerStage("projection-execution", { strategy: "index-covered", fullRecordReads: 0 });
+                for (const key of keys) yield output(keyRecord(primary, key));
+            } else {
+                const rows = [];
+                await table.each(record => rows.push(output(record)));
+                traceQueryPlannerStage("projection-execution", {
+                    strategy: "record", source: "cursor", fullRecordReads: rows.length
+                });
+                yield* rows;
+            }
+            return;
+        }
         let allRecords = await table.toArray();
 
         while (allRecords.length > 0) {
@@ -123,7 +142,7 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
         });
 
         let results = await runIndexedQueries(db, table, allOptimizedQueries,
-            queryAdditions, primaryKeys, yieldedPrimaryKeys);
+            queryAdditions, primaryKeys, yieldedPrimaryKeys, projection, retain);
 
         traceQueryPlannerStage("indexed-execution-result", {
             resultCount: results.length
@@ -131,7 +150,7 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
 
         while (results.length > 0) {
             let record = results.shift();
-            yield record;
+            yield output(record);
         }
     }
 
@@ -142,7 +161,8 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
             queryAdditions: (queryAdditions || []).map(addition => addition.additionFunction)
         });
 
-        let cursorResults = await runCursorQuery(db, table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys);
+        let cursorResults = await runCursorQuery(db, table, cursorConditions, queryAdditions, yieldedPrimaryKeys, primaryKeys, retain);
+        if (projection) traceQueryPlannerStage("projection-execution", { strategy: "record", source: "cursor" });
         debugLog("Cursor Query Results Count", { count: cursorResults.length });
 
         traceQueryPlannerStage("cursor-execution-result", {
@@ -155,10 +175,49 @@ export async function* magicQueryYield(db, table, universalSerializedPredicate,
 
             if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                 addYieldedKey(yieldedPrimaryKeys, recordKey);
-                yield record;
+                yield output(record);
             }
         }
     }
+}
+
+export function selectFields(record, fields) {
+    return Object.fromEntries(fields.filter(field => Object.hasOwn(record, field))
+        .map(field => [field, record[field]]));
+}
+
+function indexFields(index) {
+    if (!index || index.multi || !index.keyPath) return [];
+    return Array.isArray(index.keyPath) ? index.keyPath : [index.keyPath];
+}
+
+function covers(fields, projection) {
+    return projection.every(field => typeof field === "string" && fields.includes(field) && !field.includes("."));
+}
+
+function keyRecord(fields, key) {
+    const values = fields.length > 1 ? key : [key];
+    return Object.fromEntries(fields.map((field, position) => [field, values[position]]));
+}
+
+function coveredIndex(table, conditions, additions, projection) {
+    if (!projection || additions.some(addition =>
+        [QUERY_ADDITIONS.FIRST, QUERY_ADDITIONS.LAST].includes(addition.additionFunction))) return null;
+
+    const [condition, ...residual] = conditions;
+    if (residual.length && requiresQueryAdditions(additions)) return null;
+    const primary = indexFields(table.schema.primKey);
+    const order = condition.value === -Infinity && additions.find(addition =>
+        addition.additionFunction === QUERY_ADDITIONS.ORDER_BY ||
+        addition.additionFunction === QUERY_ADDITIONS.ORDER_BY_DESCENDING);
+    const path = order?.property || condition.properties || condition.property;
+    const physical = Array.isArray(path) ? `[${path.join("+")}]` : path;
+    const source = table.schema.indexes.find(index => index.name === physical) ??
+        (JSON.stringify(table.schema.primKey.keyPath) === JSON.stringify(path) ? table.schema.primKey : null);
+    const fields = indexFields(source);
+    return primary.length && fields.length &&
+        covers([...fields, ...primary], [...projection, ...residual.map(item => item.property)])
+        ? { fields, primary, residual } : null;
 }
 
 function hasStableOrdering(queryAdditions) {
@@ -177,7 +236,7 @@ function summarizePhysicalQueries(queries) {
 }
 
 async function runIndexedQueries(db, table, universalQueries,
-    queryAdditions, primaryKeys, yieldedPrimaryKeys) {
+    queryAdditions, primaryKeys, yieldedPrimaryKeys, projection, retain) {
     if (universalQueries.length === 0) {
         debugLog("No indexed conditions provided, returning entire table.");
         return await table.toArray();
@@ -186,15 +245,32 @@ async function runIndexedQueries(db, table, universalQueries,
     let queries = [];
 
     for (let query of universalQueries) {
-        let q = runIndexedQuery(table, query, queryAdditions);
-        queries.push(q);
+        const coverage = coveredIndex(table, query, queryAdditions, projection);
+        queries.push({ q: runIndexedQuery(table, query, queryAdditions, Boolean(coverage)), coverage });
     }
 
     let finalResults = [];
 
     await Promise.all(
-        queries.map(async (q) => {
+        queries.map(async ({ q, coverage }) => {
             await db.transaction('r', table, async () => {
+                if (coverage && !(q instanceof Promise)) {
+                    await q.eachKey((key, cursor) => {
+                        const pk = cursor.primaryKey;
+                        const record = {
+                            ...keyRecord(coverage.fields, key), ...keyRecord(coverage.primary, pk)
+                        };
+                        const recordKey = normalizeCompoundKey(primaryKeys, record);
+                        if (!hasYieldedKey(yieldedPrimaryKeys, recordKey) &&
+                            coverage.residual.every(condition => matchesIndexedCondition(record, condition))) {
+                            addYieldedKey(yieldedPrimaryKeys, recordKey);
+                            finalResults.push(retain(record));
+                        }
+                    });
+                    traceQueryPlannerStage("projection-execution", { strategy: "index-covered", fullRecordReads: 0 });
+                    return;
+                }
+                if (projection) traceQueryPlannerStage("projection-execution", { strategy: "record", source: "indexed" });
                 if (q instanceof Promise) {
                     let record = await q;
 
@@ -202,7 +278,7 @@ async function runIndexedQueries(db, table, universalQueries,
                         let recordKey = normalizeCompoundKey(primaryKeys, record);
                         if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                             addYieldedKey(yieldedPrimaryKeys, recordKey);
-                            finalResults.push(record);
+                            finalResults.push(retain ? retain(record) : record);
                         }
                     }
                 }
@@ -211,7 +287,7 @@ async function runIndexedQueries(db, table, universalQueries,
                         let recordKey = normalizeCompoundKey(primaryKeys, record);
                         if (!hasYieldedKey(yieldedPrimaryKeys, recordKey)) {
                             addYieldedKey(yieldedPrimaryKeys, recordKey);
-                            finalResults.push(record);
+                            finalResults.push(retain ? retain(record) : record);
                         }
                     });
                 }
@@ -226,7 +302,7 @@ async function runIndexedQueries(db, table, universalQueries,
  * Executes one logical indexed branch. The first condition is the physical index
  * candidate; any remaining conditions are residual predicates of the same AND branch.
  */
-function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
+function runIndexedQuery(table, indexedConditions, queryAdditions = [], keysOnly = false) {
     debugLog("Executing runIndexedQuery", { indexedConditions, queryAdditions });
 
     if (!Array.isArray(indexedConditions) || indexedConditions.length === 0) {
@@ -319,7 +395,7 @@ function runIndexedQuery(table, indexedConditions, queryAdditions = []) {
     // Do not turn an AND branch into several independent indexed queries. Use the
     // selected index to produce candidates, then enforce every residual condition.
     const residualConditions = indexedConditions.slice(1);
-    if (residualConditions.length > 0) {
+    if (!keysOnly && residualConditions.length > 0) {
         query = query.filter(record =>
             residualConditions.every(condition => matchesIndexedCondition(record, condition)));
     }

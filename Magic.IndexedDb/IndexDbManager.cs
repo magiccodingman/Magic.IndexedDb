@@ -299,6 +299,36 @@ internal class IndexedDbManager
         }
     }
 
+    internal async Task<JsonElement[]> ProjectAsync<T>(MagicQuery<T> query, string[] fields,
+        CancellationToken token) where T : class
+    {
+        var rows = await Invocation(query.DatabaseName).CallJsAsync<JsonElement[]>(
+            Cache.MagicDbJsImportPath, "projectRecords", token, ProjectionArguments(query, fields));
+        _lifetime.ThrowIfCancellationRequested();
+        return rows ?? [];
+    }
+
+    internal async IAsyncEnumerable<JsonElement> ProjectStreamAsync<T>(MagicQuery<T> query, string[] fields,
+        [EnumeratorCancellation] CancellationToken token) where T : class
+    {
+        await foreach (var row in Invocation(query.DatabaseName).CallYieldJsAsync<JsonElement>(
+            Cache.MagicDbJsImportPath, "projectRecordStream", token, ProjectionArguments(query, fields)))
+        {
+            _lifetime.ThrowIfCancellationRequested();
+            yield return row;
+        }
+    }
+
+    private ITypedArgument[] ProjectionArguments<T>(MagicQuery<T> query, string[] fields) where T : class =>
+    [
+        new TypedArgument<string>(Route(query.DatabaseName)),
+        new TypedArgument<string>(query.SchemaName),
+        new TypedArgument<FilterNode>(new LinqTranslation.Extensions.MagicQueryExtensions<T>(query).GetCollectedBinaryJsonExpressions()),
+        new TypedArgument<List<StoredMagicQuery>>(query.StoredMagicQueries),
+        new TypedArgument<bool>(query.ForceCursorMode),
+        new TypedArgument<string[]>(fields)
+    ];
+
     internal async Task<JsonElement[]> ProjectPublicAsync<T>(MagicQuery<T> query, FilterNode predicate,
         string member, CancellationToken token) where T : class
     {
