@@ -91,7 +91,10 @@ PROPS
         for mode in "${modes[@]}"; do
             local aot=false
             if [[ "$mode" == aot ]]; then aot=true; fi
+            # Wasm SDK intermediates include native/AOT runtime artifacts. Never
+            # let an interpreted publish reuse a previous AOT configuration.
             dotnet publish "$path/App/App.csproj" -c Release -o "$out/published/$mode/$contract$1" \
+                --artifacts-path "$out/app-build/$mode/$contract$1" \
                 -p:RunAOTCompilation="$aot" -p:PublishTrimmed=true
         done
     }
