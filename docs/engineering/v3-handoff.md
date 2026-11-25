@@ -15,7 +15,7 @@ acceptance. The PR is deliberately draft until local browser/application validat
 and remaining release decisions are complete.
 
 The user authorized implementation, documentation, tests, and a PR. They did not ask
-to merge or publish packages. They will configure the separate CLI NuGet publisher.
+to merge or publish packages. The release workflow uses the existing trusted publisher for both packages.
 
 ## Implemented boundaries
 
@@ -88,7 +88,7 @@ remain unverified.
   later revision cannot recover the interrupted edge. Keep resumable support in
   preview and hold stable release pending review of the explicit recovery contract.
 - Keep the preview PR draft. The maintainer owns final release and separate
-  CLI publisher configuration.
+  verification of the trusted publisher scopes.
 
 ## Required response for peer review
 

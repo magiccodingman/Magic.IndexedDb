@@ -179,6 +179,5 @@ Custom transforms should have no external side effects and should cooperate
 with the signal when possible.
 
 The release workflow calls `validate-migrations.yml` as a required dependency of
-the existing NuGet publish job. CLI publication itself remains a separately
-configured release task; this change neither supplies publishing credentials nor
-publishes a package from a PR.
+the existing NuGet publish job. The release job uses one trusted login for both packages.
+The NuGet policy must allow the CLI package ID and its first publication.
