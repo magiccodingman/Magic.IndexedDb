@@ -16,6 +16,9 @@ public sealed record MagicMigrationEvent
     public int? Revision { get; init; }
     public int? TargetRevision { get; init; }
     public string? MigrationId { get; init; }
+    public string? RecoveryId { get; init; }
+    public string? RecoveryPhase { get; init; }
+    public long? VerifiedRecords { get; init; }
     public long? ProcessedRecords { get; init; }
     public string? DocumentationUrl { get; init; }
     /// <summary>Future metadata fields are preserved without changing this event contract.</summary>

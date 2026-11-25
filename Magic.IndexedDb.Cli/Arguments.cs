@@ -3,7 +3,7 @@ namespace Magic.IndexedDb.Cli;
 internal sealed class Arguments
 {
     private static readonly HashSet<string> Switches = ["all", "empty", "json", "non-interactive", "history-only", "acknowledge-data-contract", "help", "version"];
-    private static readonly HashSet<string> Values = ["schema", "project", "database", "directory", "output", "framework", "configuration", "legacy-schema", "revision", "id", "mode", "runner"];
+    private static readonly HashSet<string> Values = ["schema", "project", "database", "directory", "output", "framework", "configuration", "legacy-schema", "revision", "id", "mode", "runner", "module"];
     private readonly Dictionary<string, string?> options = new(StringComparer.Ordinal);
     public List<string> Positionals { get; } = [];
 

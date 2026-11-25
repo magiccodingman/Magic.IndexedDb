@@ -28,6 +28,10 @@ export async function inspectMigration(name) {
     return (await getModule("./migrations/migrationEngine.js")).inspectDatabase(name);
 }
 
+export async function recoverMigration(options) {
+    return (await getModule("./magicDB.js")).recoverMigration(options);
+}
+
 export async function cancelMigration(name) {
     (await getModule("./magicDB.js")).cancelMigration(name);
 }

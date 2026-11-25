@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Magic.IndexedDb.Cli;
 
-internal sealed class MigrationWorkspace(string directory, string schemaId)
+internal sealed partial class MigrationWorkspace(string directory, string schemaId)
 {
     internal string SchemaId { get; } = Protocol.Identifier(schemaId, "schemaId");
     internal string Root { get; } = Path.Combine(Path.GetFullPath(directory), Protocol.Identifier(schemaId, "schemaId"));
@@ -189,6 +189,13 @@ internal sealed class MigrationWorkspace(string directory, string schemaId)
             ["migrations"] = migrationReferences,
             ["baselines"] = new JsonArray(baselineReferences.OrderBy(node => Protocol.Text(Protocol.Object(node, "baseline"), "id"), StringComparer.Ordinal).Select(node => node!.DeepClone()).ToArray())
         };
+        var recoveries = ValidateRecoveries(history, schemas, migrationReferences, assets);
+        if (recoveries.Count != 0)
+        {
+            manifest["protocolVersion"] = 2;
+            Protocol.Array(manifest, "requiredCapabilities").Add("resumableRepairV1");
+            manifest["recoveries"] = recoveries;
+        }
         VerifyPublishedLock(assets, manifest);
         return new(target, schemas[target], schemas, assets, manifest);
     }
@@ -316,8 +323,11 @@ internal sealed class MigrationWorkspace(string directory, string schemaId)
         var previous = Protocol.Object(published["manifest"], "published manifest");
         if (Protocol.Integer(previous, "targetRevision") > Protocol.Integer(manifest, "targetRevision"))
             throw new CliException("MAGDB4301", "Published targetRevision cannot be rolled back.");
-        foreach (var kind in new[] { "schemas", "migrations", "baselines" })
+        foreach (var kind in new[] { "schemas", "migrations", "baselines", "recoveries" })
         {
+            if (kind == "recoveries" && !previous.ContainsKey(kind)) continue;
+            if (!manifest.ContainsKey(kind))
+                throw new CliException("MAGDB4301", $"Previously published {kind} references cannot be removed.");
             var key = kind == "schemas" ? "revision" : "id";
             var current = Protocol.Array(manifest, kind);
             foreach (var node in Protocol.Array(previous, kind))

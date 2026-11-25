@@ -111,9 +111,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     {
         var definitionName = resolved.Definition.DatabaseName;
         var route = PhysicalRoute(definitionName, instanceName);
-        var identity = MagicSchemaJson.Fingerprint(resolved.Schema) + "|" + resolved.Definition.ManifestUrl;
-        if (_instanceBindings.GetOrAdd(route, identity) != identity)
-            throw new MagicSchemaException("MAGDB3022", "This physical instance is already bound to another schema or manifest.");
+        BindInstance(resolved, route);
         var initialization = _readiness.GetOrAdd(route, _ => new Lazy<Task>(() => CreateDatabaseAsync(resolved, instanceName), true));
         try { await initialization.Value; }
         catch
@@ -122,6 +120,36 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
             _readiness.TryRemove(new KeyValuePair<string, Lazy<Task>>(route, initialization));
             throw;
         }
+    }
+
+    private void BindInstance(ResolvedMagicDatabase definition, string route)
+    {
+        var identity = MagicSchemaJson.Fingerprint(definition.Schema) + "|" + definition.Definition.ManifestUrl;
+        if (_instanceBindings.GetOrAdd(route, identity) != identity)
+            throw new MagicSchemaException("MAGDB3022", "This physical instance is already bound to another schema or manifest.");
+    }
+
+    private async Task<JsonElement> RecoverMigrationAsync(ResolvedMagicDatabase definition, string route,
+        string recoveryId, string sha256, CancellationToken cancellationToken)
+    {
+        var js = _jsModule;
+        ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
+        if (_encryption.ContainsKey(definition.Definition.DatabaseName) || definition.Definition.ManifestUrl is null)
+            throw new InvalidOperationException("Recovery requires an unprotected database with a pinned migration manifest.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(recoveryId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sha256);
+        cancellationToken.ThrowIfCancellationRequested();
+        BindInstance(definition, route);
+        var module = await js.Value.WaitAsync(cancellationToken);
+        var options = new JsonObject
+        {
+            ["name"] = route,
+            ["schema"] = JsonNode.Parse(MagicSchemaJson.Serialize(definition.Schema)),
+            ["manifestUrl"] = definition.Definition.ManifestUrl,
+            ["recovery"] = new JsonObject { ["id"] = recoveryId, ["sha256"] = sha256 }
+        };
+        return await module.InvokeAsync<JsonElement>("recoverMigration", cancellationToken,
+            JsonSerializer.SerializeToElement(options));
     }
 
     private async Task CreateDatabaseAsync(ResolvedMagicDatabase resolved, string instanceName)
@@ -425,7 +453,8 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
             () => EnsureDatabaseAsync(definition, instanceName),
             () => _readiness.TryRemove(route, out _),
             async token => await (await _jsModule!.Value).InvokeAsync<JsonElement?>("inspectMigration", token, physicalName),
-            async () => await (await _jsModule!.Value).InvokeVoidAsync("cancelMigration", route));
+            async () => await (await _jsModule!.Value).InvokeVoidAsync("cancelMigration", route),
+            (id, hash, token) => RecoverMigrationAsync(definition, route, id, hash, token));
     }
 
     public async Task<IAsyncDisposable> ObserveMigrationsAsync(Func<MagicMigrationEvent, ValueTask> observer,

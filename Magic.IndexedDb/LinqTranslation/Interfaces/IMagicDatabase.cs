@@ -19,4 +19,7 @@ public interface IMagicDatabaseScoped
     Task RetryMigrationAsync(CancellationToken cancellationToken = default);
     /// <summary>Cancels this tab's pending migration at a safe transaction boundary.</summary>
     Task CancelMigrationAsync();
+    /// <summary>Explicitly executes a manifest-approved recovery, returning its outcome and committed revision.</summary>
+    /// <remarks>The token cancels the .NET wait. Use CancelMigrationAsync to cancel browser work.</remarks>
+    Task<JsonElement> RecoverMigrationAsync(string recoveryId, string sha256, CancellationToken cancellationToken = default);
 }

@@ -43,8 +43,9 @@ Do not describe these as supported or bypass their guards to get a test green:
    Existing protected CRUD is retained. Supplying a protected migration manifest fails.
 2. Resumable key-changing migrations, structural staging/swap, cross-database movement,
    numeric codec conversion, and automatic downgrade/rollback are unsupported.
-3. There is no generic repair operation that replaces a partially executed resumable
-   migration with different code. The original hash is required to resume. Review the proposed emergency repair contract before stable release.
+3. Explicit recovery handles one interrupted same-codec transform. Other
+   topologies and a second repair of an unsuccessful recovery remain unsupported.
+   The original edge and all approved recovery bindings remain immutable.
 4. Fresh bootstrap creates schema only, with no historical data/seed hook replay.
    History pruning/compaction needs an explicit future retention contract.
 5. The CLI's project input is an opt-in executable exporter, not arbitrary Roslyn
@@ -65,14 +66,18 @@ The next validation gate runs the released-package fixture on Chromium, Firefox,
 Linux WebKit and macOS WebKit. One published artifact set is reused across those
 jobs. Each job requires all seven historical packages to adopt, advance through
 the CLI-produced revision 2 and reopen in trimmed and AOT Blazor builds. Each
-mode also runs the two legacy writer cutover cases. Reports identify the source
+mode also runs two legacy writer cutover cases and the CLI-authored Blazor
+recovery case. Reports identify the source
 SHA, actual engine and host versions, and execution counts. Refer to the current
 PR check runs for exact-head outcomes and downloadable artifacts. The same
 workflow is a prerequisite for the release publisher.
 
 The [testing guide](../contributing/migration-testing.md) gives local commands
 for both standalone and CLI-configured protocol runs and for the released
-packages. The quota case injects a quota failure inside a real IndexedDB
+packages. The portable recovery suite tests an actual pinned v1 engine alongside the current
+runner. The release gate also requires canceled/resumed recovery through Blazor,
+inspection, disposed observation, and an ordinary migration to a later target.
+The quota case injects a quota failure inside a real IndexedDB
 transaction. The service-worker test controls which exact assets are served
 from Cache Storage. The bridge covers a loaded tab and worker while offline.
 Real disk exhaustion and production PWA install, activation and cache rollout
@@ -83,10 +88,10 @@ remain unverified.
 - Review the [application-owned cutover](../guides/legacy-writer-cutover.md).
   Previously shipped uncooperative clients can write after adoption. A final
   2.x bridge helps installations where every active writer receives and honors it.
-- Review the [partial recovery proposal](../architecture/adr-partial-migration-recovery.md).
-  A deterministic hook failure now calls for developer intervention. An ordinary
-  later revision cannot recover the interrupted edge. Keep resumable support in
-  preview and hold stable release pending review of the explicit recovery contract.
+- Review the [implemented bounded recovery contract](../architecture/adr-partial-migration-recovery.md).
+  A deterministic failure requires developer intervention and an explicitly
+  approved package. An ordinary later revision starts only after recovery commits.
+  Keep resumable and recovery support in preview pending implementation acceptance.
 - Keep the preview PR draft. The maintainer owns final release and separate
   verification of the trusted publisher scopes.
 

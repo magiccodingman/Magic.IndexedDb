@@ -1,56 +1,84 @@
-# ADR proposal for recovery from a partially committed migration
+# Recovery from a partially committed migration
 
-**Status** Proposed. Resumable migration stays in preview. Stable acceptance requires review of this contract and passing acceptance evidence. This PR changes failure diagnostics and retains the existing guards.
+**Status** Implemented in the 3.0 preview for the bounded topology below. Stable
+acceptance requires implementation review and application-specific rollout evidence.
 
-## Decision
+## Boundary
 
-Provide explicit recovery of one interrupted resumable edge, under a separately identified and pinned recovery package. First implementation supports an unprotected, same-codec, data-only edge consisting of one primary-key-preserving transform on one store. A multi-operation edge, changed key/index, encrypted policy, or unavailable original package requires application support outside this capability. Ordinary later revisions cannot run until the interrupted edge reaches a verified target.
+An application explicitly selects an approved recovery for one interrupted
+resumable custom transform on one unprotected store. The original edge preserves
+native layout, primary keys, numeric format and existing field representations.
+Unrelated store contracts must match. A package may handle added or removed fields
+on the affected store. Structural work, multiple operations, protection or codec
+changes require another recovery strategy.
 
-The application supplies deterministic repair and verification functions and decides which package may execute. The engine owns the snapshot boundary, all cursors and transactions, readiness, lineage, and error reporting. Recovery does not undo old writes on its own.
+The application supplies deterministic repair and verification functions. The
+engine owns native cursors, transactions, checkpoints, readiness and lineage.
+Application hooks must avoid external side effects. If required original
+information was lost, the repair or verifier must fail and leave access blocked.
+Retain the database and use application-specific support or export. Ordinary
+later revisions cannot rescue a still-interrupted edge.
 
-## Package and journal
+## Versions and immutable assets
 
-This illustrates the neutral document, with abbreviated digest values. A production package uses full exact-byte SHA-256 references and a reviewed immutable release. Target manifest and module origins follow the ordinary deployment rules.
+Existing schema and migration documents remain protocol **1**. A manifest with
+recoveries is protocol **2** and requires `resumableRepairV1`. It keeps the
+original schema and migration reference arrays intact and adds bindings:
+
+```json
+{
+  "id": "repair-0021-invoice-tax",
+  "fromRevision": 20,
+  "path": "recoveries/repair-0021-invoice-tax/recovery.json",
+  "sha256": "sha256:…"
+}
+```
+
+There is one approved binding per original edge. The manifest, pinned by the
+application, gives the recovery document's URL. The explicit request supplies
+its ID and exact digest, never an alternate URL or private checkpoint. The
+canonical recovery document is protocol **2**:
 
 ```json
 {
   "protocolVersion": 2,
-  "requiredCapabilities": ["resumableRepairV1"],
-  "recoveryId": "repair-0021-invoice-tax",
+  "id": "repair-0021-invoice-tax",
   "schemaId": "invoices",
   "source": {
-    "committedRevision": 20,
-    "committedSchemaHash": "sha256:…",
-    "interruptedMigrationId": "0021_ApplyTax",
-    "interruptedMigrationHash": "sha256:…",
-    "operationIndex": 0
+    "revision": 20,
+    "schemaHash": "sha256:…",
+    "migrationId": "0021_ApplyTax",
+    "migrationHash": "sha256:…"
   },
   "target": { "revision": 21, "schemaHash": "sha256:…" },
-  "originalManifest": { "path": "./release-0021/manifest.json", "sha256": "sha256:…" },
-  "module": {
-    "path": "./repair-invoice-tax.mjs",
-    "sha256": "sha256:…",
-    "repairProcessed": "repairProcessed",
-    "repairUnprocessed": "repairUnprocessed",
-    "verify": "verify"
-  }
+  "operation": { "index": 0, "store": "invoices" },
+  "module": { "path": "repair.mjs", "sha256": "sha256:…" }
 }
 ```
 
-A deployment pins the recovery document itself by URL and exact digest. Before any mutation, the engine verifies the original manifest/schema/edge/module, normal history, recovery identity, target fingerprint and capabilities, and the interrupted operation. The package cannot supply a replacement checkpoint or override the original digest. Original bytes and normal history stay publishable and immutable.
+The module exports `repairProcessed`, `repairUnprocessed`, and `verify`.
+Digests are full SHA-256 values in published assets. The engine verifies the
+original edge, models, original module bytes, approved descriptor, and repair
+module before admission. The original module is retained without evaluating or
+re-running it as part of recovery. The CLI seals recovery assets and bindings
+using the same publication lock as original history.
 
-The existing native checkpoint determines each row's partition. The inclusive prefix has already run the original transform. The suffix, strictly greater than the native key, has not committed it. An empty checkpoint means the prefix is empty. The engine uses native IndexedDB ordering, preserves original primary keys, and never publishes the checkpoint key. Both functions must produce records satisfying the **original target**; if old transformed data cannot be repaired from its persisted inputs, the application needs a different recovery strategy. Recovery V1 does not retarget a revision or represent a rollback.
+## Journal and transactions
 
-| State | Transition and durable result |
+A v1 journal retains its existing meaning even under a v2 manifest. Recovery
+admission bumps the native database version and writes a **v2** journal with
+status `recovering`, the original `active` checkpoint and a separate
+`recovery` checkpoint. A v1 engine rejects a v2 journal. A cooperating handle
+that was already open detects the native version change.
+
+| State | Durable action |
 | --- | --- |
-| `migrating` at revision 20 | Under the ordinary per-database exclusive lock, verify the expected journal and native version in a transaction. Admit only an explicitly requested matching package. Bump native version and atomically record `recovering`, original checkpoint and immutable recovery digest. Cooperating clients close on version change. |
-| `recovering` | Scan by primary key, using the original boundary to select the handler. Write transformed rows and the recovery cursor together. After crash or cancellation, the exact recovery package resumes after the recovery cursor. The original checkpoint and prior history remain intact. |
-| `recovering`, all rows written | Run a checkpointed verification scan against the target contract and app verifier under the same readiness barrier. Stay blocked if verification fails. Final commit revalidates the starting history, recovery checkpoint and target layout before publishing readiness. |
-| `ready` at revision 21 | Append the original edge and digest with a distinct recovery outcome and the recovery ID and digest. Future engines verify both against the deployment's immutable bindings. The old journal evidence is preserved privately with key-redacted public summaries. |
-| Original edge already complete | Return `AlreadyCompletedOriginal`, write nothing and do not run repair handlers. This package cannot undo the completed edge. A later normal revision may normalize both successful outcomes if the application requires it. |
-| Recovery already complete | The same ID and digest returns `AlreadyRecovered`. A different recovery package, different branch or unsupported topology is rejected before writes. |
+| `migrating` at the committed revision | Verify the source journal, installed layout and numeric policy, then admit only the requested approved binding. |
+| `recovering`, `repair` phase | Preserve the original boundary. The inclusive prefix calls `repairProcessed` and the untouched suffix calls `repairUnprocessed`. An empty boundary means the entire store is unprocessed. An exhausted original cursor means all records were processed. The engine validates native key/count consistency and commits batch records and progress in one transaction. |
+| `recovering`, `verify` phase | Scan the entire store again using a separate cursor and require the verifier to return exactly `true` for each row. Business verification belongs to the application. The engine validates progress, keys, layout, numeric policy and journal identity. |
+| `ready` at the original edge target | Commit readiness and append a recovered outcome retaining the original edge digest. Keep the original and recovery checkpoints in a private audit record. Future manifests must retain the approved binding. Later ordinary writes to the journal keep format v2 and the recovered outcome. |
 
-Example history entry after recovery:
+For example, recovered history contains:
 
 ```json
 {
@@ -61,34 +89,48 @@ Example history entry after recovery:
 }
 ```
 
-A protocol-version bump for recovered journals and the native version change are required so earlier managed adapters fail readiness. A recovery-aware deployment learns the retained approved edge/recovery bindings through its static manifest. Ordinary opens never select a repair automatically. Raw writes by uncooperative same-origin code remain an application deployment boundary.
+Cancellation, hook failures and transaction failures preserve committed recovery
+batches. Only the same admitted package can resume. Its verifier continues after
+the last committed verification checkpoint. A permanent verifier failure leaves
+the barrier in place. There is no second repair, checkpoint editor or automatic
+reset for an unsuccessful recovery in preview.
 
-## Proposed application entry points
+`alreadyCompletedOriginal` requires an original edge entry in validated history.
+A bootstrap at a later target does not prove the original edge ran.
+`alreadyRecovered` also verifies the retained binding. Both outcomes are
+read-only and avoid evaluating application hooks. A later ordinary revision can
+normalize data across successful original and recovered outcomes.
+
+## Explicit invocation
 
 ```js
 const result = await engine.recoverDatabase({
-  name, schema, manifestUrl,
-  recovery: { url: recoveryUrl, sha256: pinnedDigest },
-  signal, onEvent
+  name, schema, manifestUrl, recovery: { id: recoveryId, sha256: pinnedDigest }, signal, onEvent
 });
 ```
 
 ```csharp
-await using var events = await magic.ObserveMigrationsAsync(ObserveMetadata);
+await using var observation = await magic.ObserveMigrationsAsync(ObserveMetadata);
 var db = await magic.Database(InvoiceDatabases.Local);
-var result = await db.RecoverMigrationAsync(new(recoveryUrl, pinnedDigest), cancellationToken);
+var result = await db.RecoverMigrationAsync(recoveryId, pinnedDigest, cancellationToken);
+await db.OpenAsync();
 ```
 
-The C# method translates into the same explicit engine call. The CLI would validate the exact original graph and publish the reviewed package. The inspection/cancel surfaces remain scoped to the physical database. Proposed structured diagnostics include `MAGDB_RECOVERY_REQUIRED`, `MAGDB_RECOVERY_MISMATCH`, `MAGDB_RECOVERY_PACKAGE_REQUIRED` and `MAGDB_RECOVERY_VERIFICATION_FAILED`. Events carry phase, code, revision, recovery ID and counts. They omit records, keys and hook exception text. Cancellation, missing assets and quota report known operational retry conditions. A hook or verifier failure requires developer diagnosis before attempting again.
+The result gives `outcome`, `recoveryId`, `revision` and
+`applicationTargetRevision`. Successful explicit recovery commits only the
+repaired edge. An open targeting revision 24 still runs and checks the ordinary
+path through revision 24. Normal opening never selects a repair. The C# token
+cancels the .NET wait. Call `CancelMigrationAsync` to abort browser work.
 
-## Acceptance and maintainer decisions
+Inspection and `recovering`, `recoveryCheckpoint`, `recovered` and failure
+events expose metadata. They omit durable cursor keys, rows and hook exception
+messages. `MAGDB_RECOVERY_REQUIRED` calls for an explicit action,
+`MAGDB_RECOVERY_PACKAGE_REQUIRED` calls for the admitted bytes,
+`MAGDB_RECOVERY_BINDING_REQUIRED` calls for a compatible deployment, and hook or
+verifier failure calls for developer diagnosis.
 
-Approve the initial single-transform restriction, the protocol bump/old-client rejection, and whether the app's reviewed verification function is a sufficient semantic acceptance rule beyond the engine's key and layout checks. Confirm that already-completed clients should take the ordinary forward path if outcome normalization is needed. Decide which immutable recovery bindings must be retained in future manifests and how release review authorizes the explicit app action. No new API or journal writer is implemented here.
-
-Acceptance requires unit/CLI fixtures for strict neutral parsing and byte/history pins, plus actual Chromium, Firefox, Linux and macOS WebKit tests spanning:
-
-- Resume after cancellation/crash before and after each recovery checkpoint and the final transition. No replay of committed recovery writes.
-- Prefix and suffix partitioning for empty, final, sparse and compound native keys. Verify actual prior mutations and unprocessed records, unchanged keys, retained original bytes, and exactly one recorded disposition.
-- Original failure, mismatched package and module/hash tampering, stale/competing tabs and workers, quota abort, verifier failure and incomplete/offline asset delivery. Preserve data and keep CRUD blocked until successful verification.
-- An older managed adapter, clients that completed the original edge, repeated successful recovery, invalid schema/codec/protection or multiple operations, and ordinary later revisions from either legitimate completed outcome.
-- Typed Blazor inspection, explicit invocation, cancellation and event disposal in trimmed and AOT builds. Metadata remains redacted even when a custom hook throws record data.
+The [released upgrade runner](../contributing/migration-testing.md) includes the
+[CLI-authored Blazor worked example](../../tests/migrations/RecoveryWasm). It
+persists one failing migration batch, explicitly cancels/resumes recovery and
+then opens the later ordinary revision. The portable browser suite exercises the
+same runner independently of the .NET adapter.

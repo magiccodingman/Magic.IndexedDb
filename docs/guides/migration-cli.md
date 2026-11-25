@@ -265,6 +265,27 @@ Static validation checks references and hashes; the JavaScript engine and browse
 tests check executable behavior. The CLI does not claim to prove that arbitrary
 business logic preserves every record's meaning.
 
+## Author an explicit recovery
+
+Keep the original history and module bytes. Write a separate self-contained
+module with `repairProcessed`, `repairUnprocessed` and `verify`. The verifier
+must return exactly `true` for accepted records. The engine partitions records
+using its durable original checkpoint.
+
+```sh
+magicdb migrations recovery-add --database invoices --revision 20 --id repair-tax --module repair.mjs
+magicdb migrations validate --database invoices --project Exporter/Exporter.csproj
+magicdb migrations publish --database invoices --project Exporter/Exporter.csproj --output wwwroot/releases/repaired
+```
+
+The revision argument is the edge's starting revision, not its target. The
+CLI creates a canonical descriptor bound to that original adjacent edge and
+adds an approval to source history. Publishing preserves the v1 schema and
+migration bytes. The new v2 manifest holds the recovery ID and descriptor hash
+for the application to pin. Review the module and run browser acceptance before
+deployment. The CLI validates topology, model identity and exact module bytes.
+The browser checks the required exports and the application verifies its data.
+
 ## Adopting an existing database
 
 Baseline planning declares which known legacy layout corresponds to a managed

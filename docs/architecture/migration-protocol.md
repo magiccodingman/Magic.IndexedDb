@@ -118,6 +118,14 @@ lossless storage also retains the existing numeric policy store and validates th
 policy on reads/writes through the public adapter. A numeric codec conversion cannot
 be smuggled through an ordinary record transform.
 
+## Recovery-aware format
+
+Schema and migration assets remain v1. A v2 manifest adds immutable repair
+bindings under the `resumableRepairV1` capability. A v2 journal is created only
+when explicit recovery is admitted. Its format and recovered lineage survive
+later ordinary migrations. See the [recovery contract](adr-partial-migration-recovery.md)
+for validation, readiness, and old-client rejection.
+
 ## Ownership and readiness
 
 An exclusive Web Lock named by physical database serializes migration attempts in

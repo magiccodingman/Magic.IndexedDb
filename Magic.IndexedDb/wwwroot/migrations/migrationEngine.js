@@ -1,5 +1,5 @@
 import { MigrationError, metadataStore, canonicalJson, sha256, requirePlainSchema, validateManifest, validateCompletedHistory,
-    validateMigration, requireCondition, physicalStores, samePhysical, compareNames } from "./protocol.js";
+    validateMigration, validateRecovery, requireCondition, physicalStores, samePhysical, compareNames } from "./protocol.js";
 
 export { MigrationError };
 const stateKey = "state";
@@ -123,8 +123,12 @@ async function inspectDatabaseInternal(name, signal) {
 export async function inspectDatabase(name) {
     const snapshot = await inspectDatabaseInternal(name);
     if (snapshot?.state?.active) {
-        const { lastKey, ...progress } = snapshot.state.active;
-        snapshot.state.active = { ...progress, hasCheckpoint: lastKey !== null && lastKey !== undefined };
+        const { id, sha256, operationIndex, processedRecords, lastKey } = snapshot.state.active;
+        snapshot.state.active = { id, sha256, operationIndex, processedRecords, hasCheckpoint: lastKey != null };
+    }
+    if (snapshot?.state?.recovery) {
+        const { id, sha256, phase, repaired, verified, lastKey } = snapshot.state.recovery;
+        snapshot.state.recovery = { id, sha256, phase, repaired, verified, hasCheckpoint: lastKey != null };
     }
     return snapshot;
 }
@@ -225,18 +229,23 @@ async function jsonAsset(reference, base, signal) {
 }
 
 async function loadTransform(operation, base, signal) {
-    const { bytes } = await fetchAsset({ path: operation.module, sha256: operation.sha256 }, base, signal);
-    let module = moduleCache.get(operation.sha256);
+    const module = await loadModule({ path: operation.module, sha256: operation.sha256 }, base, signal);
+    const transform = module[operation.exportName ?? "transform"];
+    requireCondition(typeof transform === "function", "MAGDB_HOOK_INVALID", "Custom migration module does not export its declared transform.");
+    return transform;
+}
+
+async function loadModule(reference, base, signal) {
+    const { bytes } = await fetchAsset(reference, base, signal);
+    let module = moduleCache.get(reference.sha256);
     if (!module) {
         // Import the verified bytes, not a second potentially different HTTP response.
         // Custom modules are self-contained ES modules; CSP must permit blob: scripts.
         const blob = URL.createObjectURL(new Blob([bytes], { type: "text/javascript" }));
-        try { module = await awaitExtension(import(blob), signal); moduleCache.set(operation.sha256, module); }
+        try { module = await awaitExtension(import(blob), signal); moduleCache.set(reference.sha256, module); }
         finally { URL.revokeObjectURL(blob); }
     }
-    const transform = module[operation.exportName ?? "transform"];
-    requireCondition(typeof transform === "function", "MAGDB_HOOK_INVALID", "Custom migration module does not export its declared transform.");
-    return transform;
+    return module;
 }
 
 function hookFailure(cause) {
@@ -308,17 +317,29 @@ function applyAtomic(db, transaction, document, hooks, finish, fail) {
     next();
 }
 
-function readyState(schemaId, revision, schemaHash, history = []) {
-    return { protocolVersion: 1, schemaId, revision, schemaHash, status: "ready", history, active: null };
+function readyState(schemaId, revision, schemaHash, history = [], protocolVersion = 1) {
+    return { protocolVersion, schemaId, revision, schemaHash, status: "ready", history, active: null };
 }
 
 function assertState(snapshot, schemaId) {
     const state = snapshot.state;
-    requireCondition(state?.protocolVersion === 1 && state.schemaId === schemaId && Number.isSafeInteger(state.revision) &&
+    requireCondition([1, 2].includes(state?.protocolVersion) && state.schemaId === schemaId && Number.isSafeInteger(state.revision) &&
         state.revision > 0 && /^sha256:[0-9a-f]{64}$/.test(state.schemaHash) &&
-        ["ready", "migrating"].includes(state.status),
+        ["ready", "migrating", "recovering"].includes(state.status),
     "MAGDB_STATE_INVALID", "The managed database journal is invalid or belongs to another schema.");
     validateCompletedHistory(state.history, state.revision);
+    const recovered = state.history.some(entry => entry.outcome === "recovered");
+    requireCondition(state.protocolVersion === (recovered || state.status === "recovering" ? 2 : 1) &&
+        (state.status === "recovering") === Object.hasOwn(state, "recovery"),
+        "MAGDB_STATE_INVALID", "Recovery requires a recovery-aware journal.");
+    if (state.status === "recovering") {
+        const { recovery } = state;
+        requireCondition(recovery && typeof recovery.id === "string" && /^sha256:[0-9a-f]{64}$/.test(recovery.sha256) &&
+            ["repair", "verify"].includes(recovery.phase) && validProgress(recovery.repaired) &&
+            validProgress(recovery.verified) && recovery.verified <= recovery.repaired &&
+            (recovery.phase === "verify" || recovery.verified === 0) && validCheckpointKey(recovery),
+            "MAGDB_STATE_INVALID", "Invalid recovery progress.");
+    }
     if (state.status === "ready") requireCondition(state.active === null,
         "MAGDB_STATE_INVALID", "A ready journal cannot contain an unfinished checkpoint.");
     else {
@@ -327,12 +348,24 @@ function assertState(snapshot, schemaId) {
             Number.isSafeInteger(active.operationIndex) && active.operationIndex >= 0 &&
             Number.isSafeInteger(active.processedRecords) && active.processedRecords >= 0 &&
             Object.hasOwn(active, "lastKey"), "MAGDB_STATE_INVALID", "The migration checkpoint is malformed.");
-        if (active.lastKey !== null) {
-            let valid = false;
-            try { valid = indexedDB.cmp(active.lastKey, active.lastKey) === 0; } catch {}
-            requireCondition(valid, "MAGDB_STATE_INVALID", "The migration checkpoint key is invalid.");
-        }
+        requireCondition(validCheckpointKey(active), "MAGDB_STATE_INVALID", "The migration checkpoint key is invalid.");
     }
+}
+
+function validProgress(count) { return Number.isSafeInteger(count) && count >= 0; }
+
+function validCheckpointKey(progress) {
+    if (!Object.hasOwn(progress, "lastKey")) return false;
+    if (progress.lastKey === null) return true;
+    try { return indexedDB.cmp(progress.lastKey, progress.lastKey) === 0; } catch { return false; }
+}
+
+function sameState(left, right) {
+    if (!left || !right) return false;
+    const { active: leftActive, recovery: leftRecovery, ...leftHeader } = left;
+    const { active: rightActive, recovery: rightRecovery, ...rightHeader } = right;
+    return canonicalJson(leftHeader) === canonicalJson(rightHeader) &&
+        sameCheckpoint(leftActive, rightActive) && sameCheckpoint(leftRecovery, rightRecovery);
 }
 
 function sameCheckpoint(left, right) {
@@ -419,11 +452,10 @@ async function resumeMigration(options, db, snapshot, step) {
     const request = transaction.objectStore(metadataStore).get(stateKey);
     request.onsuccess = () => {
         try {
-            requireCondition(request.result?.active?.id === document.id && request.result.active.sha256 === reference.sha256 &&
-                request.result.active.operationIndex === document.operations.length, "MAGDB_CONCURRENT_CHANGE", "Migration finalization lost its checkpoint.");
+            requireCondition(sameState(request.result, state) && state.active.operationIndex === document.operations.length, "MAGDB_CONCURRENT_CHANGE", "Migration finalization lost its checkpoint.");
             requireCondition(samePhysical(nativeStores(db, transaction), to), "MAGDB_TARGET_MISMATCH", "Final schema differs from the migration target.");
             const history = [...state.history, { id: document.id, sha256: reference.sha256 }];
-            transaction.objectStore(metadataStore).put(readyState(document.schemaId, document.toRevision, toHash, history), stateKey);
+            transaction.objectStore(metadataStore).put(readyState(document.schemaId, document.toRevision, toHash, history, state.protocolVersion), stateKey);
             writeNumericPolicy(db, transaction, to);
         } catch (error) { failure = error; transaction.abort(); }
     };
@@ -431,7 +463,12 @@ async function resumeMigration(options, db, snapshot, step) {
 }
 
 /** Opening is a readiness boundary: resolution occurs only after the journal commits. */
-export async function ensureDatabase(options) {
+export function ensureDatabase(options) { return runManaged(options, false); }
+
+/** Explicit recovery commits only its original edge; normal opening handles later revisions. */
+export function recoverDatabase(options) { return runManaged(options, true); }
+
+async function runManaged(options, recovering) {
     options ??= {};
     try {
         requireCondition(typeof options.name === "string" && options.name.length > 0, "MAGDB_NAME_REQUIRED", "A physical database name is required.");
@@ -440,7 +477,8 @@ export async function ensureDatabase(options) {
         // transition after its schema hash has been calculated.
         try {
             options = { ...options, schema: structuredClone(options.schema),
-                ...(options.manifest ? { manifest: structuredClone(options.manifest) } : {}) };
+                ...(options.manifest ? { manifest: structuredClone(options.manifest) } : {}),
+                ...(recovering ? { recovery: structuredClone(options.recovery) } : {}) };
         } catch (cause) {
             throw new MigrationError("MAGDB_INVALID_DOCUMENT", "Migration inputs must be serializable data.", {}, false, cause);
         }
@@ -451,7 +489,7 @@ export async function ensureDatabase(options) {
             "MAGDB_BATCH_INVALID", "batchSize must be between 1 and 10000.");
         requireCondition(navigator.locks?.request, "MAGDB_LOCK_UNAVAILABLE", "Managed migrations require the Web Locks API in a secure context.");
         return await navigator.locks.request(`magic-indexeddb:migrate:${options.name}`, { mode: "exclusive", signal: options.signal },
-            () => ensureLocked(options));
+            () => ensureLocked(options, recovering));
     } catch (cause) {
         const error = cause instanceof MigrationError ? cause
             : cause?.name === "QuotaExceededError" ? new MigrationError("MAGDB_QUOTA_EXCEEDED", "Free storage before retrying the same package.", {}, true, cause)
@@ -462,7 +500,7 @@ export async function ensureDatabase(options) {
     }
 }
 
-async function ensureLocked(options) {
+async function ensureLocked(options, recovering) {
     notify(options, "preflight");
     abortCheck(options.signal);
     const expectedHash = await sha256(canonicalJson(options.schema));
@@ -494,6 +532,7 @@ async function ensureLocked(options) {
     }
     const targetRevision = manifest?.targetRevision ?? 1;
     let snapshot = await inspectDatabaseInternal(options.name, options.signal);
+    if (recovering) return recoverLocked(options, snapshot, manifest, base, model);
     let baseline;
     if (snapshot && !snapshot.state) {
         requireCondition(manifest, "MAGDB_ADOPTION_REQUIRED", "Existing unmanaged databases require an explicit validated adoption baseline.");
@@ -515,7 +554,10 @@ async function ensureLocked(options) {
     if (snapshot?.state) {
         assertState(snapshot, options.schema.schemaId);
         requireCondition(snapshot.state.revision <= targetRevision, "MAGDB_DATABASE_NEWER", "This application is older than the database. Load a compatible application.");
+        if (snapshot.state.protocolVersion === 2)
+            requireCondition(manifest?.protocolVersion === 2, "MAGDB_RECOVERY_BINDING_REQUIRED", "A recovery-aware deployment is required.");
         if (manifest) validateCompletedHistory(snapshot.state.history, snapshot.state.revision, manifest);
+        requireCondition(snapshot.state.status !== "recovering", "MAGDB_RECOVERY_REQUIRED", "Explicitly resume the approved recovery package.");
     }
     const startRevision = snapshot?.state?.revision ?? baseline?.revision ?? targetRevision;
     const initial = manifest ? await model(startRevision) : { schema: options.schema, hash: expectedHash };
@@ -581,7 +623,7 @@ async function ensureLocked(options) {
                             applyAtomic(connection, transaction, document, step.hooks, () => {
                                 requireCondition(samePhysical(nativeStores(connection, transaction), to), "MAGDB_TARGET_MISMATCH", "Migration did not produce its target schema.");
                                 transaction.objectStore(metadataStore).put(readyState(document.schemaId, document.toRevision, toHash,
-                                    [...snapshot.state.history, { id: document.id, sha256: reference.sha256 }]), stateKey);
+                                    [...snapshot.state.history, { id: document.id, sha256: reference.sha256 }], snapshot.state.protocolVersion), stateKey);
                                 writeNumericPolicy(connection, transaction, to);
                             }, fail);
                         } catch (error) { fail(error); }
@@ -605,7 +647,7 @@ async function ensureLocked(options) {
         requireCondition(final.state?.status === "ready" && final.state.revision === targetRevision && final.state.schemaHash === expectedHash &&
             samePhysical(final.stores, options.schema), "MAGDB_TARGET_MISMATCH", "Database is not ready at the application's target revision.");
         const result = { name: options.name, schemaId: options.schema.schemaId, revision: targetRevision,
-            schemaHash: expectedHash, nativeVersion: final.nativeVersion };
+            schemaHash: expectedHash, nativeVersion: final.nativeVersion, protocolVersion: final.state.protocolVersion, history: final.state.history };
         notify(options, "ready", { revision: targetRevision, targetRevision });
         return result;
     } finally { db?.close(); }
@@ -618,7 +660,206 @@ export async function assertDatabaseReady(db, expected) {
     const done = transactionDone(transaction);
     const state = await requestResult(transaction.objectStore(metadataStore).get(stateKey));
     await done;
-    requireCondition(state?.status === "ready" && state.schemaId === expected.schemaId && state.revision === expected.revision &&
+    requireCondition(state?.status === "ready" && state.protocolVersion === (expected.protocolVersion ?? 1) &&
+        (state.protocolVersion === 1 || canonicalJson(state.history) === canonicalJson(expected.history)) && state.schemaId === expected.schemaId && state.revision === expected.revision &&
         state.schemaHash === expected.schemaHash && db.version === expected.nativeVersion, "MAGDB_DATABASE_INCOMPATIBLE",
     "Database is migrating or has changed since this application opened it. Reload or explicitly retry initialization.");
+}
+
+async function recoverLocked(options, snapshot, manifest, base, model) {
+    const requested = options.recovery;
+    const binding = manifest?.recoveries?.find(item => item.id === requested?.id && item.sha256 === requested?.sha256);
+    requireCondition(binding && Object.keys(requested).length === 2, "MAGDB_RECOVERY_MISMATCH", "The explicit recovery ID and digest must match an approved manifest binding.");
+    requireCondition(snapshot?.state, "MAGDB_RECOVERY_NOT_APPLICABLE", "Recovery requires an existing managed journal.");
+    let { state } = snapshot;
+    assertState(snapshot, manifest.schemaId);
+    requireCondition(state.revision <= manifest.targetRevision, "MAGDB_DATABASE_NEWER", "Load a compatible newer application.");
+    validateCompletedHistory(state.history, state.revision, manifest);
+    const installed = await model(state.revision);
+    requireCondition(state.schemaHash === installed.hash && samePhysical(snapshot.stores, installed.schema),
+        "MAGDB_MODEL_DRIFT", "The installed model or layout does not match the deployment.");
+    assertNumericPolicy(snapshot, installed.schema);
+
+    const edge = manifest.migrations.find(item => item.fromRevision === binding.fromRevision);
+    const from = await model(edge.fromRevision), to = await model(edge.toRevision);
+    const { document: migration, url: migrationUrl } = await jsonAsset(edge, base, options.signal);
+    validateMigration(migration, edge, from.schema, to.schema);
+    requireCondition(migration.fromSchemaHash === from.hash && migration.toSchemaHash === to.hash,
+        "MAGDB_MODEL_DRIFT", "Original migration fingerprints do not match the approved models.");
+    const { bytes, url } = await fetchAsset(binding, base, options.signal);
+    const document = decodeJson(bytes);
+    requireCondition(await sha256(canonicalJson(document)) === binding.sha256, "MAGDB_RECOVERY_INVALID", "Recovery documents must use canonical JSON.");
+    validateRecovery(document, binding, edge, from, to, migration);
+    const { store } = document.operation;
+    const original = migration.operations[0];
+    await fetchAsset({ path: original.module, sha256: original.sha256 }, migrationUrl, options.signal);
+    const result = (outcome, revision) => ({ outcome, recoveryId: binding.id, revision, applicationTargetRevision: manifest.targetRevision });
+
+    if (state.revision >= edge.toRevision) {
+        const completed = state.history[edge.fromRevision - (state.revision - state.history.length)];
+        requireCondition(state.status === "ready" && completed?.id === edge.id && completed.sha256 === edge.sha256,
+            "MAGDB_RECOVERY_NOT_APPLICABLE", "The journal does not establish a completed original edge.");
+        await fetchAsset(document.module, url, options.signal);
+        return result(completed.outcome === "recovered" ? "alreadyRecovered" : "alreadyCompletedOriginal", state.revision);
+    }
+    requireCondition(state.revision === edge.fromRevision && (state.status === "migrating" || state.status === "recovering") &&
+        state.active.id === edge.id && state.active.sha256 === edge.sha256 &&
+        (state.active.operationIndex === 0 || state.active.operationIndex === 1 && state.active.lastKey === null),
+        "MAGDB_RECOVERY_NOT_APPLICABLE", "The journal does not match the supported interrupted transform.");
+    if (state.status === "recovering") requireCondition(state.recovery.id === binding.id && state.recovery.sha256 === binding.sha256,
+        "MAGDB_RECOVERY_PACKAGE_REQUIRED", "Resume with the exact originally admitted recovery package.");
+
+    const hooks = await loadModule(document.module, url, options.signal);
+    requireCondition(["repairProcessed", "repairUnprocessed", "verify"].every(name => typeof hooks[name] === "function"),
+        "MAGDB_RECOVERY_INVALID", "Recovery requires repairProcessed, repairUnprocessed and verify exports.");
+    let db = await openExisting(options.name, options.signal);
+    requireCondition(db, "MAGDB_DATABASE_MISSING", "The interrupted database disappeared.");
+    try {
+        const total = await validateOriginalBoundary(db, store, state.active);
+        if (state.status === "migrating") {
+            db.close();
+            const prior = state;
+            state = { ...prior, protocolVersion: 2, status: "recovering",
+                recovery: { id: binding.id, sha256: binding.sha256, phase: "repair", lastKey: null, repaired: 0, verified: 0 } };
+            db = await upgrade(options, snapshot.nativeVersion + 1, (connection, tx, oldVersion, fail) => {
+                requireCondition(oldVersion === snapshot.nativeVersion && samePhysical(nativeStores(connection, tx), from.schema),
+                    "MAGDB_CONCURRENT_CHANGE", "Storage changed before recovery admission.");
+                const metadata = tx.objectStore(metadataStore);
+                const request = metadata.get(stateKey);
+                request.onsuccess = () => {
+                    try {
+                        requireCondition(sameState(request.result, prior), "MAGDB_CONCURRENT_CHANGE", "The original checkpoint changed.");
+                        metadata.put(state, stateKey);
+                    } catch (error) { fail(error); }
+                };
+            });
+        }
+        const keyPath = from.schema.stores.find(item => item.name === store).keyPath;
+        validateRecoveryProgress(state.recovery, total);
+        notify(options, "recovering", { recoveryId: binding.id, migrationId: edge.id, revision: state.revision,
+            targetRevision: edge.toRevision, recoveryPhase: state.recovery.phase });
+        await validateRecoveryCursor(db, store, state.recovery);
+        while (true) {
+            abortCheck(options.signal);
+            const progress = state.recovery;
+            const rows = await readBatch(db, store, progress.lastKey, options.batchSize ?? 256);
+            const verify = progress.phase === "verify";
+            if (!rows.length && verify) break;
+            const values = [];
+            for (const row of rows) {
+                abortCheck(options.signal);
+                const processed = state.active.operationIndex === 1 || state.active.lastKey !== null &&
+                    indexedDB.cmp(row.key, state.active.lastKey) <= 0;
+                const hook = verify ? hooks.verify : processed ? hooks.repairProcessed : hooks.repairUnprocessed;
+                let value;
+                try {
+                    value = await awaitExtension(hook(structuredClone(row.value),
+                        Object.freeze({ signal: options.signal, primaryKey: structuredClone(row.key) })), options.signal);
+                    if (!verify) value = structuredClone(value);
+                } catch (cause) {
+                    abortCheck(options.signal);
+                    throw new MigrationError(verify ? "MAGDB_RECOVERY_VERIFICATION_FAILED" : "MAGDB_RECOVERY_HOOK_FAILED",
+                        "Application recovery logic failed. Developer intervention is required.", {}, false, cause);
+                }
+                if (verify) requireCondition(value === true, "MAGDB_RECOVERY_VERIFICATION_FAILED", "The application verifier rejected a repaired record.");
+                else {
+                    requireCondition(value && typeof value === "object" && !Array.isArray(value),
+                        "MAGDB_RECORD_INVALID", "A recovery hook must return an object record.");
+                    if (keyPath !== null) requireCondition(equalNativeKey(keyOf(value, keyPath), row.key),
+                        "MAGDB_KEY_CHANGE_UNSUPPORTED", "Recovery cannot change primary keys.");
+                    values.push(value);
+                }
+            }
+            const next = { ...progress };
+            if (rows.length) {
+                next.lastKey = rows.at(-1).key;
+                if (verify) next.verified += rows.length;
+                else next.repaired += rows.length;
+            } else {
+                requireCondition(progress.repaired === total, "MAGDB_CONCURRENT_CHANGE", "The recovery record count changed.");
+                next.phase = "verify";
+                next.lastKey = null;
+            }
+            validateRecoveryProgress(next, total);
+            const updated = { ...state, recovery: next };
+            await recoveryTransaction(options, db, state, from.schema, (tx, metadata) => {
+                const destination = tx.objectStore(store);
+                for (let index = 0; index < values.length; index++) {
+                    if (keyPath === null) destination.put(values[index], rows[index].key);
+                    else destination.put(values[index]);
+                }
+                metadata.put(updated, stateKey);
+            });
+            state = updated;
+            notify(options, "recoveryCheckpoint", { recoveryId: binding.id, migrationId: edge.id, revision: state.revision,
+                targetRevision: edge.toRevision, recoveryPhase: next.phase, processedRecords: next.repaired, verifiedRecords: next.verified });
+        }
+        requireCondition(state.recovery.repaired === total && state.recovery.verified === total,
+            "MAGDB_RECOVERY_VERIFICATION_FAILED", "Recovery did not verify the entire store.");
+        const history = [...state.history, { id: edge.id, sha256: edge.sha256, outcome: "recovered",
+            recovery: { id: binding.id, sha256: binding.sha256 } }];
+        await recoveryTransaction(options, db, state, to.schema, (_tx, metadata) => {
+            metadata.add({ original: state.active, recovery: state.recovery }, "recovery:" + binding.id);
+            metadata.put(readyState(manifest.schemaId, edge.toRevision, to.hash, history, 2), stateKey);
+        });
+        notify(options, "recovered", { recoveryId: binding.id, migrationId: edge.id, revision: edge.toRevision,
+            targetRevision: manifest.targetRevision });
+        return result("recovered", edge.toRevision);
+    } finally { db.close(); }
+}
+
+function equalNativeKey(left, right) {
+    try { return indexedDB.cmp(left, right) === 0; } catch { return false; }
+}
+
+async function validateOriginalBoundary(db, store, checkpoint) {
+    const table = db.transaction(store).objectStore(store);
+    const total = requestResult(table.count());
+    const prefix = checkpoint.operationIndex === 1 ? total : checkpoint.lastKey === null ? 0
+        : requestResult(table.count(IDBKeyRange.upperBound(checkpoint.lastKey)));
+    const last = checkpoint.lastKey === null ? null : requestResult(table.getKey(checkpoint.lastKey));
+    const [count, processed, lastKey] = await Promise.all([total, prefix, last]);
+    requireCondition(processed === checkpoint.processedRecords &&
+        (checkpoint.lastKey === null || equalNativeKey(lastKey, checkpoint.lastKey)),
+        "MAGDB_STATE_INVALID", "The original checkpoint does not match the native store.");
+    return count;
+}
+
+function validateRecoveryProgress(progress, total) {
+    requireCondition(progress.repaired <= total && progress.verified <= total &&
+        (progress.phase !== "verify" || progress.repaired === total), "MAGDB_STATE_INVALID", "Recovery counts do not match the native store.");
+}
+
+async function validateRecoveryCursor(db, store, progress) {
+    await validateOriginalBoundary(db, store, { operationIndex: 0, lastKey: progress.lastKey,
+        processedRecords: progress.phase === "repair" ? progress.repaired : progress.verified });
+}
+
+async function recoveryTransaction(options, db, prior, schema, apply) {
+    abortCheck(options.signal);
+    const tx = db.transaction([...db.objectStoreNames], "readwrite");
+    const done = transactionDone(tx);
+    const metadata = tx.objectStore(metadataStore);
+    const cancel = () => { try { tx.abort(); } catch {} };
+    options.signal?.addEventListener("abort", cancel, { once: true });
+    let failure;
+    const read = metadata.get(stateKey);
+    const policy = db.objectStoreNames.contains(numericStore) ? tx.objectStore(numericStore).get("policy") : null;
+    let applied = false;
+    const ready = () => {
+        if (applied || read.readyState !== "done" || policy && policy.readyState !== "done") return;
+        applied = true;
+        try {
+            abortCheck(options.signal);
+            requireCondition(sameState(read.result, prior) && samePhysical(nativeStores(db, tx), schema),
+                "MAGDB_CONCURRENT_CHANGE", "Recovery journal or native layout changed.");
+            assertNumericPolicy({ numericPolicy: policy?.result ?? null }, schema);
+            apply(tx, metadata);
+        } catch (error) { failure = error; tx.abort(); }
+    };
+    read.onsuccess = ready;
+    if (policy) policy.onsuccess = ready;
+    try { await done; }
+    catch (error) { abortCheck(options.signal); throw failure ?? error; }
+    finally { options.signal?.removeEventListener("abort", cancel); }
 }

@@ -103,7 +103,7 @@ async function load(context) {
 
 const results = [];
 const cutoverCases = versions.includes('2.0.7') ? ['uncooperative-v2-writer', 'cooperative-v2-bridge'] : [];
-const expected = versions.length + cutoverCases.length;
+const expected = versions.length + cutoverCases.length + 1;
 
 async function runCase(name, action) {
     const result = { name, state: 'failed' };
@@ -235,6 +235,11 @@ try {
         } finally { await context.close(); }
     }
 
+    await runCase('explicit-recovery-in-blazor', async context => {
+        deployment = buildMode + '/recovery';
+        await load(context);
+    });
+
     if (cutoverCases.length) {
         await runCase(cutoverCases[0], async context => {
             deployment = '2.0.7';
@@ -271,15 +276,17 @@ try {
             await old.evaluate(() => {
                 window.inFlight = bridge.legacyWrite(() => new Promise(resolve => { window.finishWrite = resolve; }));
                 window.cutover = bridge.beginCutover(() => true,
-                    () => new Promise(resolve => { window.finishInitialization = resolve; }));
+                    () => new Promise((_, reject) => {
+                        window.finishInitialization = () => reject(new Error('Injected initialization failure'));
+                    })).catch(error => error.message);
             });
             await old.waitForFunction(() => typeof window.finishWrite === 'function');
             assert.equal(await old.evaluate(() => typeof window.finishInitialization), 'undefined');
             await old.evaluate(() => finishWrite());
             await old.waitForFunction(() => typeof window.finishInitialization === 'function');
-            deployment = buildMode + '/codecs';
-            const adopted = await load(context);
-            await old.evaluate(async () => { finishInitialization(); await cutover; });
+            assert.equal(await old.evaluate(async () => { finishInitialization(); return cutover; }),
+                'Injected initialization failure');
+            assert.deepEqual(await snapshot(old, 'fixture-west'), before);
             await context.setOffline(true);
             try {
                 const tabResult = await old.evaluate(async () => {
@@ -293,6 +300,14 @@ try {
                 assert.equal(tabResult, 'APP_LEGACY_WRITES_STOPPED');
                 assert.equal(workerResult, 'APP_LEGACY_WRITES_STOPPED');
             } finally { await context.setOffline(false); }
+            await old.evaluate(() => {
+                window.retryCutover = bridge.beginCutover(() => true,
+                    () => new Promise(resolve => { window.finishRetry = resolve; }));
+            });
+            await old.waitForFunction(() => typeof window.finishRetry === 'function');
+            deployment = buildMode + '/codecs';
+            const adopted = await load(context);
+            await old.evaluate(async () => { finishRetry(); await retryCutover; });
             const after = await snapshot(adopted, 'fixture-west');
             assert.deepEqual(after.data.invoices, before.data.invoices);
         });

@@ -245,6 +245,30 @@ override. Keep that scenario in the release acceptance review.
 `DeleteAsync()` remains an explicit destructive administrative action. It is never
 called by migration failure handling.
 
+## Explicit recovery of a partial transform
+
+Recovery is available for one interrupted, unprotected, same-codec custom
+transform on one store with unchanged native layout and primary keys. The
+published manifest must approve the recovery. Invoke it using the approved ID
+and the recovery descriptor's SHA-256 digest.
+
+```csharp
+var result = await database.RecoverMigrationAsync("repair-tax", approvedDigest);
+await database.OpenAsync();
+```
+
+Ordinary open does not select a repair. Inspection shows the original
+operation and recovery phase and counts, with native checkpoint keys redacted.
+The returned revision is the edge committed by recovery. Opening normally
+then initializes the application's configured revision through any later
+ordinary migrations. Cancel browser work with `CancelMigrationAsync`.
+Resume with the same admitted package. The main API token cancels the .NET wait.
+
+After a permanent verification failure or if the original information was
+lost, keep the store blocked and retain its data for application-specific
+support. See the [journal and package contract](../architecture/adr-partial-migration-recovery.md)
+and the [CLI authoring steps](migration-cli.md#author-an-explicit-recovery).
+
 ## Static deployment and offline use
 
 Deploy assets to an immutable release directory and compile the corresponding
@@ -273,7 +297,7 @@ success or imply an automatic retry. `retryable: false` calls for diagnosis or
 developer action first. A thrown or rejected application transform reports
 `MAGDB_HOOK_FAILED` with `retryable: false` regardless of its exception name.
 The diagnostic event carries the code and retry flag without the original cause.
-See the [proposal for explicitly recovering a faulty partial migration](../architecture/adr-partial-migration-recovery.md).
+See the [contract for explicitly recovering a faulty partial migration](../architecture/adr-partial-migration-recovery.md).
 
 Typical codes are `MAGDB_MODEL_DRIFT`, `MAGDB_ADOPTION_REQUIRED`,
 `MAGDB_LEGACY_SCHEMA_UNKNOWN`, `MAGDB_MANIFEST_UNAVAILABLE`, `MAGDB_ASSET_UNAVAILABLE`,

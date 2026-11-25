@@ -47,7 +47,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Universal predicate language](architecture/universal-predicate-language.md)
 - [Encryption at rest design](architecture/encryption-at-rest.md)
 - [Migration protocol v1](architecture/migration-protocol.md)
-- [Partial migration recovery proposal](architecture/adr-partial-migration-recovery.md)
+- [Partial migration recovery](architecture/adr-partial-migration-recovery.md)
 - [Version 3 implementation contract](architecture/v3-implementation-contract.md)
 
 ## Contributing

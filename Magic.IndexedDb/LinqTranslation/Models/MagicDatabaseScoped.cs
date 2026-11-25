@@ -15,9 +15,11 @@ internal sealed class MagicDatabaseScoped : IMagicDatabaseScoped
     private readonly Action _invalidate;
     private readonly Func<CancellationToken, Task<JsonElement?>> _inspect;
     private readonly Func<Task> _cancel;
+    private readonly Func<string, string, CancellationToken, Task<JsonElement>> _recover;
 
     internal MagicDatabaseScoped(IndexedDbManager manager, IndexedDbSet definition, IReadOnlyList<Type> tableTypes,
-        Func<Task> ensure, Action invalidate, Func<CancellationToken, Task<JsonElement?>> inspect, Func<Task> cancel)
+        Func<Task> ensure, Action invalidate, Func<CancellationToken, Task<JsonElement?>> inspect, Func<Task> cancel,
+        Func<string, string, CancellationToken, Task<JsonElement>> recover)
     {
         _manager = manager;
         _definition = definition;
@@ -26,6 +28,7 @@ internal sealed class MagicDatabaseScoped : IMagicDatabaseScoped
         _invalidate = invalidate;
         _inspect = inspect;
         _cancel = cancel;
+        _recover = recover;
     }
 
     public async Task DeleteAsync()
@@ -58,5 +61,7 @@ internal sealed class MagicDatabaseScoped : IMagicDatabaseScoped
         _invalidate();
         await _ensure().WaitAsync(cancellationToken);
     }
+    public Task<JsonElement> RecoverMigrationAsync(string recoveryId, string sha256, CancellationToken cancellationToken = default)
+        => _recover(recoveryId, sha256, cancellationToken);
     public Task CancelMigrationAsync() => _cancel();
 }

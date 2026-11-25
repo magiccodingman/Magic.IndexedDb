@@ -281,6 +281,51 @@ Test("protected baseline metadata fails with an explicit unsupported diagnostic"
     File.WriteAllText(path, baseline.ToJsonString());
     await f.Fail("MAGDB4208", "migrations", "validate");
 });
+Test("recovery publication preserves original bytes and seals approved lineage", async f =>
+{
+    await f.Initial();
+    await f.Code(3, "migrations", "add", "Original", "--empty", "--mode", "resumable");
+    var original = Path.Combine(f.Root, "original.mjs");
+    await File.WriteAllTextAsync(original, "export function transform(row) { return row; }");
+    var originalSource = Path.Combine(f.Source, "fixture", "migrations", "original.mjs");
+    File.Copy(original, originalSource);
+    f.ChangeMigration(m => m["operations"] = new JsonArray(new JsonObject
+    {
+        ["op"] = "transform", ["store"] = "items", ["module"] = "original.mjs",
+        ["sha256"] = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(original)))
+    }));
+    await f.Publish("before-recovery");
+    var repair = Path.Combine(f.Root, "repair.mjs");
+    await File.WriteAllTextAsync(repair, "export const repairProcessed = r => r, repairUnprocessed = r => r, verify = () => true;");
+    var command = new[] { "migrations", "recovery-add", "--database", "fixture", "--directory", f.Source,
+        "--revision", "1", "--id", "repair", "--module", repair };
+    Check((await f.Raw(command)).Code == 0);
+    Check((await f.Raw(command)).Code != 0);
+    await f.Publish("after-recovery");
+    var before = JsonNode.Parse(File.ReadAllText(f.Published("before-recovery")))!;
+    var after = JsonNode.Parse(File.ReadAllText(f.Published("after-recovery")))!;
+    Check(before["protocolVersion"]!.GetValue<int>() == 1 && after["protocolVersion"]!.GetValue<int>() == 2);
+    Check(JsonNode.DeepEquals(before["migrations"], after["migrations"]));
+    Check(JsonNode.DeepEquals(before["schemas"], after["schemas"]));
+    Check(after["recoveries"]!.AsArray().Count == 1);
+    var history = f.History();
+    history.Remove("recoveries");
+    f.WriteHistory(history);
+    await f.Fail("MAGDB4301", "migrations", "validate");
+});
+Test("recovery rejects an atomic edge before writing recovery source", async f =>
+{
+    await f.Initial();
+    f.AddIndex();
+    await f.Ok("migrations", "add", "Index");
+    var repair = Path.Combine(f.Root, "repair.mjs");
+    await File.WriteAllTextAsync(repair, "export const verify = () => true;");
+    var result = await f.Raw("migrations", "recovery-add", "--database", "fixture", "--directory", f.Source,
+        "--revision", "1", "--id", "repair", "--module", repair);
+    Check(result.Code != 0 && result.Error.Contains("MAGDB4210", StringComparison.Ordinal));
+    Check(!Directory.Exists(Path.Combine(f.Source, "fixture", "recoveries")));
+});
+
 Test("custom transform module cannot escape migration root", async f =>
 {
     await f.Initial(); await f.Code(3, "migrations", "add", "Transform", "--empty");

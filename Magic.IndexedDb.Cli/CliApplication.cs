@@ -16,6 +16,7 @@ public static class CliApplication
         magicdb migrations add NAME --schema MODEL.json [--database ID|--all] [--empty]
         magicdb migrations validate --schema MODEL.json [--database ID|--all]
         magicdb migrations publish --schema MODEL.json --output RELEASE_DIRECTORY
+        magicdb migrations recovery-add --database ID --revision FROM --id ID --module REPAIR.mjs
         magicdb migrations baseline --database ID --legacy-schema OLD.json --revision N
             --acknowledge-data-contract [--id legacy-v2]
         magicdb migrations test --schema MODEL.json --runner EXECUTABLE
@@ -108,6 +109,15 @@ public static class CliApplication
                 return results.Any(item => Protocol.Boolean(Protocol.Object(item, "result"), "requiresReview")) ? 3 : 0;
             }
             if (args.Positionals.Count != 2) throw new CliException("MAGDB4001", "Unexpected positional arguments.", 2);
+            if (command == "recovery-add")
+            {
+                args.Only("database", "directory", "revision", "id", "module");
+                if (!int.TryParse(args.Require("revision"), out var revision) || revision < 1)
+                    throw new CliException("MAGDB4001", "--revision must be the original edge's positive starting revision.", 2);
+                var result = Workspace(args, args.Require("database")).AddRecovery(revision, args.Require("id"), args.Require("module"));
+                await WriteAsync(output, result, json);
+                return 0;
+            }
             if (command == "baseline")
             {
                 args.Only("database", "directory", "legacy-schema", "revision", "id", "acknowledge-data-contract");

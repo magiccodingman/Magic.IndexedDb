@@ -223,6 +223,7 @@ interface Magic.IndexedDb.LinqTranslation.Interfaces.IMagicDatabaseScoped
   method System.Threading.Tasks.Task<System.Boolean> DoesExistAsync()
   method System.Threading.Tasks.Task<System.Boolean> IsOpenAsync()
   method System.Threading.Tasks.Task<System.Nullable<System.Text.Json.JsonElement>> InspectMigrationAsync(System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<System.Text.Json.JsonElement> RecoverMigrationAsync(System.String recoveryId, System.String sha256, System.Threading.CancellationToken cancellationToken = null)
   method System.Threading.Tasks.ValueTask<Magic.IndexedDb.IMagicQuery<T>> Query<T>()
 enum Magic.IndexedDb.LinqTranslation.Models.FilterLogicalOperator : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
   field System.Int32 value__
@@ -365,11 +366,14 @@ class Magic.IndexedDb.Migrations.MagicMigrationEvent : System.IEquatable<Magic.I
   property System.Nullable<System.Int32> Revision { get; set; }
   property System.Nullable<System.Int32> TargetRevision { get; set; }
   property System.Nullable<System.Int64> ProcessedRecords { get; set; }
+  property System.Nullable<System.Int64> VerifiedRecords { get; set; }
   property System.String Code { get; set; }
   property System.String DocumentationUrl { get; set; }
   property System.String MigrationId { get; set; }
   property System.String Name { get; set; }
   property System.String Phase { get; set; }
+  property System.String RecoveryId { get; set; }
+  property System.String RecoveryPhase { get; set; }
   property System.String SchemaId { get; set; }
 class Magic.IndexedDb.Migrations.MagicSchemaDocument : System.IEquatable<Magic.IndexedDb.Migrations.MagicSchemaDocument>
   ctor Magic.IndexedDb.Migrations.MagicSchemaDocument()

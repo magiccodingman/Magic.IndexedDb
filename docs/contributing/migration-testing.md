@@ -31,6 +31,13 @@ fail, if an unhandled browser exception appears, or if the expected scenario cou
 is not executed. JSON and JUnit reports, failure logs, and screenshots are written
 under `artifacts/migration-browser` (or the optional third argument).
 
+The standalone suite executes 91 cases. The installed CLI fixture adds one.
+The required jobs also load the reviewed, pinned v1 engine to verify it rejects
+a recovered journal. For local compatibility verification, extract
+`Magic.IndexedDb/wwwroot/migrations/{migrationEngine,protocol}.js` from
+`fbb55aa1f2eed1a5f3138f952ac1038bc8a5b4ad` into a directory and set
+`MAGIC_V1_ENGINE` to that directory.
+
 ## Validate the portable documents without a browser
 
 ```bash
@@ -85,12 +92,15 @@ backfills and indexes invoices. Close/reopen checks verify data, exact converter
 and Lossless values, native keys and schema, and one committed history entry.
 A non-idempotent fixture transform verifies that reopening does not replay it.
 Two additional 2.0.7 cases cover an uncooperative writer and a cooperating
-tab/worker bridge.
+tab/worker bridge that stays fenced after an injected initialization failure.
 
 The migration workflow builds the historical and managed static assets once
 and shares them with Chromium, Firefox, Linux WebKit and macOS WebKit jobs.
-Each configuration requires nine cases per mode, seven adoption/forward
-upgrades and two cutover cases, with no skips. It uploads reports and build
+Each configuration requires ten cases per mode, seven adoption/forward
+upgrades, two cutover cases and one explicit Blazor recovery. No skips are
+allowed. The recovery fixture publishes static assets with the installed CLI,
+causes a partial migration, cancels during verification, resumes and opens the
+application's later ordinary target. It asserts disposal of the observer. It uploads reports and build
 metadata. The release workflow requires migration validation, including this gate.
 
 ## What the suite checks

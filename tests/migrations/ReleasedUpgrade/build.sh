@@ -36,7 +36,8 @@ cli="$out/tools/magicdb"
 
 make_fixture() {
     mkdir -p "$1"
-    cp -R "$fixture/App" "$fixture/Exporter" "$fixture/Model.cs" "$1/"
+    local source="${3:-$fixture}"
+    cp -R "$source/App" "$source/Exporter" "$source/Model.cs" "$1/"
     if [[ "$2" == historical ]]; then
         cat > "$1/NuGet.Config" <<'CONFIG'
 <configuration>
@@ -129,6 +130,14 @@ PROPS
     )
     publish_app '-forward'
 done
+
+recovery_source="$root/tests/migrations/RecoveryWasm"
+recovery_app="$out/recovery-wasm"
+make_fixture "$recovery_app" preview "$recovery_source"
+cat > "$recovery_app/Directory.Build.props" <<PROPS
+<Project><PropertyGroup><MagicPackage>$runtime_version</MagicPackage></PropertyGroup></Project>
+PROPS
+bash "$recovery_source/build.sh" "$recovery_app" "$out" "$cli" "${modes[@]}"
 
 printf '%s\n' "${versions[@]}" > "$out/historical-versions.txt"
 node - "$out" "$(git rev-parse HEAD)" "$runtime_version" "$cli_version" "$(dotnet --version)" "${modes[@]}" <<'JS'

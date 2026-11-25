@@ -150,9 +150,9 @@ async function loadPage(context) {
                 await done;
             } finally { db.close(); }
         };
-        window.tryEnsure = async options => {
+        window.tryEnsure = async (options, recovering = false) => {
             try {
-                const value = await engine.ensureDatabase({ ...options, onEvent: event => events.push(event) });
+                const value = await (recovering ? engine.recoverDatabase : engine.ensureDatabase)({ ...options, onEvent: event => events.push(event) });
                 return { ok: true, value };
             } catch (error) {
                 return { ok: false, error: { code: error.code, message: error.message,
@@ -1188,6 +1188,301 @@ test('quota error aborts a resumable batch and preserves its previous checkpoint
     assert.deepEqual((await read(page)).map(row => row.visits), [1, 1, 1, 1]);
 });
 
+function recoveryPackage(plan, body = repairModule, edit = () => {}) {
+    const edge = plan.manifest.migrations[0];
+    const document = {
+        protocolVersion: 2, id: 'fix-original', schemaId: plan.before.schemaId,
+        source: { revision: edge.fromRevision, schemaHash: plan.migration.fromSchemaHash,
+            migrationId: edge.id, migrationHash: edge.sha256 },
+        target: { revision: edge.toRevision, schemaHash: plan.migration.toSchemaHash },
+        operation: { index: 0, store: 'clients' },
+        module: { path: 'repair.mjs', sha256: digest(body) }
+    };
+    edit(document);
+    const location = plan.base + '/recoveries/recovery.json';
+    assets.set(plan.base + '/recoveries/repair.mjs', { body, type: 'text/javascript' });
+    const bytes = canonical(document);
+    assets.set(location, { body: bytes, type: 'application/json' });
+    const asset = { sha256: digest(bytes) };
+    plan.manifest.protocolVersion = 2;
+    plan.manifest.requiredCapabilities = ['resumableRepairV1'];
+    plan.manifest.recoveries = [{ id: document.id, fromRevision: 1, path: 'recoveries/recovery.json', sha256: asset.sha256 }];
+    jsonAsset(plan.base + '/manifest.json', plan.manifest);
+    return { id: document.id, sha256: asset.sha256 };
+}
+
+const repairModule = `
+export function repairProcessed(row) {
+    if (row.value !== 11) throw new Error(row.name);
+    return { ...row, value: row.value - 1, repairs: (row.repairs ?? 0) + 1 };
+}
+export function repairUnprocessed(row) {
+    if (row.value !== 1) throw new Error(row.name);
+    return { ...row, value: row.value + 9, repairs: (row.repairs ?? 0) + 1 };
+}
+export function verify(row) { return row.value === 10 && row.repairs === 1; }
+`;
+const recoveryRows = [1, 2, 3].map(id => ({ id, name: 'PRIVATE_RECOVERY_FIXTURE', value: 1 }));
+const makeInterrupted = (model, failId = 2) => bundle(model, model, [{ op: 'transform', store: 'clients' }], {
+    mode: 'resumable', module: `export function transform(row) {
+        if (row.id === ${failId} && !globalThis.allowOriginal) throw new Error(row.name);
+        return {...row, value: 11};
+    }`
+});
+const recoveryOptions = (plan, recovery, extra = {}) =>
+    ({ name: 'test', schema: plan.after, manifestUrl: plan.url, recovery, batchSize: 1, ...extra });
+const repair = (page, plan, recovery, extra) => page.evaluate(options => tryEnsure(options, true), recoveryOptions(plan, recovery, extra));
+
+for (const [label, failId, processed] of [['empty', 1, 0], ['intermediate', 2, 1], ['final', 0, 3]]) {
+    test(`recovery repairs the ${label} original boundary and preserves v2 lineage`, async ({ page }) => {
+        const model = schema(); await seed(page, model, recoveryRows);
+        let plan = makeInterrupted(model, failId);
+        const first = failId === 0 ? await page.evaluate(async options => {
+            const controller = new AbortController();
+            let checkpoints = 0;
+            try {
+                await engine.ensureDatabase({ ...options, signal: controller.signal,
+                    onEvent: event => { if (event.phase === 'checkpoint' && ++checkpoints === 4) controller.abort(); } });
+            } catch (error) { return { ok: false, error: { code: error.code } }; }
+        }, recoveryOptions(plan, null)) : await runPlan(page, plan, { batchSize: 1 });
+        expectFailure(first);
+        assert.equal(first.error.code, failId === 0 ? 'MAGDB_CANCELLED' : 'MAGDB_HOOK_FAILED');
+        const original = await inspect(page);
+        assert.equal(original.state.active.processedRecords, processed);
+        assert.deepEqual((await read(page)).map(row => row.value), recoveryRows.map((_, index) => index < processed ? 11 : 1));
+        const approved = recoveryPackage(plan);
+        const originalDigest = plan.manifest.migrations[0].sha256;
+        plan = appendRevision(plan, model, [{ op: 'setMissing', store: 'clients', path: 'afterRecovery', value: true }]);
+        const result = await repair(page, plan, approved);
+        assert.deepEqual(result.value, { outcome: 'recovered', recoveryId: approved.id, revision: 2, applicationTargetRevision: 3 });
+        assert.equal((await inspect(page)).nativeVersion, original.nativeVersion + 1);
+        assert.deepEqual(await read(page), recoveryRows.map(row => ({ ...row, value: 10, repairs: 1 })));
+        const recovered = { id: plan.migration.id, sha256: originalDigest, outcome: 'recovered', recovery: approved };
+        assert.deepEqual((await inspect(page)).state.history, [recovered]);
+        assert.equal((await repair(page, plan, approved)).value?.outcome, 'alreadyRecovered');
+        assert.equal((await runPlan(page, plan)).value?.revision, 3);
+        const advanced = await inspect(page);
+        assert.equal(advanced.state.protocolVersion, 2);
+        assert.deepEqual(advanced.state.history[0], recovered);
+        assert.deepEqual(await read(page), recoveryRows.map(row => ({ ...row, value: 10, repairs: 1, afterRecovery: true })));
+        const withoutBinding = copy(plan.manifest);
+        withoutBinding.protocolVersion = 1;
+        withoutBinding.requiredCapabilities = [];
+        delete withoutBinding.recoveries;
+        withoutBinding.schemas = withoutBinding.schemas.map(asset => ({ ...asset, path: plan.base + '/' + asset.path }));
+        const failure = await runPlan(page, plan, { manifestUrl: undefined, manifest: withoutBinding });
+        assert.equal(failure.error?.code, 'MAGDB_RECOVERY_BINDING_REQUIRED');
+        if (process.env.MAGIC_V1_ENGINE) {
+            assert.equal(await page.evaluate(async options => {
+                const legacy = await import('/v1/migrationEngine.js');
+                try { await legacy.ensureDatabase(options); }
+                catch (error) { return error.code; }
+            }, { name: 'test', schema: model, manifest: withoutBinding }),
+            'MAGDB_STATE_INVALID');
+        }
+    });
+}
+
+test('compound keys and lossless policy survive recovery without rewriting the original edge', async ({ page }) => {
+    const model = schema();
+    model.numericFormat = 'lossless-v1';
+    model.stores[0].keyPath = ['region', 'id'];
+    const rows = recoveryRows.map((row, i) => ({ ...row, region: i < 2 ? 'a' : 'b', exact: '~ml1:09232379236109516801' }));
+    await seed(page, model, rows);
+    const plan = makeInterrupted(model);
+    assert.equal((await runPlan(page, plan, { batchSize: 1 })).error?.code, 'MAGDB_HOOK_FAILED');
+    const previous = await inspect(page);
+    const approved = recoveryPackage(plan);
+    assert.equal((await repair(page, plan, approved)).value?.outcome, 'recovered');
+    const final = await inspect(page);
+    assert.deepEqual(final.stores, previous.stores);
+    assert.deepEqual(final.numericPolicy, previous.numericPolicy);
+    assert.deepEqual(await read(page), rows.map(row => ({ ...row, value: 10, repairs: 1 })));
+});
+
+test('out-of-line date and binary compound keys survive native recovery checkpoints', async ({ page }) => {
+    const model = schema();
+    model.stores[0].keyPath = null;
+    const preserveKeys = await page.evaluate(async ({ model, rows }) => {
+        await engine.ensureDatabase({ name: 'test', schema: model });
+        const db = await openRaw('test');
+        try {
+            const tx = db.transaction('clients', 'readwrite');
+            const finished = complete(tx);
+            rows.forEach((row, index) => tx.objectStore('clients').add(row, [new Date(10), Uint8Array.of(index)]));
+            await finished;
+            return true;
+        } finally { db.close(); }
+    }, { model, rows: recoveryRows });
+    assert.equal(preserveKeys, true);
+    const plan = makeInterrupted(model);
+    assert.equal((await runPlan(page, plan, { batchSize: 1 })).error?.code, 'MAGDB_HOOK_FAILED');
+    assert.equal((await repair(page, plan, recoveryPackage(plan))).value?.outcome, 'recovered');
+    const keysMatch = await page.evaluate(async () => {
+        const db = await openRaw('test');
+        try {
+            const keys = await request(db.transaction('clients').objectStore('clients').getAllKeys());
+            return keys.length === 3 && keys.every((key, index) => indexedDB.cmp(key, [new Date(10), Uint8Array.of(index)]) === 0);
+        } finally { db.close(); }
+    });
+    assert.equal(keysMatch, true);
+    assert.deepEqual(await read(page), recoveryRows.map(row => ({ ...row, value: 10, repairs: 1 })));
+});
+
+test('recovery rejects a multi-operation edge and prevents primary key edits', async ({ page }) => {
+    const model = schema();
+    await seed(page, model, recoveryRows, 'multi');
+    const module = 'export function transform(row) { if (row.id === 2) throw Error(); return {...row,value:11}; }';
+    const multi = bundle(model, model, [{ op: 'transform', store: 'clients' },
+        { op: 'setMissing', store: 'clients', path: 'later', value: true }], { mode: 'resumable', module });
+    expectFailure(await runPlan(page, multi, { name: 'multi', batchSize: 1 }));
+    const before = await inspect(page, 'multi');
+    assert.equal((await repair(page, multi, recoveryPackage(multi), { name: 'multi' })).error?.code, 'MAGDB_RECOVERY_UNSUPPORTED');
+    assert.deepEqual(await inspect(page, 'multi'), before);
+
+    await seed(page, model, recoveryRows);
+    const single = makeInterrupted(model);
+    expectFailure(await runPlan(page, single, { batchSize: 1 }));
+    const partial = await read(page);
+    const approval = recoveryPackage(single, repairModule.replace('value: row.value - 1', 'id: 900, value: row.value - 1'));
+    assert.equal((await repair(page, single, approval)).error?.code, 'MAGDB_KEY_CHANGE_UNSUPPORTED');
+    assert.equal((await inspect(page)).state.recovery.repaired, 0);
+    assert.deepEqual(await read(page), partial);
+});
+
+test('explicit recovery never reruns a genuinely completed original edge or claims bootstrap did', async ({ page }) => {
+    const model = schema(); await seed(page, model, recoveryRows);
+    let plan = makeInterrupted(model);
+    await page.evaluate(() => { globalThis.allowOriginal = true; });
+    assert.equal((await runPlan(page, plan)).value?.revision, 2);
+    const previous = await inspect(page);
+    const approved = recoveryPackage(plan, 'throw new Error("A no-op must not import application code");');
+    assert.equal((await repair(page, plan, approved)).value?.outcome, 'alreadyCompletedOriginal');
+    assert.deepEqual(await inspect(page), previous);
+    plan = appendRevision(plan, model, [{ op: 'setMissing', store: 'clients', path: 'afterOriginal', value: true }]);
+    assert.equal((await runPlan(page, plan)).value?.revision, 3);
+    assert.equal((await inspect(page)).state.protocolVersion, 1);
+    assert.deepEqual(await read(page), recoveryRows.map(row => ({ ...row, value: 11, afterOriginal: true })));
+    assert.equal((await runPlan(page, plan, { name: 'bootstrap' })).value?.revision, 3);
+    assert.equal((await repair(page, plan, approved, { name: 'bootstrap' })).error?.code, 'MAGDB_RECOVERY_NOT_APPLICABLE');
+});
+
+test('cancel during recovery before writes and after checkpoints without replay', async ({ page, context }) => {
+    const model = schema(); await seed(page, model, recoveryRows);
+    const plan = makeInterrupted(model);
+    expectFailure(await runPlan(page, plan, { batchSize: 1 }));
+    const approved = recoveryPackage(plan, repairModule.replace('export function repairProcessed(row) {',
+        'export async function repairProcessed(row) { if (globalThis.pauseRepair) await new Promise(resolve => { globalThis.resumeHook = resolve; });'));
+    const options = recoveryOptions(plan, approved);
+    await page.evaluate(options => {
+        window.pauseRepair = true;
+        window.cancel = new AbortController();
+        window.pending = tryEnsure({ ...options, signal: cancel.signal }, true);
+    }, options);
+    await page.waitForFunction(() => typeof window.resumeHook === 'function');
+    assert.equal((await inspect(page)).state.recovery.repaired, 0);
+    const cancelled = await page.evaluate(async () => { cancel.abort(); const result = await pending; resumeHook(); return result; });
+    assert.equal(cancelled.error?.code, 'MAGDB_CANCELLED');
+    assert.equal((await runPlan(page, plan)).error?.code, 'MAGDB_RECOVERY_REQUIRED');
+    const originalAssets = new Map([...assets].filter(([url]) => url.startsWith(plan.base)));
+    const changed = recoveryPackage(plan, repairModule + '\n');
+    assert.equal((await repair(page, plan, changed)).error?.code, 'MAGDB_RECOVERY_PACKAGE_REQUIRED');
+    for (const [url, asset] of originalAssets) assets.set(url, asset);
+    const reopened = await loadPage(context);
+    const checkpoint = await reopened.evaluate(async options => {
+        const controller = new AbortController();
+        try {
+            await engine.recoverDatabase({ ...options, signal: controller.signal,
+                onEvent: event => { if (event.phase === 'recoveryCheckpoint' && event.processedRecords === 1) controller.abort(); } });
+        } catch (error) { return error.code; }
+    }, options);
+    assert.equal(checkpoint, 'MAGDB_CANCELLED');
+    assert.equal((await inspect(reopened)).state.recovery.repaired, 1);
+    assert.deepEqual((await read(reopened)).map(row => row.repairs ?? 0), [1, 0, 0]);
+    await reopened.close();
+    assert.equal((await repair(page, plan, approved)).value?.outcome, 'recovered');
+    assert.deepEqual((await read(page)).map(row => row.repairs), [1, 1, 1]);
+});
+
+test('recovery quota and verifier errors retain checkpoints and redact private data', async ({ page }) => {
+    const model = schema(); await seed(page, model, recoveryRows);
+    const plan = makeInterrupted(model); expectFailure(await runPlan(page, plan, { batchSize: 1 }));
+    const approved = recoveryPackage(plan, repairModule.replace('return row.value === 10',
+        'if (row.id === 2 && !globalThis.verifyNow) throw new Error(row.name); return row.value === 10'));
+    const quota = await page.evaluate(async options => {
+        const put = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function (row, ...keys) {
+            if (this.name === 'clients' && row.id === 2) throw new DOMException('Injected quota', 'QuotaExceededError');
+            return put.call(this, row, ...keys);
+        };
+        try { return await tryEnsure(options, true); } finally { IDBObjectStore.prototype.put = put; }
+    }, recoveryOptions(plan, approved));
+    assert.equal(quota.error?.code, 'MAGDB_QUOTA_EXCEEDED');
+    assert.equal(quota.error.retryable, true);
+    assert.equal((await inspect(page)).state.recovery.repaired, 1);
+    assert.deepEqual((await read(page)).map(row => row.repairs ?? 0), [1, 0, 0]);
+    const rejected = await repair(page, plan, approved);
+    assert.equal(rejected.error?.code, 'MAGDB_RECOVERY_VERIFICATION_FAILED');
+    assert.equal(rejected.error.retryable, false);
+    const snapshot = await inspect(page);
+    assert.equal(snapshot.state.status, 'recovering');
+    assert.equal(snapshot.state.recovery.verified, 1);
+    assert.ok(!Object.hasOwn(snapshot.state.recovery, 'lastKey'));
+    assert.ok(!JSON.stringify([snapshot, rejected, await page.evaluate(() => events)]).includes('PRIVATE_RECOVERY_FIXTURE'));
+    assert.equal((await runPlan(page, plan)).error?.code, 'MAGDB_RECOVERY_REQUIRED');
+    await page.evaluate(() => { globalThis.verifyNow = true; });
+    assert.equal((await repair(page, plan, approved)).value?.outcome, 'recovered');
+    assert.deepEqual((await read(page)).map(row => row.repairs), [1, 1, 1]);
+});
+
+test('wrong recovery bindings, tampered assets and unsupported shapes reject before mutation', async ({ page }) => {
+    const model = schema(); await seed(page, model, recoveryRows);
+    const plan = makeInterrupted(model); expectFailure(await runPlan(page, plan, { batchSize: 1 }));
+    const before = await inspect(page), partial = await read(page);
+    let approved = recoveryPackage(plan);
+    for (const wrong of [{ ...approved, id: 'wrong' }, { ...approved, sha256: digest('wrong') }])
+        assert.equal((await repair(page, plan, wrong)).error?.code, 'MAGDB_RECOVERY_MISMATCH');
+    for (const change of [doc => doc.schemaId = 'wrong', doc => doc.source.migrationHash = digest('wrong'),
+        doc => doc.source.migrationId = 'wrong', doc => doc.target.schemaHash = digest('wrong'),
+        doc => doc.operation.index = 1])
+        assert.equal((await repair(page, plan, recoveryPackage(plan, repairModule, change))).error?.code, 'MAGDB_RECOVERY_MISMATCH');
+    approved = recoveryPackage(plan, repairModule, doc => doc.operation.store = 'other');
+    assert.equal((await repair(page, plan, approved)).error?.code, 'MAGDB_RECOVERY_UNSUPPORTED');
+    approved = recoveryPackage(plan);
+    const modulePath = plan.base + '/recoveries/repair.mjs';
+    const module = assets.get(modulePath);
+    assets.delete(modulePath);
+    assert.equal((await repair(page, plan, approved)).error?.code, 'MAGDB_ASSET_UNAVAILABLE');
+    assets.set(modulePath, { ...module, body: module.body + ' ' });
+    assert.equal((await repair(page, plan, approved)).error?.code, 'MAGDB_ASSET_HASH_MISMATCH');
+    assert.deepEqual(await inspect(page), before);
+    await unchanged(page, before, partial);
+});
+
+test('tabs and a worker serialize explicit recovery and preserve the original attempt', async ({ page, context }) => {
+    const model = schema(); await seed(page, model, recoveryRows);
+    const plan = makeInterrupted(model); expectFailure(await runPlan(page, plan, { batchSize: 1 }));
+    const approved = recoveryPackage(plan);
+    const tab = await loadPage(context);
+    const url = plan.base + '/recover-worker.js';
+    assets.set(url, { type: 'text/javascript', body: `
+        import {recoverDatabase} from '/engine/migrations/migrationEngine.js';
+        self.onmessage = async event => {
+            try { self.postMessage(await recoverDatabase(event.data)); }
+            catch (error) { self.postMessage({ code: error.code }); }
+        };` });
+    const worker = page.evaluate(({ url, options }) => new Promise((resolve, reject) => {
+        const worker = new Worker(url, { type: 'module' });
+        worker.onmessage = event => { worker.terminate(); resolve(event.data); };
+        worker.onerror = error => { worker.terminate(); reject(new Error(error.message)); };
+        worker.postMessage(options);
+    }), { url, options: recoveryOptions(plan, approved) });
+    const results = await Promise.all([repair(page, plan, approved), repair(tab, plan, approved), worker]);
+    assert.deepEqual(results.map(result => result.value?.outcome ?? result.outcome).sort(),
+        ['alreadyRecovered', 'alreadyRecovered', 'recovered']);
+    assert.deepEqual((await read(page)).map(row => row.repairs), [1, 1, 1]);
+});
+
 if (cliFixture) test('installed CLI output boots and upgrades through the browser protocol', async ({ page }) => {
     const prefix = '/cli/';
     const manifestFile = cliFixture;
@@ -1202,11 +1497,16 @@ if (cliFixture) test('installed CLI output boots and upgrades through the browse
     assert.equal(result.revision, 2);
 });
 
+const expectedScenarioCount = cliFixture ? 92 : 91;
+assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
+
 if (listOnly) {
     console.log(JSON.stringify(tests.map(scenario => scenario.name)));
     process.exit(0);
 }
 await access(playwrightEntry);
+if (process.env.MAGIC_V1_ENGINE)
+    await access(path.join(process.env.MAGIC_V1_ENGINE, 'migrationEngine.js'));
 await mkdir(output, { recursive: true });
 const playwright = await import(pathToFileURL(playwrightEntry).href);
 
@@ -1229,6 +1529,8 @@ const server = createServer(async (request, response) => {
         let directory; let relative;
         if (pathname.startsWith('/engine/')) {
             directory = path.join(root, 'Magic.IndexedDb/wwwroot'); relative = pathname.slice('/engine/'.length);
+        } else if (pathname.startsWith('/v1/') && process.env.MAGIC_V1_ENGINE) {
+            directory = path.resolve(process.env.MAGIC_V1_ENGINE); relative = pathname.slice('/v1/'.length);
         } else if (pathname.startsWith('/cli/') && cliFixture) {
             directory = path.dirname(cliFixture); relative = pathname.slice('/cli/'.length);
         } else { response.writeHead(404); response.end('Fixture not found'); return; }
@@ -1240,7 +1542,7 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 origin = `http://127.0.0.1:${server.address().port}`;
 let browser;
-const report = { browser: browserName, startedAt: new Date().toISOString(), scenarios: [] };
+const report = { browser: browserName, v1Compatibility: Boolean(process.env.MAGIC_V1_ENGINE), startedAt: new Date().toISOString(), scenarios: [] };
 try {
     browser = await playwright[browserName].launch({ headless: true,
         ...(process.env.MAGIC_BROWSER_EXECUTABLE ? { executablePath: process.env.MAGIC_BROWSER_EXECUTABLE } : {}) });
@@ -1280,7 +1582,9 @@ try {
     if (browser) await browser.close();
     await new Promise(resolve => server.close(resolve));
     report.finishedAt = new Date().toISOString();
-    report.expected = tests.length;
+    report.expected = expectedScenarioCount;
+    report.executed = report.scenarios.length;
+    report.skipped = 0;
     report.passed = report.scenarios.filter(s => s.state === 'passed').length;
     report.failed = report.scenarios.filter(s => s.state === 'failed').length;
     await writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');

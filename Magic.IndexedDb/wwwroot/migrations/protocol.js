@@ -109,8 +109,71 @@ export function physicalStores(schema) {
 export function compareNames(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
 export function samePhysical(actual, schema) { return canonicalJson(actual) === canonicalJson(physicalStores(schema)); }
 
+const digestPattern = /^sha256:[0-9a-f]{64}$/;
+const identifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function exactFields(value, fields) {
+    return value && typeof value === "object" && !Array.isArray(value) &&
+        Object.keys(value).length === fields.length && fields.every(field => Object.hasOwn(value, field));
+}
+
+export function validateRecovery(document, binding, edge, from, to, migration) {
+    const valid = exactFields(document, ["protocolVersion", "id", "schemaId", "source", "target", "operation", "module"]);
+    requireCondition(valid && document.protocolVersion === 2 && document.id === binding.id && document.schemaId === from.schema.schemaId,
+        "MAGDB_RECOVERY_MISMATCH", "Recovery document identity does not match the approved binding.");
+    const { source, target, operation, module } = document;
+    requireCondition(exactFields(source, ["revision", "schemaHash", "migrationId", "migrationHash"]) &&
+        source.revision === edge.fromRevision && source.schemaHash === from.hash &&
+        source.migrationId === edge.id && source.migrationHash === edge.sha256 &&
+        exactFields(target, ["revision", "schemaHash"]) && target.revision === edge.toRevision && target.schemaHash === to.hash &&
+        exactFields(operation, ["index", "store"]) && operation.index === 0,
+        "MAGDB_RECOVERY_MISMATCH", "Recovery is bound to a different migration or model.");
+    requireCondition(migration.mode === "resumable" && migration.operations.length === 1 &&
+        migration.operations[0].op === "transform" && migration.operations[0].store === operation.store,
+        "MAGDB_RECOVERY_UNSUPPORTED", "Recovery requires one resumable custom transform on the bound store.");
+    requireCondition(exactFields(module, ["path", "sha256"]) && /^[A-Za-z0-9][A-Za-z0-9._-]*\.m?js$/.test(module.path),
+        "MAGDB_RECOVERY_INVALID", "Recovery requires a sibling JavaScript module.");
+    validateAsset(module);
+    validateRecoveryModels(from.schema, to.schema, operation.store);
+}
+
+function validateRecoveryModels(from, to, store) {
+    // New/removed fields may be transformed. Existing field codec changes and
+    // unrelated store contracts require an adapter outside this capability.
+    function compareFields(previous, next) {
+        for (const field of previous ?? []) {
+            const target = next?.find(member => member.name === field.name);
+            if (!target) continue;
+            const { properties, ...descriptor } = field;
+            const { properties: nextProperties, ...nextDescriptor } = target;
+            requireCondition(canonicalJson(descriptor) === canonicalJson(nextDescriptor),
+                "MAGDB_RECOVERY_UNSUPPORTED", "Recovery cannot change an existing field representation.");
+            compareFields(properties, nextProperties);
+        }
+    }
+    for (const previous of from.stores) {
+        const next = to.stores.find(candidate => candidate.name === previous.name);
+        if (previous.name !== store) requireCondition(canonicalJson(previous) === canonicalJson(next),
+            "MAGDB_RECOVERY_UNSUPPORTED", "Recovery cannot change unrelated store contracts.");
+        else {
+            requireCondition(previous.recordCodec === next.recordCodec,
+                "MAGDB_RECOVERY_UNSUPPORTED", "Recovery cannot change the store codec.");
+            compareFields(previous.fields, next.fields);
+        }
+    }
+}
+
 export function validateManifest(manifest, schemaId) {
-    validateProtocol(manifest);
+    if (manifest?.protocolVersion === 2) {
+        requireCondition(Array.isArray(manifest.recoveries) && manifest.recoveries.length > 0 &&
+            Array.isArray(manifest.requiredCapabilities) && manifest.requiredCapabilities.includes("resumableRepairV1"), "MAGDB_MANIFEST_INVALID", "Recovery-aware manifests require approved bindings.");
+        validateProtocol({ ...manifest, protocolVersion: 1,
+            requiredCapabilities: Array.isArray(manifest.requiredCapabilities)
+                ? manifest.requiredCapabilities.filter(capability => capability !== "resumableRepairV1") : null });
+    } else {
+        validateProtocol(manifest);
+        requireCondition(!Object.hasOwn(manifest, "recoveries"), "MAGDB_MANIFEST_INVALID", "Recovery bindings require manifest protocol 2.");
+    }
     requireCondition(manifest.schemaId === schemaId, "MAGDB_SCHEMA_ID_MISMATCH", "The manifest belongs to another logical database.");
     requireCondition(Number.isSafeInteger(manifest.targetRevision) && manifest.targetRevision > 0 &&
         Array.isArray(manifest.schemas) && Array.isArray(manifest.migrations) && Array.isArray(manifest.baselines ?? []),
@@ -135,6 +198,15 @@ export function validateManifest(manifest, schemaId) {
         "MAGDB_HISTORY_INVALID", "Migration history contains a gap, duplicate, or fork.");
         ids.add(migration.id); starts.add(migration.fromRevision);
     }
+    const recoveryIds = new Set(), recoveryEdges = new Set();
+    for (const binding of manifest.recoveries ?? []) {
+        requireCondition(exactFields(binding, ["id", "fromRevision", "path", "sha256"]) &&
+            typeof binding.id === "string" && identifierPattern.test(binding.id) && starts.has(binding.fromRevision) &&
+            !recoveryIds.has(binding.id) && !recoveryEdges.has(binding.fromRevision),
+            "MAGDB_MANIFEST_INVALID", "Recovery bindings require unique identities and one approval per edge.");
+        validateAsset(binding);
+        recoveryIds.add(binding.id); recoveryEdges.add(binding.fromRevision);
+    }
     for (const baseline of manifest.baselines ?? []) {
         requireCondition(typeof baseline.id === "string" && baseline.id && revisions.has(baseline.revision),
             "MAGDB_BASELINE_INVALID", "Invalid baseline revision or identity.");
@@ -152,11 +224,19 @@ export function validateCompletedHistory(history, revision, manifest = null) {
         requireCondition(typeof entry?.id === "string" && entry.id && !ids.has(entry.id) && /^sha256:[0-9a-f]{64}$/.test(entry.sha256),
             "MAGDB_STATE_INVALID", "Completed migration identities must be valid and unique.");
         ids.add(entry.id);
+        const recovered = entry.outcome === "recovered";
+        requireCondition(recovered ? exactFields(entry, ["id", "sha256", "outcome", "recovery"]) &&
+            exactFields(entry.recovery, ["id", "sha256"]) && typeof entry.recovery.id === "string" &&
+            identifierPattern.test(entry.recovery.id) && digestPattern.test(entry.recovery.sha256)
+            : exactFields(entry, ["id", "sha256"]), "MAGDB_STATE_INVALID", "Invalid migration completion outcome.");
         if (manifest) {
             const fromRevision = revision - history.length + index;
             const reference = manifest.migrations.find(item => item.fromRevision === fromRevision);
             requireCondition(reference?.toRevision === fromRevision + 1 && reference.id === entry.id && reference.sha256 === entry.sha256,
                 "MAGDB_HISTORY_REWRITTEN", "A completed migration is missing, changed, or attached to a different revision.");
+            if (recovered) requireCondition(manifest.recoveries?.some(binding => binding.fromRevision === fromRevision &&
+                binding.id === entry.recovery.id && binding.sha256 === entry.recovery.sha256),
+                "MAGDB_RECOVERY_BINDING_REQUIRED", "The manifest must retain the approved recovery binding.");
         }
     }
 }

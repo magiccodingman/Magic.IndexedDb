@@ -132,9 +132,17 @@ jobs:
         if: ${{ runner.os == 'macOS' }}
         run: node tests/migrations/BrowserDriver/bin/Release/net10.0/.playwright/package/cli.js install ${{ matrix.browser }}
 
+      - name: Check out the reviewed v1 engine for compatibility tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: fbb55aa1f2eed1a5f3138f952ac1038bc8a5b4ad
+          path: artifacts/recovery-v1-source
+          persist-credentials: false
+
       - name: Run independent protocol, recovery, and package-output tests
         env:
           MAGIC_CLI_FIXTURE: artifacts/migration-cli/published/cli-fixture/manifest.json
+          MAGIC_V1_ENGINE: artifacts/recovery-v1-source/Magic.IndexedDb/wwwroot/migrations
         run: >-
           node tests/migrations/run.mjs
           ${{ matrix.browser }}

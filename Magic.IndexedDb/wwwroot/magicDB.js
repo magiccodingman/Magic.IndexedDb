@@ -10,7 +10,7 @@ import {
     createNumericPolicy, requireFreshNumericTarget, assertNumericPolicy
 } from "./utilities/numericStorage.js";
 import { debugLog } from "./utilities/utilityHelpers.js";
-import { ensureDatabase, assertDatabaseReady, inspectDatabase, subscribeMigrationEvents, MigrationError } from "./migrations/migrationEngine.js";
+import { recoverDatabase, ensureDatabase, assertDatabaseReady, inspectDatabase, subscribeMigrationEvents, MigrationError } from "./migrations/migrationEngine.js";
 import { canonicalJson, metadataStore } from "./migrations/protocol.js";
 /**
  * @typedef {Object} DatabasesItem
@@ -27,12 +27,23 @@ let databases = new Map(); // Change array to a Map
 const protectedDatabases = new Map();
 const numericDatabases = new Map();
 const managedDatabases = new Map();
+const recoveryAttempts = new Map();
 
 export { inspectDatabase, subscribeMigrationEvents };
 
 /** Cancel this tab's pending attempt without changing its committed journal. */
 export function cancelMigration(name) {
     managedDatabases.get(name)?.controller.abort();
+    recoveryAttempts.get(name)?.abort();
+}
+
+export async function recoverMigration(options) {
+    if (recoveryAttempts.has(options.name))
+        throw new MigrationError("MAGDB_RECOVERY_IN_PROGRESS", "This tab already has a recovery attempt for this database.");
+    const controller = new AbortController();
+    recoveryAttempts.set(options.name, controller);
+    try { return await recoverDatabase({ ...options, signal: controller.signal }); }
+    finally { recoveryAttempts.delete(options.name); }
 }
 
 function nativeSchema(dbStore, numericStorage) {
@@ -308,6 +319,7 @@ export async function countTable(dbName, storeName) {
  * Closes all open databases.
  */
 export function closeAll() {
+    for (const controller of recoveryAttempts.values()) controller.abort();
     databases.forEach((db, dbName) => {
         if (protectedDatabases.has(dbName)) return;
         if (db.isOpen?.()) db.close();
