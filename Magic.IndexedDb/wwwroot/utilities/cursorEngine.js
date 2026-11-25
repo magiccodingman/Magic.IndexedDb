@@ -9,7 +9,7 @@ import { rebuildCursorConditionsToPredicateTree } from "./rebuildNestedPredicate
  * Executes a cursor-based query using Dexie's `each()` for efficient iteration.
  * This ensures that records are not duplicated if they match multiple OR conditions.
  */
-export async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys) {
+export async function runCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys, project = null) {
 
     const structuredPredicateTree = rebuildCursorConditionsToPredicateTree(conditions);
 
@@ -40,14 +40,15 @@ export async function runCursorQuery(db, table, conditions, queryAdditions, yiel
             debugLog("Stable Ordering detected. Disabling any ordering by indexed queries.");
         }
 
-        let primaryKeyList = await runMetaDataCursorQuery(db, table, structuredPredicateTree, queryAdditions, yieldedPrimaryKeys, compoundKeys, indexOrderProps);
-        let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, true, indexOrderProps);
+        let primaryKeyList = await runMetaDataCursorQuery(db, table, structuredPredicateTree, queryAdditions, yieldedPrimaryKeys, compoundKeys, indexOrderProps, project);
+        let finalPrimaryKeys = applyCursorQueryAdditions(primaryKeyList, queryAdditions, compoundKeys, true, indexOrderProps, Boolean(project));
+        if (project) return finalPrimaryKeys.map(entry => entry.projected);
         let finalRecords = await fetchRecordsByPrimaryKeys(db, table, finalPrimaryKeys, compoundKeys);
 
         debugLog("Final Cursor Query Records Retrieved", { count: finalRecords.length });
         return finalRecords;
     } else {
-        return await runDirectCursorQuery(db, table, structuredPredicateTree, yieldedPrimaryKeys, compoundKeys);
+        return await runDirectCursorQuery(db, table, structuredPredicateTree, yieldedPrimaryKeys, compoundKeys, project);
     }
 }
 
@@ -176,7 +177,7 @@ function optimizeSingleCondition(condition) {
 }
 
 
-async function runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, compoundKeys) {
+async function runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, compoundKeys, project) {
     debugLog("Running Direct Cursor Query");
 
     let estimatedSize = await table.count();
@@ -189,7 +190,7 @@ async function runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, c
     let resultIndex = 0;
 
     await processCursorRecords(db, table, conditions, yieldedPrimaryKeys, compoundKeys, (record) => {
-        records[resultIndex++] = record;
+        records[resultIndex++] = project ? project(record) : record;
 
         if (resultIndex >= records.length) {
             records.length *= 2;
@@ -202,7 +203,7 @@ async function runDirectCursorQuery(db, table, conditions, yieldedPrimaryKeys, c
 }
 
 
-async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys, detectedIndexOrderProperties = []) {
+async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yieldedPrimaryKeys, compoundKeys, detectedIndexOrderProperties = [], project = null) {
     debugLog("Extracting Metadata for Cursor Query", { conditions, queryAdditions });
 
     let requiredProperties = new Set();
@@ -253,7 +254,8 @@ async function runMetaDataCursorQuery(db, table, conditions, queryAdditions, yie
 
         primaryKeyList[resultIndex++] = {
             primaryKey: recordKey,
-            sortingProperties: { ...sortingProperties }
+            sortingProperties: { ...sortingProperties },
+            ...(project ? { projected: project(record) } : {})
         };
 
         if (resultIndex >= primaryKeyList.length) {
@@ -722,9 +724,11 @@ function applyCursorQueryAdditions(
     queryAdditions,
     compoundKeys,
     flipSkipTakeOrder = true,
-    detectedIndexOrderProperties = []
+    detectedIndexOrderProperties = [],
+    retainEntries = false
 ) {
     if (!queryAdditions || queryAdditions.length === 0) {
+        if (retainEntries) return primaryKeyList;
         return primaryKeyList.map(item =>
             compoundKeys.map(key => item.sortingProperties[key])
         );
@@ -811,6 +815,7 @@ function applyCursorQueryAdditions(
 
     debugLog("Final Ordered Primary Key List", primaryKeyList);
 
+    if (retainEntries) return primaryKeyList;
     return primaryKeyList.map(item =>
         compoundKeys.map(key => item.sortingProperties[key])
     );

@@ -2,7 +2,7 @@
 
 /// <reference types="./dexie/dexie.d.ts" />
 import Dexie from "./dexie/dexie.js";
-import { magicQueryAsync, magicQueryYield } from "./magicLinqToIndexedDb.js";
+import { magicQueryAsync, magicQueryYield, selectFields } from "./magicLinqToIndexedDb.js";
 import { createProtectedStorage, ensureProtectedSchema, protectedDatabasePrefix } from "./utilities/protectedStorage.js";
 import { encryptionMetadataStore } from "./utilities/encryptionPolicy.js";
 import {
@@ -773,4 +773,20 @@ export async function* wrapperMagicQueryYield(dbName, storeName, nestedOrFilter,
     const db = await getDb(dbName); // Get the Dexie instance from your manager
     const table = db.table(storeName);
     yield* magicQueryYield(db, table, nestedOrFilter, queryAdditions, forceCursor);
+}
+
+export async function projectRecords(dbName, storeName, predicate, additions, forceCursor, fields) {
+    return collectProtectedQuery(projectRecordStream(dbName, storeName, predicate, additions, forceCursor, fields));
+}
+
+export async function* projectRecordStream(dbName, storeName, predicate, additions, forceCursor, fields) {
+    const protection = protectedTable(dbName, storeName);
+    if (protection) {
+        for await (const row of protection.query(predicate, additions, forceCursor))
+            yield selectFields(row, fields);
+        return;
+    }
+
+    const db = await getDb(dbName);
+    yield* magicQueryYield(db, db.table(storeName), predicate, additions, forceCursor, fields);
 }

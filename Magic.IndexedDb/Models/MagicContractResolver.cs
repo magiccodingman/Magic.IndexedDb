@@ -162,13 +162,7 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
                 try
                 {
-                    bool nativeKey = MagicNumericSerialization.IsLossless(options) &&
-                                     MagicNumericSerialization.IsNativeAutoIncrementKey(mpe.Property, type);
-                    if (nativeKey && MagicConverterHelper.HasCustomConverter(mpe.Property, options))
-                        throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
-                    object? value = nativeKey
-                        ? MagicNumericSerialization.ReadNativeKey(ref reader, mpe.Property.PropertyType)
-                        : ReadPropertyValue(ref reader, mpe, options);
+                    object? value = ReadMappedProperty(ref reader, mpe, type, options);
                     propertyValues[csharpPropertyName] = value;
                 }
                 catch (Exception ex) when (ex is not JsonException)
@@ -197,6 +191,19 @@ internal class MagicContractResolver<T> : JsonConverter<T>
     /// <summary>
     /// Reads and assigns a property value, detecting collections, simple types, and complex objects.
     /// </summary>
+    internal object? ReadMappedProperty(ref Utf8JsonReader reader, MagicPropertyEntry property,
+        Type ownerType, JsonSerializerOptions options)
+    {
+        if (!MagicNumericSerialization.IsLossless(options) ||
+            !MagicNumericSerialization.IsNativeAutoIncrementKey(property.Property, ownerType))
+            return ReadPropertyValue(ref reader, property, options);
+
+        if (MagicConverterHelper.HasCustomConverter(property.Property, options))
+            throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
+
+        return MagicNumericSerialization.ReadNativeKey(ref reader, property.Property.PropertyType);
+    }
+
     private object? ReadPropertyValue(ref Utf8JsonReader reader, MagicPropertyEntry mpe, JsonSerializerOptions options)
     {
         if (MagicConverterHelper.HasCustomConverter(mpe.Property, options))

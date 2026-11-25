@@ -106,8 +106,13 @@ public class SingleRecordBasicTest : TestBase<SingleRecordBasicTestPage>
         Assert.AreEqual("OK", await this.RunTestPageMethodAsync(page => page.CompoundKeyCrudAndQuery));
 
     [TestMethod]
-    public async Task LargeUnicodeStreamTest() =>
-        Assert.AreEqual("OK", await this.RunTestPageMethodAsync(page => page.LargeUnicodeStream));
+    public async Task LargeUnicodeStreamTest()
+    {
+        // The test host uses 64-byte chunks and awaits each SignalR callback.
+        // Allow more time for completion while still requiring the exact dataset.
+        var result = await RunTestPageMethodAsync(page => page.LargeUnicodeStream, TimeSpan.FromSeconds(30));
+        Assert.AreEqual("OK", result);
+    }
 
     [TestMethod]
     public async Task StreamCancellationAndRecoveryTest() =>

@@ -232,6 +232,30 @@ public sealed class NumericQueryTests
         Assert.AreEqual(BeyondJavaScriptInteger, (await query.SelectPublicAsync(row => row.Custom)).Single());
     }
 
+    [TestMethod]
+    public async Task ProjectionRejectsAbsentFieldsRatherThanFabricatingDefaults()
+    {
+        var browser = new RecordingBrowser { Reply = "[{}]" };
+        var query = Manager(browser).Query<NumericRecord>("lossless", nameof(NumericRecord));
+        var projection = query.Select(row => row.Id);
+        Assert.IsEmpty(browser.Packages, "Select should defer browser execution.");
+        await Assert.ThrowsAsync<JsonException>(() => projection.ToListAsync());
+    }
+
+    [TestMethod]
+    public async Task ProjectionUsesDatabasePolicyForOperandsAndPropertyConverters()
+    {
+        var browser = new RecordingBrowser { Reply = "[{\"Custom\":\"custom:9007199254740993\"}]" };
+        var query = Manager(browser).Query<NumericRecord>("lossless", nameof(NumericRecord));
+        var values = await query.Where(row => row.Id == BeyondJavaScriptInteger)
+            .Select(row => row.Custom).ToListAsync();
+        Assert.AreEqual(BeyondJavaScriptInteger, values.Single());
+        var parameters = browser.Packages.Single().GetProperty("parameters");
+        Assert.AreEqual(MagicNumericCodec.Encode(BeyondJavaScriptInteger),
+            parameters[2].GetProperty("condition").GetProperty("value").GetString());
+        Assert.AreEqual("Custom", parameters[5][0].GetString());
+    }
+
     private static JsonElement Operand<T>(Expression<Func<T, bool>> predicate)
     {
         var node = new UniversalExpressionBuilder<T>(predicate, Lossless()).Build();
