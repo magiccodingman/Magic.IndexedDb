@@ -22,8 +22,12 @@ internal static class MigrationPlanner
             }
             if (!Protocol.Equal(old["keyPath"], store["keyPath"]) || !Protocol.Equal(old["autoIncrement"], store["autoIncrement"]))
                 operations.Add(Manual("Primary key or auto-increment changed. Plan an explicit staged rebuild; automatic key conversion is unsupported.", "primaryKey", name));
-            if (!Protocol.Equal(old["encryptedFields"], store["encryptedFields"]) || !Protocol.Equal(old["exposedFields"], store["exposedFields"]))
-                operations.Add(Manual("Protection policy changed. An authenticated protected-storage transition is required.", "protection", name));
+            if (!ProtectionRules.SamePolicy(old, store))
+            {
+                var reprotect = new JsonObject { ["op"] = "reprotect", ["store"] = name };
+                if (ProtectionRules.LosesProtection(old, store)) reprotect["allowProtectionLoss"] = false;
+                operations.Add(reprotect);
+            }
 
             var oldIndexes = Named(Protocol.Array(old, "indexes"));
             var newIndexes = Named(Protocol.Array(store, "indexes"));

@@ -36,7 +36,7 @@ jobs:
           node-version: 24
 
       - name: Validate canonical JSON and portable document safety
-        run: node --test tests/migrations/protocol.test.mjs tests/migrations/registration.test.mjs
+        run: node --test tests/migrations/protocol.test.mjs tests/migrations/protected-protocol.test.mjs tests/migrations/protected-adapter.test.mjs tests/migrations/registration.test.mjs
 
   packaged-cli:
     name: Packaged CLI contract

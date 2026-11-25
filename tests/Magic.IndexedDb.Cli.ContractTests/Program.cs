@@ -235,18 +235,21 @@ Test("manually duplicated physical baselines cannot validate or publish", async 
     Check(!File.Exists(f.Published("release")));
 });
 foreach (var property in new[] { "encryptedFields", "exposedFields" })
-    Test($"{property} permits neutral export and drafts but blocks validation and publication", async f =>
+    Test($"{property} supports authenticated bootstrap baseline and public index publication", async f =>
     {
-        f.Model["stores"]![0]![property] = property == "encryptedFields" ? new JsonArray("name") : new JsonArray();
+        f.Model["stores"]![0]![property] = property == "encryptedFields" ? new JsonArray("name") : new JsonArray("id");
         f.Save();
         Check((await f.Raw("databases", "list", "--schema", f.ModelPath, "--json")).Code == 0);
         Check((await f.Raw("schema", "export", "--schema", f.ModelPath, "--json")).Code == 0);
-        await f.Code(3, "migrations", "add", "Initial");
-        f.AddIndex(); await f.Code(3, "migrations", "add", "Index");
-        await f.Fail("MAGDB4208", "migrations", "validate");
-        await f.Fail("MAGDB4208", "migrations", "publish", "--output", Path.Combine(f.Root, "release"));
-        Check(!File.Exists(f.Published("release")));
-        Check(!File.Exists(Path.Combine(f.Source, "fixture", "published.lock.json")));
+        await f.Initial(); await f.Baseline(0, acknowledge: true);
+        f.Model["stores"]![0]!["indexes"]!.AsArray().Add(new JsonObject
+            { ["name"] = "byId", ["keyPath"] = "id", ["unique"] = false, ["multiEntry"] = false });
+        f.Save(); await f.Ok("migrations", "add", "PublicIndex"); await f.Ok("migrations", "validate");
+        Check(f.Migration()["mode"]!.GetValue<string>() == "atomic");
+        await f.Publish("release");
+        var manifest = JsonNode.Parse(File.ReadAllText(f.Published("release")))!;
+        Check(manifest["requiredCapabilities"]!.AsArray().Any(value => value!.GetValue<string>() == "authenticatedMigrationsV1"));
+        Check(manifest["baselines"]!.AsArray().Count == 1);
     });
 Test("empty encrypted fields and null exposed fields remain ordinary storage", async f =>
 {
@@ -254,35 +257,146 @@ Test("empty encrypted fields and null exposed fields remain ordinary storage", a
     f.Model["stores"]![0]!["exposedFields"] = null; f.Save();
     await f.Initial(); await f.Ok("migrations", "validate");
 });
-Test("protected historical revision blocks a currently unprotected target", async f =>
+Test("an authenticated vault stays authenticated while its first model is public", async f =>
+{
+    f.Model["requiredCapabilities"] = new JsonArray("authenticatedMigrationsV1"); f.Save();
+    await f.Initial(); await f.Publish("public");
+    var manifest = JsonNode.Parse(File.ReadAllText(f.Published("public")))!;
+    Check(manifest["requiredCapabilities"]!.AsArray().Any(value => value!.GetValue<string>() == "authenticatedMigrationsV1"));
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
+    await f.Ok("migrations", "add", "Protect"); await f.Publish("protected");
+});
+Test("publication seals authenticated history even for an all-public model", async f =>
+{
+    await f.Initial();
+    var history = f.History(); history["requiredCapabilities"] = new JsonArray("authenticatedMigrationsV1"); f.WriteHistory(history);
+    await f.Publish("authenticated");
+    history["requiredCapabilities"] = new JsonArray(); f.WriteHistory(history);
+    await f.Fail("MAGDB4301", "migrations", "validate");
+});
+Test("plain to encrypted policy scaffolds an authenticated resumable rewrite", async f =>
+{
+    await f.Initial();
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
+    await f.Ok("migrations", "add", "ProtectName");
+    var migration = f.Migration();
+    Check(migration["mode"]!.GetValue<string>() == "resumable");
+    Check(migration["operations"]!.AsArray().Count == 1 && migration["operations"]![0]!["op"]!.GetValue<string>() == "reprotect");
+    await f.Ok("migrations", "validate"); await f.Publish("release");
+});
+Test("encrypted to plain requires sealed explicit approval and retains authenticated history", async f =>
 {
     f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
-    await f.Code(3, "migrations", "add", "Initial");
+    await f.Initial();
     f.Model["stores"]![0]!.AsObject().Remove("encryptedFields"); f.Save();
     await f.Code(3, "migrations", "add", "RemoveProtection");
-    f.ChangeMigration(m => m["operations"] = new JsonArray());
-    await f.Fail("MAGDB4208", "migrations", "validate");
+    await f.Fail("MAGDB4212", "migrations", "validate");
+    f.ChangeMigration(m => m["operations"]![0]!["allowProtectionLoss"] = true);
+    await f.Ok("migrations", "validate"); await f.Publish("approved");
+    var manifest = JsonNode.Parse(File.ReadAllText(f.Published("approved")))!;
+    Check(manifest["requiredCapabilities"]!.AsArray().Any(value => value!.GetValue<string>() == "authenticatedMigrationsV1"));
+    await f.Code(3, "migrations", "add", "Later", "--empty");
+    Check(f.Migration()["mode"]!.GetValue<string>() == "resumable");
+    Check(f.Migration()["requiredCapabilities"]!.AsArray().Any(value => value!.GetValue<string>() == "authenticatedMigrationsV1"));
+    f.ChangeMigration(m => m["operations"] = new JsonArray(new JsonObject
+        { ["op"] = "setMissing", ["store"] = "items", ["path"] = "later", ["value"] = true }));
+    await f.Ok("migrations", "validate"); await f.Publish("later");
 });
-Test("temporary protected store in migration is rejected before publication", async f =>
+Test("protection transition cannot be declared complete without rewriting records", async f =>
+{
+    await f.Initial();
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
+    await f.Ok("migrations", "add", "Protect");
+    f.ChangeMigration(m => m["operations"] = new JsonArray());
+    await f.Fail("MAGDB4211", "migrations", "validate");
+});
+Test("temporary protected storage requires explicit authenticated capability", async f =>
 {
     await f.Initial(); await f.Code(3, "migrations", "add", "Temporary", "--empty");
-    var store = f.Model["stores"]![0]!.DeepClone(); store["name"] = "temporary"; store["exposedFields"] = new JsonArray();
+    var store = f.Model["stores"]![0]!.DeepClone(); store["name"] = "temporary"; store["exposedFields"] = new JsonArray("id");
     f.ChangeMigration(m => m["operations"] = new JsonArray(
         new JsonObject { ["op"] = "createStore", ["definition"] = store },
         new JsonObject { ["op"] = "deleteStore", ["store"] = "temporary", ["allowDataLoss"] = true }));
-    await f.Fail("MAGDB4208", "migrations", "validate");
+    await f.Fail("MAGDB4211", "migrations", "validate");
+    f.ChangeMigration(m => m["requiredCapabilities"] = new JsonArray("authenticatedMigrationsV1"));
+    await f.Ok("migrations", "validate"); await f.Publish("release");
 });
-Test("protected baseline metadata fails with an explicit unsupported diagnostic", async f =>
+Test("protected baseline must still match the complete managed data contract", async f =>
 {
     await f.Initial(); await f.Baseline(0, acknowledge: true);
     var path = Path.Combine(f.Source, "fixture", "baselines", "legacy-v2.json");
     var baseline = JsonNode.Parse(File.ReadAllText(path))!;
     baseline["stores"]![0]!["encryptedFields"] = new JsonArray("name");
     File.WriteAllText(path, baseline.ToJsonString());
-    await f.Fail("MAGDB4208", "migrations", "validate");
+    await f.Fail("MAGDB4203", "migrations", "validate");
 });
-Test("recovery publication preserves original bytes and seals approved lineage", async f =>
+foreach (var (name, beforeFields, beforePublic, afterFields, afterPublic, loss) in new (string, string[]?, string[]?, string[]?, string[]?, bool)[]
 {
+    ("field to whole record", ["name"], null, null, ["id"], false),
+    ("field to whole record with exposure", ["name"], null, null, ["id", "name"], true),
+    ("whole record to field", null, ["id"], ["name"], null, true),
+    ("whole record public allowlist grows", null, ["id"], null, ["id", "name"], true),
+    ("whole record public allowlist shrinks", null, ["id", "name"], null, ["id"], false),
+    ("plain to whole record", null, null, null, ["id"], false)
+})
+    Test($"{name} preserves explicit protection-loss decisions", async f =>
+    {
+        ApplyPolicy(f.Model, beforeFields, beforePublic); f.Save(); await f.Initial();
+        ApplyPolicy(f.Model, afterFields, afterPublic); f.Save();
+        await f.Code(loss ? 3 : 0, "migrations", "add", "Policy");
+        if (loss)
+        {
+            await f.Fail("MAGDB4212", "migrations", "validate");
+            f.ChangeMigration(m => m["operations"]![0]!["allowProtectionLoss"] = true);
+        }
+        await f.Ok("migrations", "validate"); await f.Publish("release");
+    });
+Test("authenticated data rewrites cannot run as native atomic operations", async f =>
+{
+    await f.Initial(); f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
+    await f.Code(3, "migrations", "add", "Protect", "--mode", "atomic");
+    await f.Fail("MAGDB4211", "migrations", "validate");
+});
+Test("protected required-field scaffolding selects resumable before its manual backfill is resolved", async f =>
+{
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save(); await f.Initial();
+    f.AddField("status", false); await f.Code(3, "migrations", "add", "RequiredStatus");
+    Check(f.Migration()["mode"]!.GetValue<string>() == "resumable");
+    f.ChangeMigration(m => m["operations"] = new JsonArray(new JsonObject
+        { ["op"] = "setMissing", ["store"] = "items", ["path"] = "status", ["value"] = "new" }));
+    await f.Ok("migrations", "validate");
+});
+Test("authenticated rewrites reject repeated operations on the same store", async f =>
+{
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save(); await f.Initial();
+    await f.Code(3, "migrations", "add", "Data", "--empty");
+    f.ChangeMigration(m => m["operations"] = new JsonArray(
+        new JsonObject { ["op"] = "setMissing", ["store"] = "items", ["path"] = "one", ["value"] = true },
+        new JsonObject { ["op"] = "setMissing", ["store"] = "items", ["path"] = "two", ["value"] = true }));
+    await f.Fail("MAGDB4211", "migrations", "validate");
+});
+Test("authenticated edges cannot remove their required runtime capability", async f =>
+{
+    await f.Initial(); f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save();
+    await f.Ok("migrations", "add", "Protect");
+    f.ChangeMigration(m => m["requiredCapabilities"] = new JsonArray());
+    await f.Fail("MAGDB4211", "migrations", "validate");
+});
+Test("protected models cannot index ciphertext or hide a native primary key", async f =>
+{
+    f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.AddIndex();
+    await f.Fail("MAGDB4208", "migrations", "add", "Initial");
+    Check(!File.Exists(f.HistoryPath));
+    f.Model["stores"]![0]!["indexes"] = new JsonArray();
+    f.Model["stores"]![0]!.AsObject().Remove("encryptedFields");
+    f.Model["stores"]![0]!["exposedFields"] = new JsonArray(); f.Save();
+    await f.Fail("MAGDB4208", "migrations", "add", "Initial");
+    Check(!File.Exists(f.HistoryPath));
+});
+foreach (var protectedStore in new[] { false, true })
+Test($"{(protectedStore ? "authenticated" : "plain")} recovery publication preserves original bytes and seals approved lineage", async f =>
+{
+    if (protectedStore) { f.Model["stores"]![0]!["encryptedFields"] = new JsonArray("name"); f.Save(); }
     await f.Initial();
     await f.Code(3, "migrations", "add", "Original", "--empty", "--mode", "resumable");
     var original = Path.Combine(f.Root, "original.mjs");
@@ -404,6 +518,13 @@ return failed == 0 ? 0 : 1;
 
 void Test(string name, Func<Fixture, Task> action) => tests.Add((name, async () => { using var fixture = new Fixture(); await action(fixture); }));
 static void Check(bool value) { if (!value) throw new InvalidOperationException("Contract assertion failed."); }
+static void ApplyPolicy(JsonObject model, string[]? fields, string[]? exposed)
+{
+    var store = model["stores"]![0]!.AsObject();
+    store.Remove("encryptedFields"); store.Remove("exposedFields");
+    if (fields is not null) store["encryptedFields"] = new JsonArray(fields.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray());
+    if (exposed is not null) store["exposedFields"] = new JsonArray(exposed.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray());
+}
 
 sealed class Fixture : IDisposable
 {
@@ -423,6 +544,8 @@ sealed class Fixture : IDisposable
     public void AddIndex() { Model["stores"]![0]!["indexes"]!.AsArray().Add(new JsonObject { ["name"] = "byName", ["keyPath"] = "name", ["unique"] = false, ["multiEntry"] = false }); Save(); }
     public void AddField(string name, bool nullable) { Model["stores"]![0]!["fields"]!.AsArray().Add(new JsonObject { ["name"] = name, ["type"] = "string", ["nullable"] = nullable, ["codec"] = "json" }); Save(); }
     public JsonObject History() => JsonNode.Parse(File.ReadAllText(HistoryPath))!.AsObject();
+    public JsonObject Migration() => JsonNode.Parse(File.ReadAllText(Path.Combine(Source, "fixture",
+        History()["migrations"]!.AsArray().Last()!["path"]!.GetValue<string>())))!.AsObject();
     public void WriteHistory(JsonObject value) => File.WriteAllText(HistoryPath, value.ToJsonString());
     public string Published(string folder) => Path.Combine(Root, folder, "fixture", "manifest.json");
     public void ChangeMigration(Action<JsonObject> action)

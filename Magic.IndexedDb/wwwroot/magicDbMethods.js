@@ -32,6 +32,10 @@ export async function recoverMigration(options) {
     return (await getModule("./magicDB.js")).recoverMigration(options);
 }
 
+export async function ensureProtectedMigration(name) {
+    return (await getModule("./magicDB.js")).ensureProtectedMigration(name);
+}
+
 export async function cancelMigration(name) {
     (await getModule("./magicDB.js")).cancelMigration(name);
 }

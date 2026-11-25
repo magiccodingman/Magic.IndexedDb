@@ -1,9 +1,9 @@
 // The public, language-independent migration contract. No Blazor/.NET dependency.
 export const protocolVersion = 1;
 export const metadataStore = "__magic_migrations__";
-export const capabilities = Object.freeze(["atomic", "resumable", "legacyAdoption", "customTransforms"]);
+export const capabilities = Object.freeze(["atomic", "resumable", "legacyAdoption", "customTransforms", "authenticatedMigrationsV1"]);
 const dangerousMembers = new Set(["__proto__", "prototype", "constructor"]);
-const dataOperations = new Set(["renameField", "setMissing", "deleteField", "transform"]);
+const dataOperations = new Set(["renameField", "setMissing", "deleteField", "transform", "reprotect"]);
 
 export class MigrationError extends Error {
     constructor(code, message, details = {}, retryable = false, cause) {
@@ -96,6 +96,42 @@ export function requirePlainSchema(schema) {
     requireCondition(!schema.stores.some(store => store.encryptedFields?.length > 0 || store.exposedFields != null),
         "MAGDB_PROTECTED_ADAPTER_REQUIRED", "Protected migrations must run through an authenticated storage adapter.");
     return schema;
+}
+
+export function hasProtection(schema) {
+    return schema.stores.some(store => store.encryptedFields?.length > 0 || store.exposedFields != null);
+}
+
+export function protectionPolicy(store) {
+    return { fields: [...(store.encryptedFields ?? [])].sort(), exposed: store.exposedFields == null ? null : [...store.exposedFields].sort() };
+}
+
+/** Protection describes persisted top-level members; keys and native indexes remain public. */
+export function requireProtectedSchema(schema) {
+    validateSchema(schema);
+    for (const store of schema.stores) {
+        const { fields, exposed } = protectionPolicy(store);
+        for (const members of [fields, exposed ?? []]) requireCondition(new Set(members).size === members.length &&
+            members.every(name => validName(name) && !name.includes(".") && name !== "__magic_record"),
+            "MAGDB_PROTECTION_INVALID", "Protection members must be unique, safe persisted top-level names.");
+        requireCondition(exposed === null || !fields.some(name => exposed.includes(name)),
+            "MAGDB_PROTECTION_INVALID", "A protected member cannot also be exposed.");
+        if (!fields.length && exposed === null) continue;
+        requireCondition(store.keyPath !== null && !store.autoIncrement, "MAGDB_PROTECTION_INVALID",
+            "Protected stores require explicit inline primary keys.");
+        requireCondition(exposed !== null || store.recordCodec == null, "MAGDB_PROTECTION_INVALID",
+            "A custom record codec requires whole-record protection.");
+        const paths = [store.keyPath, ...store.indexes.map(index => index.keyPath)].flat();
+        requireCondition(paths.every(path => !path.includes(".") && !fields.includes(path) && (exposed === null || exposed.includes(path))),
+            "MAGDB_PROTECTION_INVALID", "Protected primary keys and index members must remain public top-level fields.");
+    }
+    return schema;
+}
+
+export function losesProtection(previous, next) {
+    const before = protectionPolicy(previous), after = protectionPolicy(next);
+    if (before.exposed !== null) return after.exposed === null || after.exposed.some(name => !before.exposed.includes(name));
+    return before.fields.some(name => after.exposed !== null ? after.exposed.includes(name) : !after.fields.includes(name));
 }
 
 export function physicalStores(schema) {
@@ -246,9 +282,17 @@ export function validateAsset(asset) {
         /^sha256:[0-9a-f]{64}$/.test(asset.sha256), "MAGDB_ASSET_INVALID", "An asset requires a path and SHA-256 digest.");
 }
 
-export function validateMigration(document, reference, from, to) {
-    requirePlainSchema(from);
-    requirePlainSchema(to);
+export function validateMigration(document, reference, from, to, { authenticated = false } = {}) {
+    const protectedPlan = hasProtection(from) || hasProtection(to) ||
+        from.requiredCapabilities?.includes("authenticatedMigrationsV1") || to.requiredCapabilities?.includes("authenticatedMigrationsV1") ||
+        document.requiredCapabilities?.includes("authenticatedMigrationsV1") ||
+        document.operations?.some(operation => operation.op === "reprotect" || operation.definition && hasProtection({ stores: [operation.definition] }));
+    if (protectedPlan) {
+        requireCondition(authenticated, "MAGDB_PROTECTED_ADAPTER_REQUIRED", "Protected migrations require an authenticated storage adapter.");
+        requireCondition(document.requiredCapabilities?.includes("authenticatedMigrationsV1"),
+            "MAGDB_CAPABILITY_REQUIRED", "Authenticated migration assets must declare authenticatedMigrationsV1.");
+        requireProtectedSchema(from); requireProtectedSchema(to);
+    } else { requirePlainSchema(from); requirePlainSchema(to); }
     validateProtocol(document);
     requireCondition(document.schemaId === from.schemaId && document.schemaId === to.schemaId &&
         document.id === reference.id && document.fromRevision === reference.fromRevision && document.toRevision === reference.toRevision,
@@ -271,13 +315,35 @@ export function validateMigration(document, reference, from, to) {
         }
         if (operation.op === "setMissing") requireCondition(Object.hasOwn(operation, "value"), "MAGDB_OPERATION_INVALID", "setMissing requires an explicit value.");
         if (operation.op === "transform") validateAsset({ path: operation.module, sha256: operation.sha256 });
+        requireCondition(operation.allowProtectionLoss === undefined || typeof operation.allowProtectionLoss === "boolean",
+            "MAGDB_PROTECTION_INVALID", "allowProtectionLoss must be a boolean.");
+        if (operation.op === "reprotect") requireCondition(protectedPlan,
+            "MAGDB_PROTECTED_ADAPTER_REQUIRED", "A protection rewrite requires authenticated migration authorization.");
+    }
+    if (protectedPlan) {
+        requireCondition(!document.operations.some(operation => operation.op === "renameStore"),
+            "MAGDB_PROTECTION_PLAN_UNSUPPORTED", "Renaming an authenticated store requires an explicit storage-context migration.");
+        const writes = document.operations.filter(operation => dataOperations.has(operation.op));
+        requireCondition(!writes.length || document.mode === "resumable", "MAGDB_PROTECTION_PLAN_UNSUPPORTED",
+            "Authenticated record transformations require resumable mode; split structural operations into adjacent revisions.");
+        requireCondition(new Set(writes.map(operation => operation.store)).size === writes.length,
+            "MAGDB_PROTECTION_PLAN_UNSUPPORTED", "Combine logical edits into one transform per store in an authenticated revision.");
+        for (const before of from.stores) {
+            const after = to.stores.find(store => store.name === before.name);
+            if (!after) continue; // Store deletion still requires the separate allowDataLoss decision.
+            const changed = canonicalJson(protectionPolicy(before)) !== canonicalJson(protectionPolicy(after));
+            const operation = writes.find(operation => operation.store === before.name);
+            requireCondition(!changed || operation, "MAGDB_PROTECTION_REWRITE_REQUIRED", "Every changed protection policy requires a record rewrite.");
+            requireCondition(!losesProtection(before, after) || operation?.allowProtectionLoss === true,
+                "MAGDB_PROTECTION_LOSS_REQUIRES_APPROVAL", "Persisting previously protected values publicly requires explicit allowProtectionLoss on the store operation.");
+        }
     }
     // Prove the structural plan reaches the target BEFORE touching data.
     const stores = new Map(physicalStores(from).map(store => [store.name, structuredClone(store)]));
     for (const operation of document.operations) {
         const store = stores.get(operation.store);
         if (operation.op === "createStore") {
-            requirePlainSchema({ ...from, stores: [operation.definition] });
+            (protectedPlan ? requireProtectedSchema : requirePlainSchema)({ ...from, stores: [operation.definition] });
             requireCondition(!stores.has(operation.definition.name), "MAGDB_OPERATION_INVALID", "Store already exists.");
             stores.set(operation.definition.name, physicalStores({ stores: [operation.definition] })[0]);
         } else {

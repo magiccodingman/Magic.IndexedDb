@@ -6,6 +6,8 @@ import { createServer } from 'node:http';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { registerProtectedEngineTests } from './protected-engine-browser.mjs';
+import { registerProtectedRegistrationTests } from './protected-registration-browser.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const listOnly = process.argv[2] === '--list';
@@ -357,7 +359,7 @@ test('a transient protected store cannot bypass preflight by being removed from 
     assert.ok(!(await inspect(page)).stores.some(store => store.name === 'temporary'));
 });
 
-test('protected registration rejects a migration manifest before provisioning storage', async ({ page }) => {
+test('protected registration defers its manifest and storage until authorization', async ({ page }) => {
     const physical = '__magic_protected__:new-vault';
     const configuration = { name: physical + ':account', encryption: { account: 'fixture', physicalName: physical },
         storeSchemas: [{ ...registrationStore(), encryptedFields: ['secret'] }],
@@ -365,16 +367,17 @@ test('protected registration rejects a migration manifest before provisioning st
     const beforeRequests = requests.length;
     const result = await page.evaluate(async configuration => {
         const api = await import('/engine/magicDB.js');
-        try { await api.createDb(configuration); return { ok: true }; }
+        await api.createDb(configuration);
+        try { await api.ensureProtectedMigration(configuration.name); return { ok: true }; }
         catch (error) { return { ok: false, error: { code: error.code } }; }
     }, configuration);
     expectFailure(result);
-    assert.equal(result.error.code, 'MAGDB_PROTECTED_MIGRATION_UNSUPPORTED');
+    assert.equal(result.error.code, 'MAGDB_AUTHORIZATION_REQUIRED');
     assert.equal(await inspect(page, physical), null);
     assert.ok(!requests.slice(beforeRequests).includes('/unsupported-protected/manifest.json'));
 });
 
-test('rejected protected manifests preserve authenticated CRUD and ciphertext', async ({ page }) => {
+test('conflicting protected registration preserves authenticated CRUD and ciphertext', async ({ page }) => {
     const physical = '__magic_protected__:existing-vault';
     const configuration = { name: physical + ':account', encryption: { account: 'fixture', physicalName: physical },
         storeSchemas: [{ ...registrationStore(), encryptedFields: ['secret'] }] };
@@ -401,7 +404,7 @@ test('rejected protected manifests preserve authenticated CRUD and ciphertext', 
         api.releaseProtectedDatabase(configuration.name);
         return { code, before, after, decrypted: row.secret };
     }, { configuration, physical });
-    assert.equal(result.code, 'MAGDB_PROTECTED_MIGRATION_UNSUPPORTED');
+    assert.equal(result.code, 'MAGDB_CONFIGURATION_CONFLICT');
     assert.deepEqual(result.after, result.before);
     assert.equal(result.decrypted, 'Encrypted fixture');
     assert.ok(!result.after.stores.includes('__magic_migrations__'));
@@ -1205,7 +1208,7 @@ function recoveryPackage(plan, body = repairModule, edit = () => {}) {
     assets.set(location, { body: bytes, type: 'application/json' });
     const asset = { sha256: digest(bytes) };
     plan.manifest.protocolVersion = 2;
-    plan.manifest.requiredCapabilities = ['resumableRepairV1'];
+    plan.manifest.requiredCapabilities = [...new Set([...plan.manifest.requiredCapabilities, 'resumableRepairV1'])];
     plan.manifest.recoveries = [{ id: document.id, fromRevision: 1, path: 'recoveries/recovery.json', sha256: asset.sha256 }];
     jsonAsset(plan.base + '/manifest.json', plan.manifest);
     return { id: document.id, sha256: asset.sha256 };
@@ -1622,7 +1625,9 @@ if (cliFixture) for (const [codecCase, sourceHasCodec] of [['absent-to-null', fa
     });
 }
 
-const expectedScenarioCount = cliFixture ? 97 : 94;
+registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage, recoveryPackage, cliFixture, getOrigin: () => origin });
+registerProtectedRegistrationTests({ test, schema, bundle, jsonAsset, copy, registrationStore, inspect, appendRevision, assets });
+const expectedScenarioCount = cliFixture ? 115 : 111;
 assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
 
 if (listOnly) {

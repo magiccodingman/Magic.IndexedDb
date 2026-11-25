@@ -154,6 +154,8 @@ public static class MagicSchemaResolver
             {
                 SchemaId = definition.SchemaId,
                 NumericFormat = mode == MagicNumericStorageMode.Lossless ? "lossless-v1" : "legacy",
+                RequiredCapabilities = protectedDatabases.Contains(definition.DatabaseName)
+                    ? Array.AsReadOnly(new[] { "authenticatedMigrationsV1" }) : [],
                 Stores = Array.AsReadOnly(stores)
             };
             result.Add(new ResolvedMagicDatabase(definition, schema,

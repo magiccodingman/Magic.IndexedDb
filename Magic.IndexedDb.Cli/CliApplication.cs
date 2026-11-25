@@ -30,7 +30,7 @@ public static class CliApplication
           --framework TFM        Select a framework for a multi-target exporter.
           --configuration NAME   Exporter build configuration (default Release).
           --history-only         Validate/publish committed source without model drift check.
-          --mode atomic|resumable Execution mode for a new migration (default atomic).
+          --mode atomic|resumable Explicit execution mode (default: resumable for authenticated data changes, otherwise atomic).
           --json                 Machine-readable results and diagnostics.
           --non-interactive      Accepted for CI; commands never prompt.
           --help, --version
@@ -103,7 +103,7 @@ public static class CliApplication
                 foreach (var schema in schemas)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    results.Add(Workspace(args, Protocol.Text(schema, "schemaId")).Add(schema, name, args.Has("empty"), args.Get("mode") ?? "atomic"));
+                    results.Add(Workspace(args, Protocol.Text(schema, "schemaId")).Add(schema, name, args.Has("empty"), args.Get("mode")));
                 }
                 await WriteAsync(output, new JsonObject { ["results"] = results }, json);
                 return results.Any(item => Protocol.Boolean(Protocol.Object(item, "result"), "requiresReview")) ? 3 : 0;

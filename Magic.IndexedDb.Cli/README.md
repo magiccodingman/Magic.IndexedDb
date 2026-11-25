@@ -24,6 +24,14 @@ Migration generation can produce unresolved `manual` operations. That creates a
 reviewable draft and exits 3. Validation and publishing reject it until the author
 supplies the transformation. Destructive operations require `allowDataLoss:true`.
 
+Protection changes scaffold `reprotect` operations for authenticated, resumable
+rewrites. Both adding and removing encryption are supported authoring paths;
+exposing previously protected values requires an explicit `allowProtectionLoss:true`
+decision in the migration. The runtime receives authorization from the consuming
+application. Keys are never CLI inputs or static migration assets. Protected
+histories retain their authentication capability even if their latest model has
+only public fields.
+
 Published JSON and modules are sealed by `published.lock.json`; commit it with the
 history. A released history cannot be silently edited, truncated, or overwritten.
 Use immutable deployment directories and pin the manifest to the running app release.

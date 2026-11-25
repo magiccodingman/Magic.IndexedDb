@@ -11,9 +11,9 @@ namespace Magic.IndexedDb.Cli;
 internal static partial class Protocol
 {
     internal static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-    internal static readonly HashSet<string> Capabilities = ["atomic", "resumable", "legacyAdoption", "customTransforms"];
-    internal static readonly HashSet<string> DataOperations = ["renameField", "setMissing", "deleteField", "transform"];
-    internal static readonly HashSet<string> Operations = ["createStore", "deleteStore", "createIndex", "deleteIndex", "renameStore", "renameField", "setMissing", "deleteField", "transform"];
+    internal static readonly HashSet<string> Capabilities = ["atomic", "resumable", "legacyAdoption", "customTransforms", ProtectionRules.Capability];
+    internal static readonly HashSet<string> DataOperations = ["renameField", "setMissing", "deleteField", "transform", "reprotect"];
+    internal static readonly HashSet<string> Operations = ["createStore", "deleteStore", "createIndex", "deleteIndex", "renameStore", "renameField", "setMissing", "deleteField", "transform", "reprotect"];
     private static readonly HashSet<string> DangerousMembers = ["__proto__", "prototype", "constructor"];
 
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.CultureInvariant)]
@@ -137,6 +137,7 @@ internal static partial class Protocol
             store["fields"] = SortNamed(fields);
         }
         schema["stores"] = SortNamed(stores);
+        ProtectionRules.ValidateSchema(schema, "schema");
         return schema;
     }
 

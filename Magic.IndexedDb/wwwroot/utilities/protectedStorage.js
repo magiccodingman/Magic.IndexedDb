@@ -2,6 +2,9 @@ import { assertEncryptionKey, importEncryptionKey } from "./encryptionEnvelope.j
 import { assertPersistedEncryptionPolicy, verifyEncryptionPolicy, encryptionMetadataKey, encryptionMetadataStore } from "./encryptionPolicy.js";
 import { openRecord, sealRecord, encryptedRecordMember } from "./encryptionRecord.js";
 import { EncryptionSession } from "./encryptionSession.js";
+import { createProtectionPolicy } from "./protectionPolicy.js";
+import { canonicalJson, metadataStore as migrationMetadataStore, MigrationError } from "../migrations/protocol.js";
+import { equalEnvelope, protectedStateKey } from "../migrations/protectedMigrationAdapter.js";
 import { magicQueryYield } from "../magicLinqToIndexedDb.js";
 
 export const protectedDatabasePrefix = "__magic_protected__:";
@@ -13,11 +16,6 @@ function validateMember(name) {
         [encryptedRecordMember, "__proto__", "constructor", "prototype"].includes(name)) {
         throw new Error("Invalid or reserved Magic encryption member.");
     }
-}
-
-function normalizeMembers(names) {
-    for (const name of names) validateMember(name);
-    return new Set([...names].sort());
 }
 
 // Native open runs schema creation only for a genuinely new database. Opening
@@ -64,48 +62,11 @@ export function ensureProtectedSchema(name, schemas) {
     });
 }
 
-export function createProtectedStorage(db, account, schemas, numericStorage = null) {
-    const policies = new Map();
-    const schemaFingerprint = [];
-    let hasProtection = false;
-    for (const schema of [...schemas].sort((left, right) =>
-        left.tableName < right.tableName ? -1 : Number(left.tableName !== right.tableName))) {
-        if (!schema.tableName || schema.tableName === encryptionMetadataStore ||
-            schemaFingerprint.some(entry => entry[0] === schema.tableName)) {
-            throw new Error("Invalid or duplicate store in Magic encryption policy.");
-        }
-        const keyPaths = schema.columnNamesInCompoundKey;
-        const indexes = [...schema.indexes, ...schema.uniqueIndexes, ...schema.columnNamesInCompoundIndex.flat()];
-        const fields = normalizeMembers(schema.encryptedFields ?? []);
-        const exposed = schema.exposedFields == null ? null : normalizeMembers(schema.exposedFields);
-        schemaFingerprint.push([schema.tableName, keyPaths, Boolean(schema.primaryKeyAuto),
-            [...schema.indexes].sort(), [...schema.uniqueIndexes].sort(), schema.columnNamesInCompoundIndex.map(index => JSON.stringify(index)).sort(),
-            [...fields], exposed && [...exposed]]);
-        const protectsRows = fields.size !== 0 || exposed !== null;
-        hasProtection ||= protectsRows;
-        if (protectsRows && (schema.primaryKeyAuto || !keyPaths.length)) {
-            throw new Error("Protected Magic stores require explicit primary keys.");
-        }
-        for (const name of [...keyPaths, ...indexes]) {
-            validateMember(name);
-            if (fields.has(name) || (exposed && !exposed.has(name))) {
-                throw new Error("Protected members cannot be primary keys or indexes.");
-            }
-        }
-        if (exposed && [...fields].some(name => exposed.has(name))) {
-            throw new Error("An encrypted member cannot be exposed by the record policy.");
-        }
-        policies.set(schema.tableName, { fields, exposed, keyPaths });
-    }
-
-    if (!hasProtection) throw new Error("Magic encryption configuration contains no protected stores.");
+export function createProtectedStorage(db, account, schemas, numericStorage = null, options = {}) {
+    const { policies, policyFingerprint } = createProtectionPolicy(schemas, numericStorage, options);
     const session = new EncryptionSession();
-    // Keep existing Legacy vault fingerprints byte-for-byte compatible. The
-    // opt-in codec is a separate authenticated policy, including for public keys.
-    const policyFingerprint = numericStorage === null
-        ? JSON.stringify(schemaFingerprint)
-        : JSON.stringify({ schema: schemaFingerprint, numericStorage });
     let verified;
+    let readiness;
     let mismatch = false;
     let disposed = false;
     const assertLive = () => {
@@ -118,14 +79,26 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
             throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: Unlock this connection to authenticate its storage policy.");
         }
         await assertPersistedEncryptionPolicy(db.table(encryptionMetadataStore), snapshot);
+        if (options.managedSchema) {
+            const journal = await db.table(migrationMetadataStore).get("state");
+            const seal = await db.table(encryptionMetadataStore).get(protectedStateKey);
+            if (!readiness || canonicalJson(journal ?? null) !== readiness.journal || !equalEnvelope(seal, readiness.seal))
+                throw new MigrationError("MAGDB_PROTECTION_STATE_INVALID", "The authenticated ready state changed. Reinitialize before accessing records.");
+        }
         assertLive();
     };
 
     return {
+        setManagedReadiness: result => {
+            if (!options.managedSchema || result?.journal?.protocolVersion !== 3 || result.journal.status !== "ready" ||
+                !equalEnvelope(result.journalSeal, result.journalSeal))
+                throw new MigrationError("MAGDB_PROTECTION_STATE_INVALID", "An authenticated ready journal is required.");
+            readiness = { journal: canonicalJson(result.journal), seal: structuredClone(result.journalSeal) };
+        },
         forTable: name => {
             const policy = policies.get(name);
             if (!policy) throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: The store is outside the configured storage policy.");
-            return new ProtectedTable(db, account, name, policy, session, assertPolicy, assertLive);
+            return new ProtectedTable(db, account, name, policy, session, assertPolicy, assertLive, Boolean(options.managedSchema));
         },
         unlock: (keyId, input, initialize) => session.ensureUnlocked(async signal => {
             await db.open();
@@ -142,6 +115,7 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
                 const snapshot = await verifyEncryptionPolicy(db, { account, policyFingerprint, keyId, key, initialize, signal });
                 signal.throwIfAborted();
                 verified = snapshot;
+                if (options.managedSchema) await assertPolicy();
                 mismatch = false;
                 return { key, keyId };
             } catch (error) {
@@ -165,7 +139,7 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
                 await assertPolicy();
                 return session.isUnlocked ? "Unlocked" : "Locked";
             } catch (error) {
-                if (!error.message.startsWith("MAGIC_ENCRYPTION_POLICY_MISMATCH:")) throw error;
+                if (!error.message.startsWith("MAGIC_ENCRYPTION_POLICY_MISMATCH:") && error.code !== "MAGDB_PROTECTION_STATE_INVALID") throw error;
                 session.lock();
                 return "PolicyMismatch";
             }
@@ -174,13 +148,14 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
         dispose: () => {
             disposed = true;
             verified = undefined;
+            readiness = undefined;
             session.dispose();
         }
     };
 }
 
 class ProtectedTable {
-    constructor(db, account, name, policy, session, assertPolicy, assertLive) {
+    constructor(db, account, name, policy, session, assertPolicy, assertLive, managed = false) {
         this.db = db;
         this.table = db.table(name);
         this.account = account;
@@ -188,6 +163,7 @@ class ProtectedTable {
         this.session = session;
         this.assertPolicy = assertPolicy;
         this.assertLive = assertLive;
+        this.managed = managed;
     }
 
     context(primaryKey) {
@@ -241,7 +217,9 @@ class ProtectedTable {
 
     async fencedWrite(operation, assertCurrent = () => {}) {
         await this.db.open();
-        return this.db.transaction("rw", [this.table, this.db.table(encryptionMetadataStore)], async () => {
+        const stores = [this.table, this.db.table(encryptionMetadataStore)];
+        if (this.managed) stores.push(this.db.table(migrationMetadataStore));
+        return this.db.transaction("rw", stores, async () => {
             await this.assertPolicy();
             this.assertLive();
             assertCurrent();

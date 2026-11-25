@@ -10,10 +10,10 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
     private string HistoryPath => Path.Combine(Root, "history.json");
     private string PublishedLockPath => Path.Combine(Root, "published.lock.json");
 
-    internal JsonObject Add(JsonObject model, string name, bool empty, string mode)
+    internal JsonObject Add(JsonObject model, string name, bool empty, string? mode)
     {
         Protocol.Identifier(name, "migration name");
-        if (mode is not ("atomic" or "resumable")) throw new CliException("MAGDB4001", "--mode must be atomic or resumable.", 2);
+        if (mode is not (null or "atomic" or "resumable")) throw new CliException("MAGDB4001", "--mode must be atomic or resumable.", 2);
         using var writeLock = Lock();
         if (!File.Exists(HistoryPath))
         {
@@ -21,36 +21,42 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
             var history = new JsonObject
             {
                 ["protocolVersion"] = 1, ["schemaId"] = SchemaId, ["targetRevision"] = 1,
-                ["requiredCapabilities"] = new JsonArray(),
+                ["requiredCapabilities"] = HasProtection(model) || ProtectionRules.HasCapability(model)
+                    ? new JsonArray(ProtectionRules.Capability) : new JsonArray(),
                 ["schemas"] = new JsonArray(new JsonObject { ["revision"] = 1, ["path"] = "schemas/0001.json" }),
                 ["migrations"] = new JsonArray(), ["baselines"] = new JsonArray()
             };
             WriteNew("schemas/0001.json", Protocol.Bytes(model));
             AtomicWrite(HistoryPath, Protocol.Bytes(history));
-            var protectedModel = HasProtection(model);
-            return Result("created", 1, protectedModel, protectedModel
-                ? "Schema snapshot authored. This preview cannot validate or publish protected storage until an authenticated migration adapter is available; see the CLI guide."
+            return Result("created", 1, false, HasProtection(model) || ProtectionRules.HasCapability(model)
+                ? "Initial authenticated schema created. Runtime initialization requires application-supplied authorization."
                 : "Initial schema snapshot created. New databases bootstrap directly at this revision.");
         }
 
-        // Authoring a protected model is useful even while the preview runtime
-        // cannot execute it. Only this source-generation path bypasses support checks.
-        var previous = Validate(currentModel: null, allowPending: false, requireRuntimeSupport: false);
+        var previous = Validate(currentModel: null);
         if (Protocol.Equal(previous.TargetSchema, model) && !empty)
-            return Result("unchanged", previous.TargetRevision, HasProtection(model), HasProtection(model)
-                ? "No persisted model changes; revision unchanged. Protected storage remains unsupported for validation or publishing in this preview."
-                : "No persisted model changes; revision unchanged.");
+            return Result("unchanged", previous.TargetRevision, false, "No persisted model changes; revision unchanged.");
         var revision = checked(previous.TargetRevision + 1);
         var id = $"{revision:D4}_{name}";
         var operations = empty ? new JsonArray(MigrationPlanner.Manual("Add custom data operations before publishing this migration.", "dataOnly"))
             : MigrationPlanner.Diff(previous.TargetSchema, model);
+        var authenticated = HasProtection(model) || ProtectionRules.HasCapability(model) || ProtectionRules.HasCapability(previous.Manifest);
+        var hasData = empty || operations.Any(node =>
+        {
+            var operation = Protocol.Object(node, "operation");
+            return Protocol.DataOperations.Contains(Protocol.Text(operation, "op")) ||
+                operation["change"]?.GetValue<string>() is "fieldRemoved" or "fieldChanged" or "backfill";
+        });
+        mode ??= authenticated && hasData ? "resumable" : "atomic";
         // A schema contract can change without physical changes, e.g. relaxing nullability.
         var migration = new JsonObject
         {
             ["protocolVersion"] = 1, ["schemaId"] = SchemaId, ["id"] = id,
             ["fromRevision"] = previous.TargetRevision, ["toRevision"] = revision,
             ["fromSchemaHash"] = Protocol.Hash(previous.TargetSchema), ["toSchemaHash"] = Protocol.Hash(model),
-            ["mode"] = mode, ["requiredCapabilities"] = new JsonArray(), ["operations"] = operations
+            ["mode"] = mode,
+            ["requiredCapabilities"] = authenticated ? new JsonArray(ProtectionRules.Capability) : new JsonArray(),
+            ["operations"] = operations
         };
         var schemaPath = $"schemas/{revision:D4}.json";
         var migrationPath = $"migrations/{id}.json";
@@ -60,14 +66,22 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
         Protocol.Array(updated, "schemas").Add(new JsonObject { ["revision"] = revision, ["path"] = schemaPath });
         Protocol.Array(updated, "migrations").Add(new JsonObject { ["id"] = id, ["fromRevision"] = previous.TargetRevision, ["toRevision"] = revision, ["path"] = migrationPath });
         updated["targetRevision"] = revision;
+        if (authenticated && !ProtectionRules.HasCapability(updated))
+        {
+            updated["requiredCapabilities"] ??= new JsonArray();
+            Protocol.Array(updated, "requiredCapabilities").Add(ProtectionRules.Capability);
+        }
         WriteNew(schemaPath, Protocol.Bytes(model));
         WriteNew(migrationPath, Protocol.Bytes(migration));
         AtomicWrite(HistoryPath, Protocol.Bytes(updated));
-        var requiresReview = HasProtection(model) || operations.Any(node => Protocol.Text(Protocol.Object(node, "operation"), "op") == "manual") ||
-            mode == "resumable" && operations.Any(node => !Protocol.DataOperations.Contains(Protocol.Text(Protocol.Object(node, "operation"), "op")));
+        var requiresReview = operations.Any(node => Protocol.Text(Protocol.Object(node, "operation"), "op") == "manual" ||
+                node is JsonObject operation && operation["allowProtectionLoss"] is JsonValue value && value.TryGetValue<bool>(out var allowed) && !allowed) ||
+            mode == "resumable" && operations.Any(node => !Protocol.DataOperations.Contains(Protocol.Text(Protocol.Object(node, "operation"), "op"))) ||
+            authenticated && hasData && mode != "resumable";
         return Result("created", revision, requiresReview,
-            HasProtection(model) ? "Draft created. Protected storage cannot be validated or published until an authenticated migration adapter is available; see the CLI guide." :
-            requiresReview ? "Draft created. Resolve manual operations before validation or publishing." : "Migration created. Review and run migration tests before publishing.");
+            requiresReview ? "Draft created. Resolve manual operations, explicit protection-loss decisions, and execution-mode constraints before validation or publishing." :
+            authenticated ? "Authenticated migration created. Runtime authorization is required; review and test before publishing." :
+            "Migration created. Review and run migration tests before publishing.");
     }
 
     internal JsonObject AddBaseline(JsonObject legacyModel, int revision, string id, bool acknowledged)
@@ -134,6 +148,8 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
         var fromRevisions = new HashSet<int>();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var migrationReferences = new JsonArray();
+        var authenticatedHistory = ProtectionRules.HasCapability(history) ||
+            schemas.Values.Any(schema => HasProtection(schema) || ProtectionRules.HasCapability(schema));
         foreach (var node in migrationEntries.OrderBy(node => Protocol.Integer(Protocol.Object(node, "migration reference"), "fromRevision")))
         {
             var entry = Protocol.Object(node, "migration reference");
@@ -150,6 +166,7 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
                 Protocol.Text(document, "fromSchemaHash") != Protocol.Hash(schemas[from]) || Protocol.Text(document, "toSchemaHash") != Protocol.Hash(schemas[to]))
                 throw new CliException("MAGDB4204", $"Migration '{id}' does not match its history entry or schema fingerprints.");
             ValidateOperations(document, schemas[from], schemas[to], path, assets, allowPending, requireRuntimeSupport);
+            authenticatedHistory |= ProtectionRules.HasCapability(document);
             AddAsset(assets, path, Protocol.Bytes(document));
             migrationReferences.Add(new JsonObject
             {
@@ -190,6 +207,8 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
             ["baselines"] = new JsonArray(baselineReferences.OrderBy(node => Protocol.Text(Protocol.Object(node, "baseline"), "id"), StringComparer.Ordinal).Select(node => node!.DeepClone()).ToArray())
         };
         var recoveries = ValidateRecoveries(history, schemas, migrationReferences, assets);
+        if (authenticatedHistory && !ProtectionRules.HasCapability(manifest))
+            Protocol.Array(manifest, "requiredCapabilities").Add(ProtectionRules.Capability);
         if (recoveries.Count != 0)
         {
             manifest["protocolVersion"] = 2;
@@ -206,9 +225,23 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
             throw new CliException("MAGDB4206", "Protocol 1 cannot change numeric storage codecs. Preserve the existing numericFormat until a dedicated storage adapter is available.");
         var mode = Protocol.Text(migration, "mode");
         if (mode is not ("atomic" or "resumable")) throw new CliException("MAGDB4102", "Migration mode must be atomic or resumable.");
+        var operations = Protocol.Array(migration, "operations");
+        var authenticated = HasProtection(source) || HasProtection(target) || ProtectionRules.HasCapability(source) ||
+            ProtectionRules.HasCapability(target) || ProtectionRules.HasCapability(migration) ||
+            operations.Any(node => node is JsonObject operation &&
+                (operation["op"]?.GetValue<string>() == "reprotect" || operation["op"]?.GetValue<string>() == "createStore" &&
+                    ProtectionRules.ProtectsRecords(Protocol.Object(operation["definition"], "store definition"))));
+        if (authenticated && !ProtectionRules.HasCapability(migration))
+            throw new CliException("MAGDB4211", $"Migration '{Protocol.Text(migration, "id")}' requires capability {ProtectionRules.Capability}.");
+        var dataOperations = operations.Select(node => Protocol.Object(node, "operation"))
+            .Where(operation => Protocol.DataOperations.Contains(Protocol.Text(operation, "op"))).ToArray();
+        if (authenticated && dataOperations.Length != 0 && mode != "resumable")
+            throw new CliException("MAGDB4211", "Authenticated record changes require resumable mode. Separate structural changes into adjacent atomic revisions.");
+        if (authenticated && dataOperations.GroupBy(operation => Protocol.Text(operation, "store"), StringComparer.Ordinal).Any(group => group.Count() > 1))
+            throw new CliException("MAGDB4211", "Authenticated migrations support one logical data operation per store. Combine changes in one custom transform.");
         var physical = MigrationPlanner.Named(Protocol.Array(Protocol.PhysicalSchema(source), "stores"));
         var pending = false;
-        foreach (var node in Protocol.Array(migration, "operations"))
+        foreach (var node in operations)
         {
             var operation = Protocol.Object(node, "operation");
             var op = Protocol.Text(operation, "op");
@@ -219,6 +252,9 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
                 continue;
             }
             if (!Protocol.Operations.Contains(op)) throw new CliException("MAGDB4102", $"Unsupported migration operation '{op}'.");
+            if (operation.ContainsKey("allowProtectionLoss")) Protocol.Boolean(operation, "allowProtectionLoss");
+            if (authenticated && op == "renameStore")
+                throw new CliException("MAGDB4211", "Authenticated store renames require a dedicated migration because ciphertext is bound to the store identity.");
             if (mode == "resumable" && !Protocol.DataOperations.Contains(op))
                 throw new CliException("MAGDB4206", "Resumable migrations currently support data operations only. Separate structural changes into adjacent atomic migrations.");
             if (op == "createStore")
@@ -263,6 +299,11 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
                     break;
                 case "deleteField":
                     ValidateField(Protocol.Text(operation, "path")); RequireDataLoss(operation); break;
+                case "reprotect":
+                    // Policy identities come from the fingerprinted source and
+                    // target schemas. The runtime rewrites logical records using
+                    // those policies; source JSON cannot supply key material.
+                    break;
                 case "transform":
                     var modulePath = Protocol.RelativeModule(path, Protocol.Text(operation, "module"));
                     if (!modulePath.EndsWith(".js", StringComparison.Ordinal) && !modulePath.EndsWith(".mjs", StringComparison.Ordinal))
@@ -275,6 +316,20 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
         }
         if (!pending)
         {
+            if (authenticated)
+            {
+                var before = MigrationPlanner.Named(Protocol.Array(source, "stores"));
+                var after = MigrationPlanner.Named(Protocol.Array(target, "stores"));
+                foreach (var (name, previous) in before)
+                {
+                    if (!after.TryGetValue(name, out var next) || ProtectionRules.SamePolicy(previous, next)) continue;
+                    var operation = dataOperations.SingleOrDefault(item => Protocol.Text(item, "store") == name);
+                    if (operation is null)
+                        throw new CliException("MAGDB4211", $"Protection policy for '{name}' changed without a logical data rewrite. Add reprotect or a custom transform.");
+                    if (ProtectionRules.LosesProtection(previous, next) && !Protocol.Boolean(operation, "allowProtectionLoss", optional: true))
+                        throw new CliException("MAGDB4212", $"Protection policy for '{name}' exposes previously protected values. Review and record allowProtectionLoss:true on its data operation.");
+                }
+            }
             var expected = Protocol.PhysicalSchema(target);
             var actual = new JsonObject { ["stores"] = new JsonArray(physical.Values.Select(store => (JsonNode?)store.DeepClone()).ToArray()) };
             if (!Protocol.Equal(actual, expected)) throw new CliException("MAGDB4207", $"Migration '{Protocol.Text(migration, "id")}' does not produce its declared physical target schema.");
@@ -321,6 +376,8 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
             Protocol.CheckHash(hash, bytes, pair.Key);
         }
         var previous = Protocol.Object(published["manifest"], "published manifest");
+        if (ProtectionRules.HasCapability(previous) && !ProtectionRules.HasCapability(manifest))
+            throw new CliException("MAGDB4301", "A published authenticated history must retain its authentication capability even after all record fields become public.");
         if (Protocol.Integer(previous, "targetRevision") > Protocol.Integer(manifest, "targetRevision"))
             throw new CliException("MAGDB4301", "Published targetRevision cannot be rolled back.");
         foreach (var kind in new[] { "schemas", "migrations", "baselines", "recoveries" })
@@ -402,16 +459,9 @@ internal sealed partial class MigrationWorkspace(string directory, string schema
         Protocol.ValidateName(field);
         if (field.Contains('.') || field is "__proto__" or "prototype" or "constructor") throw new CliException("MAGDB4207", $"Built-in transforms require a safe top-level field: '{field}'.");
     }
-    private static bool HasProtection(JsonObject schema) => Protocol.Array(schema, "stores").Any(node =>
-    {
-        var store = Protocol.Object(node, "store");
-        return store["encryptedFields"] is JsonArray { Count: > 0 } || store["exposedFields"] is not null;
-    });
+    private static bool HasProtection(JsonObject schema) => ProtectionRules.HasProtection(schema);
     private static void RequireSupported(JsonObject schema, string context)
-    {
-        if (HasProtection(schema))
-            throw new CliException("MAGDB4208", $"Protected storage in {context} is unsupported by this preview: an authenticated migration adapter is not implemented. Export/list and migration draft authoring remain available, but validation, baseline adoption, testing, and publishing are blocked. See the CLI guide's protected-storage limitation.");
-    }
+        => ProtectionRules.ValidateSchema(schema, context);
     private JsonObject Result(string status, int revision, bool review, string message) => new()
     {
         ["schemaId"] = SchemaId, ["status"] = status, ["revision"] = revision, ["requiresReview"] = review, ["message"] = message,

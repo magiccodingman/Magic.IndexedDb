@@ -281,6 +281,7 @@ class Magic.IndexedDb.MagicEncryptionOptions : System.IEquatable<Magic.IndexedDb
   property System.String AccountScope { get; set; }
   property System.String DatabaseName { get; set; }
   property System.String KeyId { get; set; }
+  property System.String PhysicalDatabaseName { get; set; }
 enum Magic.IndexedDb.MagicEncryptionState : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
   field System.Int32 value__
   field static Magic.IndexedDb.MagicEncryptionState Inactive = 4

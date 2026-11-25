@@ -183,7 +183,9 @@ The planner handles these decisions:
 | New required field | `manual` decision requesting an explicit default or transform |
 | Changed codec, type, nested shape, or serializer condition | `manual` decision |
 | Removed field/store or ambiguous rename | `manual` decision requiring a reviewed operation |
-| Changed primary key or protection policy | `manual` decision; unsupported transitions remain blocked |
+| Changed primary key | `manual` decision; key restructuring remains unsupported |
+| Changed field/whole-record protection policy | `reprotect`; resumable record rewrite |
+| Previously protected values become public | `reprotect` with unresolved `allowProtectionLoss: false` |
 
 A draft containing `manual` returns exit `3` **after writing the draft**. This is
 an intentional review stop, not a lost migration. Validation and publishing reject
@@ -198,30 +200,62 @@ magicdb migrations add NormalizeNames --schema artifacts/current-schema.json --d
 ```
 
 This also begins with a `manual` operation. Replace it with the reviewed data
-operations. `atomic` is the default. Protocol 1 resumable transitions support data
+operations. The default is `resumable` for authenticated data changes and `atomic`
+otherwise. An explicitly selected mode is retained and must pass validation.
+Protocol 1 resumable transitions support data
 operations with stable primary keys; put structural changes in separate adjacent
 atomic migrations. Numeric format transitions are not supported by this protocol
 implementation, even if a draft's `manual` marker is removed.
 
-### Protected-storage limitation
+### Authenticated protection changes
 
-This preview has no authenticated migration adapter. Validation, baseline adoption,
-testing, and publishing fail with `MAGDB4208` if any current or historical schema,
-baseline, or `createStore` definition has nonempty `encryptedFields` or nonnull
-`exposedFields`. An empty `exposedFields` array still declares protected storage.
-Removing a draft's `manual` marker does not enable protected migrations, and a
-currently unprotected target cannot hide protected historical revisions.
+The source and target snapshots declare persisted protection through
+`encryptedFields` and `exposedFields`. Authenticated schemas and migrations declare
+`authenticatedMigrationsV1`; the manifest retains that capability throughout the
+history, including after every field has deliberately become public. A C# exporter
+configured with `ProtectedDatabases` declares the authenticated capability even
+when its first model contains only public fields. Keep the same authenticated
+database/account identity across revisions; the CLI does not infer movement to
+another physical database.
 
-`schema export` and `databases list` remain available for neutral model authoring.
-`migrations add` may write protected snapshots and drafts, but returns review exit
-`3` and explains the unsupported adapter. Do not remove protection metadata from a
-real model to make publishing pass; keep using the previous compatible runtime
-until an authenticated adapter and its browser coverage are available.
+Changing protection attributes scaffolds a `reprotect` operation. The runtime
+opens each record under the source policy and writes it under the target policy.
+Applications supply authorization at runtime; keys never belong in these static
+documents. A policy-only change needs no custom cryptographic JavaScript.
+
+For example, removing field encryption generates an unresolved operation:
+
+```json
+{"op":"reprotect","store":"clients","allowProtectionLoss":false}
+```
+
+The command writes the draft and exits `3`. Validation fails with `MAGDB4212`
+until the developer reviews the exposure and explicitly records
+`allowProtectionLoss: true`. The decision becomes part of the immutable migration
+digest. This also applies when a whole-record public allowlist grows or
+whole-record protection becomes a finite encrypted-field list: unknown persisted
+properties were protected by the former policy. Protection loss and data loss
+are separate decisions.
+
+Authenticated data revisions are resumable, preserve primary keys, and support
+one logical data operation per store. Combine a rename/type change and a policy
+change into one reviewed `transform`, retaining `allowProtectionLoss: true` if
+required. Separate structural work into adjacent atomic revisions. Public index
+changes and new/deleted stores can be structural revisions; authenticated store
+renames, key restructuring, and numeric codec conversion remain unsupported.
+
+Protected primary keys and native indexes must remain public top-level fields.
+Protected stores require explicit inline keys. A custom record codec requires
+whole-record protection. Invalid policies fail with `MAGDB4208`, and unsupported
+authenticated operation combinations fail with `MAGDB4211` before publication.
+These static checks complement the runtime's key, policy, journal, and record
+authentication; they do not claim that an existing browser database was inspected.
 
 ## Custom JavaScript transformations
 
-Built-in data operations are `renameField`, `setMissing`, and `deleteField`; they
-operate on safe top-level fields. More involved historical record handling uses a
+Built-in data operations are `renameField`, `setMissing`, `deleteField`, and
+`reprotect`. Field operations use safe top-level fields; `reprotect` applies the
+fingerprinted target policy without changing logical values. More involved historical record handling uses a
 custom JavaScript module that the tool preserves byte for byte.
 
 For example, create `MagicMigrations/clients/custom/normalize-name.js`:
@@ -256,11 +290,13 @@ module without its matching digest fails validation. Once published, a changed
 digest also fails the immutable history check; create a new migration and new
 module path instead.
 
-The function receives historical persisted records. It must return the replacement
-record synchronously; the engine owns record writes and transaction/checkpoint
-completion. Keep the primary key stable. Do not make network requests, use
-asynchronous functions, or import additional modules from the hook: protocol 1
-loads verified self-contained module bytes before entering IndexedDB transactions.
+The function receives the logical historical record; for authenticated storage,
+the adapter decrypts it in memory first. Atomic hooks must return synchronously.
+Resumable hooks may return a promise: the engine prepares a bounded batch before
+opening its write transaction. Keep primary keys stable and avoid external side
+effects, network requests, or imported modules. The engine owns writes and durable
+checkpoints and loads verified, self-contained module bytes. Authenticated output
+is encrypted under the target policy before the write transaction begins.
 Static validation checks references and hashes; the JavaScript engine and browser
 tests check executable behavior. The CLI does not claim to prove that arbitrary
 business logic preserves every record's meaning.
@@ -426,7 +462,10 @@ link. Common diagnostic groups are:
 | `MAGDB4001`–`MAGDB4003` | Correct command arguments and select the intended schema |
 | `MAGDB4101`–`MAGDB4104` | Correct JSON/protocol, duplicate metadata, or asset paths |
 | `MAGDB4201`–`MAGDB4207` | Create/review history, resolve drift/manual operations, or repair an invalid plan |
-| `MAGDB4208` | Protected migration support requires an authenticated adapter; export/draft authoring is available, deployment is blocked in this preview |
+| `MAGDB4208` | Correct invalid protection members, protected keys/indexes, or unsupported field/custom-codec combinations |
+| `MAGDB4210` | Correct recovery topology, descriptor identity, or immutable recovery assets |
+| `MAGDB4211` | Declare authenticated capability, add a required rewrite, or split unsupported operation combinations |
+| `MAGDB4212` | Review the protection downgrade and explicitly record `allowProtectionLoss: true` |
 | `MAGDB4301` | Restore published immutable content; create a new migration for changes |
 | `MAGDB4302` | Use a new output directory or inspect pre-existing unreferenced files |
 | `MAGDB4303` | Wait for the other writer on this source history to finish |

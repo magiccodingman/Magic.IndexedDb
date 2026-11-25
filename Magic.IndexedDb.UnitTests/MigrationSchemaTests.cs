@@ -133,6 +133,19 @@ public sealed class MigrationSchemaTests
     }
 
     [TestMethod]
+    public void AuthenticatedHistory_RemainsExplicitWhenEveryFieldIsPublic()
+    {
+        var definition = new IndexedDbSet("clients");
+        var ordinary = MagicSchemaResolver.ResolveDefinitions([typeof(ClientRow)], [definition]).Single().Schema;
+        var authenticated = MagicSchemaResolver.ResolveDefinitions([typeof(ClientRow)], [definition],
+            new() { ProtectedDatabases = ["clients"] }).Single().Schema;
+        CollectionAssert.AreEqual(new[] { "authenticatedMigrationsV1" }, authenticated.RequiredCapabilities.ToArray());
+        Assert.AreEqual(0, ordinary.RequiredCapabilities.Count);
+        Assert.AreNotEqual(MagicSchemaJson.Fingerprint(ordinary), MagicSchemaJson.Fingerprint(authenticated));
+        Assert.IsTrue(authenticated.Stores.All(store => store.EncryptedFields is null && store.ExposedFields is null));
+    }
+
+    [TestMethod]
     public void OrdinaryDatabase_SkipsProtectedDefaultsAndRejectsExplicitProtectedTables()
     {
         var schema = MagicSchemaResolver.ResolveDefinitions([typeof(ProtectedRow)], [new("protected")]).Single().Schema;

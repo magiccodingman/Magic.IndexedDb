@@ -109,6 +109,14 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
 
     private async Task EnsureDatabaseAsync(ResolvedMagicDatabase resolved, string instanceName)
     {
+        await RegisterDatabaseAsync(resolved, instanceName);
+        if (_encryption.TryGetValue(resolved.Definition.DatabaseName, out var configuration) &&
+            resolved.Definition.ManifestUrl is not null)
+            await (await _jsModule!.Value).InvokeVoidAsync("ensureProtectedMigration", configuration.Route);
+    }
+
+    private async Task RegisterDatabaseAsync(ResolvedMagicDatabase resolved, string instanceName)
+    {
         var definitionName = resolved.Definition.DatabaseName;
         var route = PhysicalRoute(definitionName, instanceName);
         BindInstance(resolved, route);
@@ -134,13 +142,23 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     {
         var js = _jsModule;
         ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
-        if (_encryption.ContainsKey(definition.Definition.DatabaseName) || definition.Definition.ManifestUrl is null)
-            throw new InvalidOperationException("Recovery requires an unprotected database with a pinned migration manifest.");
+        if (definition.Definition.ManifestUrl is null)
+            throw new InvalidOperationException("Recovery requires a database with a pinned migration manifest.");
         ArgumentException.ThrowIfNullOrWhiteSpace(recoveryId);
         ArgumentException.ThrowIfNullOrWhiteSpace(sha256);
         cancellationToken.ThrowIfCancellationRequested();
         BindInstance(definition, route);
         var module = await js.Value.WaitAsync(cancellationToken);
+        if (_encryption.ContainsKey(definition.Definition.DatabaseName))
+        {
+            // Authorize without running the failed original migration again. Browser recovery
+            // uses the same revocable in-memory key lease as normal managed initialization.
+            await RegisterDatabaseAsync(definition, definition.Definition.DatabaseName).WaitAsync(cancellationToken);
+            var unlocked = await GetUnlock(definition.Definition).UnlockAsync(
+                () => Task.FromResult(module), initialize: false, cancellationToken);
+            if (!unlocked)
+                throw new InvalidOperationException("MAGDB_AUTHORIZATION_REQUIRED: The key provider did not authorize recovery.");
+        }
         var options = new JsonObject
         {
             ["name"] = route,
@@ -170,7 +188,11 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
 
         JsonElement payload;
         if (_encryption.TryGetValue(name, out var configuration))
+        {
+            if (configuration.HasExplicitPhysicalBinding && resolved.Definition.ManifestUrl is null)
+                throw new MagicSchemaException("MAGDB3024", "An explicit physical database binding requires a pinned managed migration manifest.");
             payload = configuration.CreateDatabase(entries);
+        }
         else if (_numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
             payload = NumericStorageConfiguration.CreateDatabase(instanceName, resolved.StoreSchemas);
         else
@@ -203,14 +225,17 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         var configuration = _encryption[database.DatabaseName];
         var js = _jsModule;
         ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
+        if (configuration.HasExplicitPhysicalBinding)
+            await RegisterDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName);
         _lifetime.Cancel();
-        await unlock.LockAsync(() => js.Value, dispose: true);
+        await unlock.LockAsync(() => js.Value, dispose: !configuration.HasExplicitPhysicalBinding);
         if (_magicJsManager.IsValueCreated)
         {
             try { await _magicJsManager.Value; }
             catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         }
-        await EncryptionUnlock.InvokeAsync<bool>(await js.Value, "destroyProtectedDatabase", true, configuration.PhysicalName);
+        await EncryptionUnlock.InvokeAsync<bool>(await js.Value, "destroyProtectedDatabase", true, configuration.PhysicalName,
+            configuration.HasExplicitPhysicalBinding ? configuration.Route : null);
     }
 
     public ValueTask DisposeAsync() => DisposeCoreAsync(requireBrowserRelease: false);
@@ -355,16 +380,20 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
     public Task<bool> EnsureUnlockedAsync(IndexedDbSet database, CancellationToken cancellationToken = default) =>
         UnlockAsync(database, initialize: false, cancellationToken);
 
-    private Task<bool> UnlockAsync(IndexedDbSet database, bool initialize, CancellationToken cancellationToken)
+    private async Task<bool> UnlockAsync(IndexedDbSet database, bool initialize, CancellationToken cancellationToken)
     {
         var js = _jsModule;
         ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
-        return GetUnlock(database).UnlockAsync(async () =>
+        var unlocked = await GetUnlock(database).UnlockAsync(async () =>
         {
             var module = await js.Value;
-            await EnsureDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName);
+            await RegisterDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName);
             return module;
         }, initialize, cancellationToken);
+        if (unlocked && Definition(database.DatabaseName).Definition.ManifestUrl is not null)
+            await (await js.Value).InvokeVoidAsync("ensureProtectedMigration", cancellationToken,
+                _encryption[database.DatabaseName].Route);
+        return unlocked;
     }
 
     public async Task<MagicEncryptionState> GetStateAsync(IndexedDbSet database, CancellationToken cancellationToken = default)
@@ -374,7 +403,7 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
             return MagicEncryptionState.Inactive;
 
         var module = await js.Value.WaitAsync(cancellationToken);
-        await EnsureDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName).WaitAsync(cancellationToken);
+        await RegisterDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName).WaitAsync(cancellationToken);
         var state = await EncryptionUnlock.InvokeAsync<string>(
             module, "getProtectedDatabaseState", false, configuration.Route).AsTask().WaitAsync(cancellationToken);
         return Enum.Parse<MagicEncryptionState>(state);
@@ -387,12 +416,17 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
         try
         {
-            return await GetUnlock(database).UnlockCoreAsync(async () =>
+            var result = await GetUnlock(database).UnlockCoreAsync(async () =>
             {
                 var module = await js.Value;
-                await EnsureDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName);
+                await RegisterDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName);
                 return module;
             }, initialize, cancellationToken);
+            if ((result is MagicUnlockResult.Unlocked or MagicUnlockResult.AlreadyUnlocked) &&
+                Definition(database.DatabaseName).Definition.ManifestUrl is not null)
+                await (await js.Value).InvokeVoidAsync("ensureProtectedMigration", cancellationToken,
+                    _encryption[database.DatabaseName].Route);
+            return result;
         }
         catch (MagicEncryptionInteractionRequiredException) { return MagicUnlockResult.InteractionRequired; }
         catch (OperationCanceledException) { return MagicUnlockResult.Cancelled; }
@@ -400,13 +434,19 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         {
             return MagicUnlockResult.Uninitialized;
         }
-        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_INVALID_KEY:", StringComparison.Ordinal))
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_INVALID_KEY:", StringComparison.Ordinal) ||
+            error.Message.Contains("MAGDB_AUTHORIZATION_REJECTED:", StringComparison.Ordinal))
         {
             return MagicUnlockResult.InvalidKey;
         }
-        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_POLICY_MISMATCH:", StringComparison.Ordinal))
+        catch (JSException error) when (error.Message.Contains("MAGIC_ENCRYPTION_POLICY_MISMATCH:", StringComparison.Ordinal) ||
+            error.Message.Contains("MAGDB_PROTECTION_POLICY_MISMATCH:", StringComparison.Ordinal))
         {
             return MagicUnlockResult.PolicyMismatch;
+        }
+        catch (JSException error) when (error.Message.Contains("MAGDB_AUTHORIZATION_LOST:", StringComparison.Ordinal))
+        {
+            return MagicUnlockResult.Cancelled;
         }
     }
 
