@@ -99,7 +99,7 @@ function bundle(before, after, operations, options = {}) {
     return { url: origin + base + '/manifest.json', base, manifest, migration, before, after };
 }
 
-function appendRevision(plan, after, operations) {
+function appendRevision(plan, after, operations, mode = 'atomic') {
     const revision = plan.manifest.targetRevision + 1;
     const schemaPath = `schemas/${String(revision).padStart(4, '0')}.json`;
     const schemaAsset = jsonAsset(`${plan.base}/${schemaPath}`, after);
@@ -107,7 +107,7 @@ function appendRevision(plan, after, operations) {
     const migrationPath = `migrations/${id}.json`;
     const document = { protocolVersion: 1, schemaId: after.schemaId, id,
         fromRevision: revision - 1, toRevision: revision, fromSchemaHash: fingerprint(plan.after),
-        toSchemaHash: fingerprint(after), mode: 'atomic', requiredCapabilities: [], operations };
+        toSchemaHash: fingerprint(after), mode, requiredCapabilities: [], operations };
     const migrationAsset = jsonAsset(`${plan.base}/${migrationPath}`, document);
     const manifest = copy(plan.manifest);
     manifest.targetRevision = revision;
@@ -1252,7 +1252,8 @@ for (const [label, failId, processed] of [['empty', 1, 0], ['intermediate', 2, 1
         assert.deepEqual((await read(page)).map(row => row.value), recoveryRows.map((_, index) => index < processed ? 11 : 1));
         const approved = recoveryPackage(plan);
         const originalDigest = plan.manifest.migrations[0].sha256;
-        plan = appendRevision(plan, model, [{ op: 'setMissing', store: 'clients', path: 'afterRecovery', value: true }]);
+        plan = appendRevision(plan, model, [{ op: 'setMissing', store: 'clients', path: 'afterRecovery', value: true }],
+            label === 'final' ? 'resumable' : 'atomic');
         const result = await repair(page, plan, approved);
         assert.deepEqual(result.value, { outcome: 'recovered', recoveryId: approved.id, revision: 2, applicationTargetRevision: 3 });
         assert.equal((await inspect(page)).nativeVersion, original.nativeVersion + 1);

@@ -238,9 +238,9 @@ Already committed history is immutable. Fix a completed migration with a new for
 revision. Replacing a partially executed resumable module under the same migration
 ID is refused because different clients could have applied different logic. This
 preview does not expose a force-complete, rewrite-checkpoint, automatic rollback, or
-automatic reset API. Repairing a genuinely faulty partially committed migration
-requires an application-specific recovery design and validation, not a silent hash
-override. Keep that scenario in the release acceptance review.
+automatic reset API. For a supported faulty partial migration, deploy an
+explicitly bound recovery package with application-specific repairs and
+verification.
 
 `DeleteAsync()` remains an explicit destructive administrative action. It is never
 called by migration failure handling.

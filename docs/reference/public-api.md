@@ -154,6 +154,7 @@ ValueTask<IMagicQuery<T>> Query<T>();
 Task<JsonElement?> InspectMigrationAsync(CancellationToken cancellationToken = default);
 Task RetryMigrationAsync(CancellationToken cancellationToken = default);
 Task CancelMigrationAsync();
+Task<JsonElement> RecoverMigrationAsync(string recoveryId, string sha256, CancellationToken cancellationToken = default);
 ```
 
 The API manages one physical instance per scope. The two-argument `Database` overload
@@ -162,6 +163,14 @@ validates table membership. There are no all-database operations on the public i
 Obtaining a scope does not create storage; `OpenAsync` and queries initialize it.
 
 `InspectMigrationAsync` returns metadata only without creating/upgrading a database.
+`RecoverMigrationAsync` explicitly selects a recovery ID and descriptor digest
+approved by the pinned migration manifest. The result identifies the committed
+edge and the application's configured target. Use ordinary open to initialize
+any later revisions. Its token cancels the .NET wait. Use
+`CancelMigrationAsync` to cancel browser work. Recovery observations add
+`RecoveryId`, `RecoveryPhase` and `VerifiedRecords`.
+See the [recovery contract](../architecture/adr-partial-migration-recovery.md).
+
 `RetryMigrationAsync` retries failed initialization or resumes committed progress;
 its token cancels the .NET wait. `CancelMigrationAsync` cancels the browser attempt
 at a safe boundary. `ObserveMigrationsAsync` returns a disposable subscription for
