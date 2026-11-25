@@ -119,6 +119,7 @@ async function inspectOpen(db) {
     ]);
     await done;
     return { name: db.name, nativeVersion: db.version, stores, state: state ?? null, numericPolicy: numericPolicy ?? null,
+        hasNumericMetadata: db.objectStoreNames.contains(numericStore),
         hasProtectionMetadata: Boolean(protection), protectionPolicy: protectionPolicy ?? null, protectionState: protectionState ?? null };
 }
 
@@ -133,6 +134,7 @@ export async function inspectDatabase(name) {
     const snapshot = await inspectDatabaseInternal(name);
     if (snapshot) {
         snapshot.authenticated = snapshot.hasProtectionMetadata;
+        delete snapshot.hasNumericMetadata;
         delete snapshot.hasProtectionMetadata;
         delete snapshot.protectionPolicy;
         delete snapshot.protectionState;
@@ -160,8 +162,11 @@ function writeNumericPolicy(db, transaction, schema) {
     store.put({ version: 1, mode: "lossless", schema: physicalStores(schema) }, "policy");
 }
 
-function assertNumericPolicy(snapshot, schema) {
+function assertNumericPolicy(snapshot, schema, legacyProtected = false) {
     if (schema.numericFormat === "lossless-v1") {
+        // The released protected adapter authenticated its numeric mode in the
+        // legacy sentinel without provisioning a separate numeric policy store.
+        if (legacyProtected && !snapshot.hasNumericMetadata) return;
         // Historical protected Lossless databases bind this mode in their
         // encrypted sentinel instead. Adoption authenticates it before adding
         // the managed numeric policy in the same upgrade as its journal.
@@ -426,6 +431,15 @@ function fenceBinding(state) {
 
 function sameEnvelope(left, right) { return left == null && right == null || equalEnvelope(left, right); }
 
+function assertPinnedSnapshot(options, snapshot, expectedState) {
+    requireCondition(sameState(snapshot.state, expectedState),
+        "MAGDB_CONCURRENT_CHANGE", "The migration journal changed after preflight.");
+    if (options.protection)
+        requireCondition(sameEnvelope(snapshot.protectionPolicy, options.protectionSnapshot.policy) &&
+            sameEnvelope(snapshot.protectionState, options.protectionSnapshot.seal),
+            "MAGDB_PROTECTION_STATE_INVALID", "The authenticated policy or journal proof changed after preflight.");
+}
+
 async function authenticateSnapshot(options, snapshot, schema) {
     if (!options.protection) {
         requireCondition(!snapshot?.hasProtectionMetadata && snapshot?.state?.protocolVersion !== 3,
@@ -436,9 +450,11 @@ async function authenticateSnapshot(options, snapshot, schema) {
     requireCondition(!snapshot?.protectionState || snapshot?.state?.protocolVersion === 3,
         "MAGDB_PROTECTION_STATE_INVALID", "An authenticated journal proof cannot be adopted as legacy progress.");
     if (snapshot?.state?.protocolVersion === 3) {
-        await options.protection.verifyState(snapshot.protectionState, snapshot.state);
+        requireCondition(snapshot.protectionPolicy && snapshot.protectionState,
+            "MAGDB_PROTECTION_STATE_INVALID", "The authenticated journal is missing its policy or state proof.");
         if (snapshot.state.status === "ready") await options.protection.verifyPolicy(snapshot.protectionPolicy, schema);
         else await options.protection.authenticateFence(snapshot.protectionPolicy, fenceBinding(snapshot.state));
+        await options.protection.verifyState(snapshot.protectionState, snapshot.state);
     } else if (snapshot?.protectionPolicy) {
         requireCondition(!snapshot.state || snapshot.state.status === "ready", "MAGDB_PROTECTION_STATE_INVALID",
             "An unauthenticated interrupted journal cannot be adopted as protected progress.");
@@ -476,24 +492,27 @@ function writeProtection(db, tx, prepared) {
 
 // IndexedDB requests keep this transaction active. All Web Crypto work has
 // already completed; only exact-envelope comparisons and native writes occur here.
-function guardProtection(options, db, tx, apply, fail) {
-    if (!options.protection) { apply(); return; }
+function guardStoragePolicy(options, db, tx, schema, apply, fail, legacyProtected = false) {
     const expected = options.protectionSnapshot;
-    const table = db.objectStoreNames.contains(encryptionMetadataStore) ? tx.objectStore(encryptionMetadataStore) : null;
+    const hasNumericMetadata = db.objectStoreNames.contains(numericStore);
+    const numeric = hasNumericMetadata ? tx.objectStore(numericStore).get("policy") : null;
+    const table = options.protection && db.objectStoreNames.contains(encryptionMetadataStore) ? tx.objectStore(encryptionMetadataStore) : null;
     const policy = table?.get(encryptionMetadataKey), seal = table?.get(protectedStateKey);
+    const requests = [numeric, policy, seal].filter(Boolean);
     let applied = false;
     const ready = () => {
-        if (applied || policy && policy.readyState !== "done" || seal && seal.readyState !== "done") return;
+        if (applied || requests.some(request => request.readyState !== "done")) return;
         applied = true;
         try {
             checkAuthorization(options);
-            requireCondition(sameEnvelope(policy?.result, expected?.policy) && sameEnvelope(seal?.result, expected?.seal),
-                "MAGDB_PROTECTION_STATE_INVALID", "The authenticated policy or journal changed before commit.");
+            assertNumericPolicy({ numericPolicy: numeric?.result ?? null, hasNumericMetadata }, schema, legacyProtected);
+            if (options.protection)
+                requireCondition(sameEnvelope(policy?.result, expected?.policy) && sameEnvelope(seal?.result, expected?.seal),
+                    "MAGDB_PROTECTION_STATE_INVALID", "The authenticated policy or journal changed before commit.");
             apply();
         } catch (error) { fail(error); }
     };
-    if (policy) policy.onsuccess = ready;
-    if (seal) seal.onsuccess = ready;
+    for (const request of requests) request.onsuccess = ready;
     ready();
 }
 
@@ -543,6 +562,7 @@ async function resumeMigration(options, db, snapshot, step) {
         metadata.put(completed, stateKey);
         writeNumericPolicy(db, tx, to);
     }, prepared);
+    return completed;
 }
 
 /** Opening is a readiness boundary: resolution occurs only after the journal commits. */
@@ -647,7 +667,6 @@ async function ensureLocked(options, recovering) {
             (options.protection ? requireProtectedSchema : requirePlainSchema)(old);
             requireCondition(old.schemaId === options.schema.schemaId, "MAGDB_BASELINE_INVALID", "Baseline schema identity does not match.");
             if (samePhysical(snapshot.stores, old)) {
-                assertNumericPolicy(snapshot, old);
                 requireCondition(!baseline, "MAGDB_BASELINE_AMBIGUOUS", "Multiple baselines match this database; publish an unambiguous adoption path.");
                 const managed = await model(candidate.revision);
                 requireCondition(await sha256(canonicalJson(old)) === managed.hash, "MAGDB_BASELINE_INVALID",
@@ -669,10 +688,11 @@ async function ensureLocked(options, recovering) {
     const initial = manifest ? await model(startRevision) : { schema: options.schema, hash: expectedHash };
     if (snapshot) {
         requireCondition(samePhysical(snapshot.stores, initial.schema), "MAGDB_START_SCHEMA_MISMATCH", "Physical database schema differs from its expected starting state.");
-        assertNumericPolicy(snapshot, initial.schema);
         if (snapshot.state) requireCondition(snapshot.state.schemaHash === initial.hash, "MAGDB_MODEL_DRIFT", "Persisted schema identity does not match this history.");
     }
     await authenticateSnapshot(options, snapshot, initial.schema);
+    const legacyProtected = Boolean(options.protection && baseline && snapshot.protectionPolicy);
+    if (snapshot) assertNumericPolicy(snapshot, initial.schema, legacyProtected);
     const steps = [];
     for (let revision = startRevision; revision < targetRevision; revision++) {
         requireCondition(manifest, "MAGDB_MIGRATION_REQUIRED", "A migration package is required.");
@@ -693,7 +713,7 @@ async function ensureLocked(options, recovering) {
         steps[0].reference.sha256 === snapshot.state.active.sha256 && steps[0].document.mode === "resumable",
     "MAGDB_RESUME_PACKAGE_REQUIRED", "Resume requires the same original migration package.");
 
-    let db;
+    let db, expectedState = snapshot?.state;
     try {
         // All descriptors and custom code are verified before the first write.
         if (!snapshot) {
@@ -708,6 +728,7 @@ async function ensureLocked(options, recovering) {
                 writeProtection(connection, transaction, prepared);
             });
             if (prepared) options.protectionSnapshot = prepared;
+            expectedState = initialState;
         } else if (baseline) {
             notify(options, "adopting", { revision: baseline.revision, targetRevision });
             const adopted = readyState(options.schema.schemaId, baseline.revision, baseline.hash, [], options.protection ? 3 : 1);
@@ -716,13 +737,14 @@ async function ensureLocked(options, recovering) {
                 requireCondition(oldVersion === snapshot.nativeVersion && samePhysical(nativeStores(connection, transaction), initial.schema),
                     "MAGDB_CONCURRENT_CHANGE", "Legacy database changed before adoption.");
                 requireCondition(!connection.objectStoreNames.contains(metadataStore), "MAGDB_STATE_INVALID", "Reserved metadata already exists.");
-                guardProtection(options, connection, transaction, () => {
+                guardStoragePolicy(options, connection, transaction, initial.schema, () => {
                     connection.createObjectStore(metadataStore).put(adopted, stateKey);
                     writeNumericPolicy(connection, transaction, initial.schema);
                     writeProtection(connection, transaction, prepared);
-                }, fail);
+                }, fail, legacyProtected);
             });
             if (prepared) options.protectionSnapshot = prepared;
+            expectedState = adopted;
         } else if (options.protection && snapshot.state.protocolVersion !== 3) {
             const adopted = { ...snapshot.state, protocolVersion: 3 };
             const prepared = await prepareProtection(options, adopted, initial.schema, true);
@@ -730,7 +752,7 @@ async function ensureLocked(options, recovering) {
                 requireCondition(oldVersion === snapshot.nativeVersion && samePhysical(nativeStores(connection, transaction), initial.schema),
                     "MAGDB_CONCURRENT_CHANGE", "Database changed before authenticated adoption.");
                 const request = transaction.objectStore(metadataStore).get(stateKey);
-                request.onsuccess = () => guardProtection(options, connection, transaction, () => {
+                request.onsuccess = () => guardStoragePolicy(options, connection, transaction, initial.schema, () => {
                     requireCondition(sameState(request.result, snapshot.state), "MAGDB_CONCURRENT_CHANGE", "The journal changed before authenticated adoption.");
                     transaction.objectStore(metadataStore).put(adopted, stateKey);
                     writeNumericPolicy(connection, transaction, initial.schema);
@@ -738,13 +760,20 @@ async function ensureLocked(options, recovering) {
                 }, fail);
             });
             options.protectionSnapshot = prepared;
+            expectedState = adopted;
         } else db = await openExisting(options.name, options.signal);
         requireCondition(db, "MAGDB_DATABASE_MISSING", "Database disappeared before migration.");
         for (const step of steps) {
             checkAuthorization(options);
             snapshot = await inspectOpen(db);
-            await authenticateSnapshot(options, snapshot, step.from);
             const { document, reference, to, toHash } = step;
+            assertPinnedSnapshot(options, snapshot, expectedState);
+            requireCondition(snapshot.state?.revision === document.fromRevision &&
+                snapshot.state.schemaHash === document.fromSchemaHash &&
+                (snapshot.state.status === "ready" || snapshot.state.status === "migrating" &&
+                    snapshot.state.active?.id === document.id && snapshot.state.active.sha256 === reference.sha256),
+                "MAGDB_CONCURRENT_CHANGE", "The journal no longer matches the preflighted migration edge.");
+            await authenticateSnapshot(options, snapshot, step.from);
             notify(options, "migrating", { migrationId: document.id, revision: document.fromRevision, targetRevision });
             if (document.mode === "atomic") {
                 const completed = readyState(document.schemaId, document.toRevision, toHash,
@@ -758,7 +787,7 @@ async function ensureLocked(options, recovering) {
                     get.onsuccess = () => {
                         try {
                             requireCondition(canonicalJson(get.result) === canonicalJson(snapshot.state), "MAGDB_CONCURRENT_CHANGE", "Migration journal changed.");
-                            guardProtection(options, connection, transaction, () => applyAtomic(connection, transaction, document, step.hooks, () => {
+                            guardStoragePolicy(options, connection, transaction, step.from, () => applyAtomic(connection, transaction, document, step.hooks, () => {
                                 requireCondition(samePhysical(nativeStores(connection, transaction), to), "MAGDB_TARGET_MISMATCH", "Migration did not produce its target schema.");
                                 transaction.objectStore(metadataStore).put(completed, stateKey);
                                 writeNumericPolicy(connection, transaction, to);
@@ -768,6 +797,7 @@ async function ensureLocked(options, recovering) {
                     };
                 });
                 if (prepared) options.protectionSnapshot = prepared;
+                expectedState = completed;
             } else {
                 if (snapshot.state.status === "ready") {
                     const admitted = { ...snapshot.state, status: "migrating",
@@ -778,7 +808,7 @@ async function ensureLocked(options, recovering) {
                         requireCondition(oldVersion === snapshot.nativeVersion && samePhysical(nativeStores(connection, transaction), step.from),
                             "MAGDB_CONCURRENT_CHANGE", "Database changed before resumable migration.");
                         const request = transaction.objectStore(metadataStore).get(stateKey);
-                        request.onsuccess = () => guardProtection(options, connection, transaction, () => {
+                        request.onsuccess = () => guardStoragePolicy(options, connection, transaction, step.from, () => {
                             requireCondition(sameState(request.result, snapshot.state), "MAGDB_CONCURRENT_CHANGE", "The journal changed before migration admission.");
                             transaction.objectStore(metadataStore).put(admitted, stateKey);
                             writeProtection(connection, transaction, prepared);
@@ -786,17 +816,21 @@ async function ensureLocked(options, recovering) {
                     });
                     if (prepared) options.protectionSnapshot = prepared;
                     snapshot = await inspectOpen(db);
+                    assertPinnedSnapshot(options, snapshot, admitted);
                 }
-                await resumeMigration(options, db, snapshot, step);
+                expectedState = await resumeMigration(options, db, snapshot, step);
             }
         }
         const final = await inspectOpen(db);
+        assertPinnedSnapshot(options, final, expectedState);
         requireCondition(final.state?.status === "ready" && final.state.revision === targetRevision && final.state.schemaHash === expectedHash &&
             samePhysical(final.stores, options.schema), "MAGDB_TARGET_MISMATCH", "Database is not ready at the application's target revision.");
         await authenticateSnapshot(options, final, options.schema);
+        assertNumericPolicy(final, options.schema);
         const result = { name: options.name, schemaId: options.schema.schemaId, revision: targetRevision,
             schemaHash: expectedHash, nativeVersion: final.nativeVersion, protocolVersion: final.state.protocolVersion, history: final.state.history,
-            ...(options.protection ? { journal: final.state, journalSeal: final.protectionState } : {}) };
+            ...(options.protection ? { journal: final.state, journalSeal: final.protectionState,
+                policySeal: final.protectionPolicy, numericPolicy: final.numericPolicy } : {}) };
         notify(options, "ready", { revision: targetRevision, targetRevision });
         return result;
     } finally { db?.close(); }
@@ -817,8 +851,11 @@ export async function assertDatabaseReady(db, expected, protection = null) {
         requireCondition(isProtectedMigrationAdapter(protection) && protection.name === db.name,
             "MAGDB_AUTHORIZATION_REQUIRED", "Authenticated readiness requires an active authorization capability.");
         const snapshot = await inspectOpen(db);
-        requireCondition(sameState(snapshot.state, state) && sameEnvelope(snapshot.protectionState, expected.journalSeal),
+        requireCondition(sameState(snapshot.state, state) && sameEnvelope(snapshot.protectionState, expected.journalSeal) &&
+            sameEnvelope(snapshot.protectionPolicy, expected.policySeal),
             "MAGDB_PROTECTION_STATE_INVALID", "Authenticated readiness changed since initialization.");
+        requireCondition(canonicalJson(snapshot.numericPolicy) === canonicalJson(expected.numericPolicy),
+            "MAGDB_CODEC_POLICY_MISMATCH", "Numeric policy changed since initialization.");
         await protection.verifyState(snapshot.protectionState, state);
         protection.assertCurrent();
     }
@@ -889,7 +926,7 @@ async function recoverLocked(options, snapshot, manifest, base, model) {
                 request.onsuccess = () => {
                     try {
                         requireCondition(sameState(request.result, prior), "MAGDB_CONCURRENT_CHANGE", "The original checkpoint changed.");
-                        guardProtection(options, connection, tx, () => {
+                        guardStoragePolicy(options, connection, tx, from.schema, () => {
                             metadata.put(state, stateKey);
                             writeProtection(connection, tx, prepared);
                         }, fail);
@@ -1016,24 +1053,17 @@ async function recoveryTransaction(options, db, prior, schema, apply, prepared =
     options.signal?.addEventListener("abort", cancel, { once: true });
     let failure;
     const read = metadata.get(stateKey);
-    const policy = db.objectStoreNames.contains(numericStore) ? tx.objectStore(numericStore).get("policy") : null;
-    let applied = false;
-    const ready = () => {
-        if (applied || read.readyState !== "done" || policy && policy.readyState !== "done") return;
-        applied = true;
+    read.onsuccess = () => {
         try {
             checkAuthorization(options);
             requireCondition(sameState(read.result, prior) && samePhysical(nativeStores(db, tx), schema),
                 "MAGDB_CONCURRENT_CHANGE", "Recovery journal or native layout changed.");
-            assertNumericPolicy({ numericPolicy: policy?.result ?? null }, schema);
-            guardProtection(options, db, tx, () => {
+            guardStoragePolicy(options, db, tx, schema, () => {
                 apply(tx, metadata);
                 writeProtection(db, tx, prepared);
             }, error => { failure = error; tx.abort(); });
         } catch (error) { failure = error; tx.abort(); }
     };
-    read.onsuccess = ready;
-    if (policy) policy.onsuccess = ready;
     try { await done; if (prepared) options.protectionSnapshot = prepared; }
     catch (error) { abortCheck(options.signal); throw failure ?? error; }
     finally { options.signal?.removeEventListener("abort", cancel); }

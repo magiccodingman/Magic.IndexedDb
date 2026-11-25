@@ -1,8 +1,7 @@
 @namespace ProtectedFixture
 @using Magic.IndexedDb
 @using Microsoft.JSInterop
-@inject IMagicIndexedDb Magic
-@inject IMagicIndexedDbEncryptionLifecycle Encryption
+@inject IMagicEncryptionContexts Contexts
 @inject IJSRuntime Js
 <output id="fixture-result" data-state="@state">@message</output>
 
@@ -16,17 +15,39 @@
         {
             await using var fixture = await Js.InvokeAsync<IJSObjectReference>("import", "./protected-fixture.mjs");
             await fixture.InvokeVoidAsync("seed");
-            var database = await Magic.Database(ProtectedRepository.Records);
+            var context = await Activate("published-account");
+            var encryption = context.Encryption;
+            var records = ProtectedRepository.Records;
+            var database = await context.Database.Database(records);
+            FixtureKeys.KeyByte = null;
+            Require(await encryption.UnlockDetailedAsync(records) == MagicUnlockResult.KeyUnavailable, "Missing key was not reported.");
+            FixtureKeys.KeyByte = 56;
+            Require(await encryption.UnlockDetailedAsync(records) == MagicUnlockResult.InvalidKey, "Wrong key was not rejected.");
+            Require((await database.InspectMigrationAsync())!.Value.GetProperty("state").ValueKind == System.Text.Json.JsonValueKind.Null,
+                "Failed authorization admitted a journal.");
+            await fixture.InvokeVoidAsync("assertOriginalCiphertext");
+            FixtureKeys.KeyByte = 55;
             var notifications = 0;
-            await using (await Magic.ObserveMigrationsAsync(notification =>
+            await using (await context.Database.ObserveMigrationsAsync(notification =>
             {
                 if (notification.SchemaId == "protected-wasm") notifications++;
                 return ValueTask.CompletedTask;
             }))
             {
-                var pending = Encryption.EnsureUnlockedAsync(ProtectedRepository.Records);
+                var stopped = encryption.UnlockDetailedAsync(records);
                 await fixture.InvokeVoidAsync("waitForHook");
-                await Encryption.LockAsync(ProtectedRepository.Records);
+                await database.CancelMigrationAsync();
+                Require(await stopped == MagicUnlockResult.Cancelled, "Browser cancellation was not reported.");
+                await fixture.InvokeVoidAsync("resetHookProbe");
+                var pending = encryption.EnsureUnlockedAsync(records);
+                await fixture.InvokeVoidAsync("waitForHook");
+                using var wait = new CancellationTokenSource();
+                var secondWait = encryption.EnsureUnlockedAsync(records, wait.Token);
+                wait.Cancel();
+                try { await secondWait; throw new InvalidOperationException("The caller's wait was not cancelled."); }
+                catch (OperationCanceledException) { }
+                Require(!pending.IsCompleted, "Cancelling a caller's wait stopped the browser migration.");
+                await encryption.LockAsync(records);
                 try
                 {
                     await pending;
@@ -40,7 +61,7 @@
                     "A revoked transform committed records.");
                 await fixture.InvokeVoidAsync("assertOriginalCiphertext");
                 await fixture.InvokeVoidAsync("releaseHook");
-                Require(await Encryption.EnsureUnlockedAsync(ProtectedRepository.Records), "Retry was not authorized.");
+                Require(await encryption.EnsureUnlockedAsync(records), "Retry was not authorized.");
                 Require(notifications > 0, "Migration observation did not run.");
             }
 
@@ -53,8 +74,16 @@
             var final = (await database.InspectMigrationAsync())!.Value.GetProperty("state");
             Require(final.GetProperty("protocolVersion").GetInt32() == 3 && final.GetProperty("revision").GetInt32() == 3 &&
                 final.GetProperty("history").GetArrayLength() == 2, "Authenticated lineage was not retained.");
-            await Encryption.LockAsync(ProtectedRepository.Records);
-            Require(await Encryption.EnsureUnlockedAsync(ProtectedRepository.Records), "The public final policy could not be reopened.");
+            await encryption.LockAsync(records);
+            Require(await encryption.EnsureUnlockedAsync(records), "The public final policy could not be reopened.");
+            var other = await Activate("another-account");
+            Require(await encryption.GetStateAsync(records) == MagicEncryptionState.Inactive, "The previous account context survived switching.");
+            Require(await other.Encryption.UnlockDetailedAsync(records) == MagicUnlockResult.InvalidKey,
+                "A wrong account was able to open authenticated history.");
+            var resumed = await Activate("published-account");
+            Require(await resumed.Encryption.EnsureUnlockedAsync(records), "The original account could not reauthorize.");
+            await Contexts.DeactivateAsync();
+            Require(await resumed.Encryption.GetStateAsync(records) == MagicEncryptionState.Inactive, "Sign-out did not release the account context.");
             Require(FixtureKeys.Requests >= 3, "Explicit locking did not require fresh authorization.");
             state = "passed";
             message = "Authenticated legacy adoption, lock/resume, field-to-record encryption and approved declassification passed.";
@@ -65,6 +94,10 @@
             message = error.ToString();
         }
     }
+
+    private Task<MagicEncryptionContext> Activate(string account) => Contexts.ActivateAsync(
+        [new MagicEncryptionOptions("protected-wasm", account, "fixture-key")
+            { PhysicalDatabaseName = ProtectedRepository.PhysicalName }]);
 
     private static void Require(bool condition, string message)
     {

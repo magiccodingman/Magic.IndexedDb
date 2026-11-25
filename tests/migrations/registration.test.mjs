@@ -19,7 +19,7 @@ test('worker ownership runs in both modes and only the CLI boundary is optional'
         for (const phase of ['repair', 'verify'])
             assert.ok(names.includes(`abrupt page termination during recovery ${phase} preserves committed progress`));
         assert.ok(!names.some(name => name.startsWith('installed CLI')));
-        assert.ok(names.includes('authenticated recovery repairs source and target encryption partitions with the approved package'));
+        assert.ok(names.includes('authenticated recovery resumes both checkpoints across policy partitions and advances a later revision'));
 
         env.MAGIC_CLI_FIXTURE = path.join(scratch, 'manifest.json');
         const missing = list();

@@ -99,6 +99,10 @@ A managed policy sentinel is not a legacy adoption credential. If its journal or
 proof is deleted or downgraded, adoption fails instead of erasing authenticated
 history and replaying transforms. Only an authenticated legacy-format sentinel
 may establish the first managed journal for an existing protected database.
+An existing v3 journal requires a managed sentinel. A matching, authenticated
+legacy envelope remains valid only for first adoption. During preflight and
+execution, the runner pins the observed journal and policy/proof bytes to detect
+replacement with an earlier valid journal or checkpoint.
 
 ## Portable capability and journal versions
 
@@ -120,6 +124,11 @@ fingerprints have a distinct, canonicalized native-layout/protection/numeric
 contract. Legacy sentinel bytes are authenticated with the existing envelope
 format, then their complete contract is normalized and compared with the nominated
 baseline. Ordinary legacy CRUD fingerprints remain byte-for-byte unchanged.
+
+The released protected Lossless format authenticated its numeric contract in the
+legacy sentinel. A reviewed first adoption may install the separate managed
+numeric-policy store if that store was never present. An existing numeric store
+with a missing policy, or a missing managed policy after adoption, fails closed.
 
 The complete journal is authenticated by a separate encrypted proof under
 `__magic_encryption/migration-state`. Its encoding preserves native key types,
@@ -162,8 +171,8 @@ No separate UI or automatic prompt is introduced. Observer exceptions cannot
 change transaction outcomes, and events contain no record contents or keys.
 
 Successful readiness pins the ready journal and proof. Protected CRUD compares
-the expected policy and journal/proof bytes; protected writes include these
-metadata stores in their native transaction. Managed access remains unavailable
+the expected policy, numeric policy, and journal/proof bytes. Protected writes
+include these metadata stores in their native transaction. Managed access remains unavailable
 while a migration or recovery is incomplete.
 
 ## Execution and crash consistency

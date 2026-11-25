@@ -5,6 +5,7 @@ import { EncryptionSession } from "./encryptionSession.js";
 import { createProtectionPolicy } from "./protectionPolicy.js";
 import { canonicalJson, metadataStore as migrationMetadataStore, MigrationError } from "../migrations/protocol.js";
 import { equalEnvelope, protectedStateKey } from "../migrations/protectedMigrationAdapter.js";
+import { numericMetadataStore } from "./numericStorage.js";
 import { magicQueryYield } from "../magicLinqToIndexedDb.js";
 
 export const protectedDatabasePrefix = "__magic_protected__:";
@@ -80,10 +81,15 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
         }
         await assertPersistedEncryptionPolicy(db.table(encryptionMetadataStore), snapshot);
         if (options.managedSchema) {
+            const numeric = db.tables.find(table => table.name === numericMetadataStore);
             const journal = await db.table(migrationMetadataStore).get("state");
             const seal = await db.table(encryptionMetadataStore).get(protectedStateKey);
-            if (!readiness || canonicalJson(journal ?? null) !== readiness.journal || !equalEnvelope(seal, readiness.seal))
+            if (!readiness || !equalEnvelope(snapshot, readiness.policySeal) ||
+                canonicalJson(journal ?? null) !== readiness.journal || !equalEnvelope(seal, readiness.seal))
                 throw new MigrationError("MAGDB_PROTECTION_STATE_INVALID", "The authenticated ready state changed. Reinitialize before accessing records.");
+            const numericPolicy = await numeric?.get("policy");
+            if (canonicalJson(numericPolicy ?? null) !== readiness.numericPolicy)
+                throw new MigrationError("MAGDB_CODEC_POLICY_MISMATCH", "The authenticated connection's numeric policy changed.");
         }
         assertLive();
     };
@@ -91,9 +97,10 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
     return {
         setManagedReadiness: result => {
             if (!options.managedSchema || result?.journal?.protocolVersion !== 3 || result.journal.status !== "ready" ||
-                !equalEnvelope(result.journalSeal, result.journalSeal))
+                !equalEnvelope(result.journalSeal, result.journalSeal) || !equalEnvelope(result.policySeal, result.policySeal))
                 throw new MigrationError("MAGDB_PROTECTION_STATE_INVALID", "An authenticated ready journal is required.");
-            readiness = { journal: canonicalJson(result.journal), seal: structuredClone(result.journalSeal) };
+            readiness = { journal: canonicalJson(result.journal), seal: structuredClone(result.journalSeal),
+                policySeal: structuredClone(result.policySeal), numericPolicy: canonicalJson(result.numericPolicy) };
         },
         forTable: name => {
             const policy = policies.get(name);
@@ -139,7 +146,8 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
                 await assertPolicy();
                 return session.isUnlocked ? "Unlocked" : "Locked";
             } catch (error) {
-                if (!error.message.startsWith("MAGIC_ENCRYPTION_POLICY_MISMATCH:") && error.code !== "MAGDB_PROTECTION_STATE_INVALID") throw error;
+                if (!error.message.startsWith("MAGIC_ENCRYPTION_POLICY_MISMATCH:") &&
+                    !["MAGDB_PROTECTION_STATE_INVALID", "MAGDB_CODEC_POLICY_MISMATCH"].includes(error.code)) throw error;
                 session.lock();
                 return "PolicyMismatch";
             }
@@ -218,7 +226,11 @@ class ProtectedTable {
     async fencedWrite(operation, assertCurrent = () => {}) {
         await this.db.open();
         const stores = [this.table, this.db.table(encryptionMetadataStore)];
-        if (this.managed) stores.push(this.db.table(migrationMetadataStore));
+        if (this.managed) {
+            stores.push(this.db.table(migrationMetadataStore));
+            const numeric = this.db.tables.find(table => table.name === numericMetadataStore);
+            if (numeric) stores.push(numeric);
+        }
         return this.db.transaction("rw", stores, async () => {
             await this.assertPolicy();
             this.assertLive();

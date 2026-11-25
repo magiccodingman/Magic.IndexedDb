@@ -90,15 +90,21 @@ Run the ordinary unit/browser gates, portable protocol/crypto suite, actual
 packed-and-installed CLI tests, the configured native migration browser suite,
 and the published trimmed/AOT Blazor fixtures. Use all four CI browser
 configurations. The runner intentionally fails on missing cases and skipped
-required fixture modes. The configured native suite currently requires 119 cases
-per browser; the published matrix requires 11 per browser and build mode (88
+required fixture modes. The configured native suite currently requires 125 cases
+per browser; the published matrix requires 13 per browser and build mode (104
 total). Verify these counts from code and reports, not from earlier approvals.
 
 The [published protected fixture](../../tests/migrations/ProtectedWasm) uses the
 installed CLI's exact assets and the actual packed runtime. It adopts field
-ciphertext, locks a pending C# initialization, retries with fresh authorization,
+ciphertext written by the released 2.0.7 adapter on the same origin, locks a
+pending C# initialization, retries with fresh authorization,
 checks a whole-record ciphertext stage, and then explicitly makes the records
-public. It verifies typed CRUD, raw storage, journal v3/history, and later unlock.
+public. It verifies typed CRUD, raw storage, journal v3/history, later unlock,
+unavailable and wrong keys, caller versus browser cancellation, account
+switching, and sign-out. Two more cases enroll released Lossless plaintext or
+adopt a released Lossless vault in place with compound keys, a public index,
+exact wire values, and ciphertext inspection. The existing released matrix
+tests the actual C# converter and incidental stores separately.
 
 ```bash
 dotnet test Magic.IndexedDb.UnitTests/Magic.IndexedDb.UnitTests.csproj --configuration Release

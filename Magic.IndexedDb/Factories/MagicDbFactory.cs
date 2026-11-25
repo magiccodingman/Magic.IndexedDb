@@ -444,7 +444,8 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         {
             return MagicUnlockResult.PolicyMismatch;
         }
-        catch (JSException error) when (error.Message.Contains("MAGDB_AUTHORIZATION_LOST:", StringComparison.Ordinal))
+        catch (JSException error) when (error.Message.Contains("MAGDB_AUTHORIZATION_LOST:", StringComparison.Ordinal) ||
+            error.Message.Contains("MAGDB_CANCELLED:", StringComparison.Ordinal))
         {
             return MagicUnlockResult.Cancelled;
         }

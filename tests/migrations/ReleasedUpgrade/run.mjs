@@ -39,8 +39,8 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = 'http://127.0.0.1:' + server.address().port;
 
-async function snapshot(page, name) {
-    return page.evaluate(async databaseName => {
+async function snapshot(page, name, encryptedMember = null) {
+    return page.evaluate(async ({ databaseName, encryptedMember }) => {
         const result = request => new Promise((resolve, reject) => {
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
@@ -58,11 +58,14 @@ async function snapshot(page, name) {
                     return { name, keyPath: index.keyPath, unique: index.unique, multiEntry: index.multiEntry };
                 });
                 const [keys, rows] = await Promise.all([result(store.getAllKeys()), result(store.getAll())]);
-                return [name, { keyPath: store.keyPath, autoIncrement: store.autoIncrement, indexes, keys, rows }];
+                const ciphertext = encryptedMember && name === 'records' ? rows.map(row =>
+                    row[encryptedMember]?.ciphertext instanceof ArrayBuffer && row[encryptedMember].ciphertext.byteLength > 0) : null;
+                return [name, { keyPath: store.keyPath, autoIncrement: store.autoIncrement, indexes, keys, rows,
+                    ...(ciphertext && { ciphertext }) }];
             });
             return { version: db.version, data: Object.fromEntries(await Promise.all(entries)) };
         } finally { db.close(); }
-    }, name);
+    }, { databaseName: name, encryptedMember });
 }
 
 async function nextAuditKey(page, name) {
@@ -88,12 +91,12 @@ async function nextAuditKey(page, name) {
     }), name);
 }
 
-async function load(context) {
+async function load(context, query = '') {
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    assert.ok((await page.goto(origin)).ok(), 'The requested Blazor deployment is missing.');
+    assert.ok((await page.goto(origin + '/' + query)).ok(), 'The requested Blazor deployment is missing.');
     const result = page.locator('#fixture-result[data-state=passed], #fixture-result[data-state=failed]');
     try { await result.waitFor({ timeout: 60_000 }); }
     catch (error) { throw new Error(errors.join('\n') || 'Blazor did not report a fixture result.', { cause: error }); }
@@ -103,7 +106,7 @@ async function load(context) {
 
 const results = [];
 const cutoverCases = versions.includes('2.0.7') ? ['uncooperative-v2-writer', 'cooperative-v2-bridge'] : [];
-const expected = versions.length + cutoverCases.length + 2;
+const expected = versions.length + cutoverCases.length + 2 + (versions.includes('2.0.7') ? 2 : 0);
 
 async function runCase(name, action) {
     const result = { name, state: 'failed' };
@@ -240,10 +243,108 @@ try {
         await load(context);
     });
 
-    await runCase('authenticated-migrations-in-blazor', async context => {
+    await runCase('authenticated-migrations-in-blazor', async (context, result) => {
+        let old;
+        const physical = '__magic_protected__:published-migration-fixture';
+        const route = physical + ':released';
+        if (versions.includes('2.0.7')) {
+            deployment = '2.0.7';
+            old = await load(context);
+            await old.evaluate(async ({ physical, route }) => {
+                window.released = await import('/_content/Magic.IndexedDb/magicDB.js');
+                await released.createDb({ name: route, version: 1,
+                    encryption: { account: 'published-account', physicalName: physical },
+                    storeSchemas: [{ tableName: 'records', primaryKeyAuto: false, columnNamesInCompoundKey: ['Id'],
+                        indexes: ['Id'], uniqueIndexes: [], columnNamesInCompoundIndex: [], encryptedFields: ['Secret'] }] });
+                await released.unlockProtectedDatabase(route, 'fixture-key', new Uint8Array(32).fill(55), true);
+                for (const Id of [1, 2, 3]) await released.addItem({ dbName: route, storeName: 'records',
+                    record: { Id, Name: 'Public ' + Id, Secret: 'Private ' + Id, Visits: 0 } });
+            }, { physical, route });
+            const before = await snapshot(old, physical, 'Secret');
+            assert.deepEqual(before.data.records.keys, [1, 2, 3]);
+            assert.deepEqual(before.data.records.ciphertext, [true, true, true]);
+            assert.equal(before.data.__magic_migrations__, undefined);
+            result.seededBy = 'Magic.IndexedDb 2.0.7 static adapter';
+        }
         deployment = buildMode + '/protected';
-        await load(context);
+        const current = await load(context, old ? '?released=1' : '');
+        if (old) {
+            const fenced = await old.evaluate(async route => {
+                try {
+                    await released.addItem({ dbName: route, storeName: 'records',
+                        record: { Id: 4, Name: 'Unexpected old write', Secret: 'Old policy', Visits: 0 } });
+                    return false;
+                } catch { return true; }
+            }, route);
+            assert.equal(fenced, true, 'A still-loaded released protected writer must be fenced.');
+            assert.deepEqual((await snapshot(current, physical)).data.records.keys, [1, 2, 3]);
+        }
     });
+
+    if (versions.includes('2.0.7')) for (const legacyProtected of [false, true]) {
+        const scenario = legacyProtected ? 'released-numeric-vault' : 'released-numeric-enrollment';
+        await runCase(scenario, async (context, result) => {
+            deployment = '2.0.7';
+            const old = await load(context);
+            const physical = (legacyProtected ? '__magic_protected__:' : '__magic_numeric_v1__:') + scenario;
+            const route = '__magic_protected__:enrollment:' + scenario;
+            const legacyRoute = legacyProtected ? physical + ':released' : physical;
+            const numeric = { numericStorage: { version: 1, mode: 'lossless' }, numericLegacyName: scenario };
+            const store = { tableName: 'records', primaryKeyAuto: false, columnNamesInCompoundKey: ['Name', 'Id'],
+                indexes: ['Id'], uniqueIndexes: [], columnNamesInCompoundIndex: [] };
+            const encryption = { account: 'published-account', physicalName: physical };
+            const rows = [1, 2, 3].map(Id => ({ Id, Name: 'Account', Secret: 'Private ' + Id, Visits: 0,
+                Wide: '~ml1:09232379236109516801', Reference: 'INV4821' }));
+            await old.evaluate(async ({ legacyRoute, numeric, store, encryption, rows, legacyProtected }) => {
+                const released = await import('/_content/Magic.IndexedDb/magicDB.js');
+                await released.createDb({ name: legacyRoute, version: 1, ...numeric, storeSchemas: [
+                    { ...store, ...(legacyProtected && { encryptedFields: ['Secret'] }) }],
+                    ...(legacyProtected && { encryption }) });
+                if (legacyProtected)
+                    await released.unlockProtectedDatabase(legacyRoute, 'fixture-key', new Uint8Array(32).fill(55), true);
+                for (const record of rows) await released.addItem({ dbName: legacyRoute, storeName: 'records', record });
+            }, { legacyRoute, numeric, store, encryption, rows, legacyProtected });
+            const before = await snapshot(old, physical, legacyProtected ? 'Secret' : null);
+            assert.deepEqual(before.data.records.keys, rows.map(row => [row.Name, row.Id]));
+            assert.deepEqual(before.data.records.rows.map(row => [row.Wide, row.Reference]), rows.map(row => [row.Wide, row.Reference]));
+            assert.equal(Boolean(before.data.__magic_numeric_policy), !legacyProtected);
+            if (legacyProtected) assert.deepEqual(before.data.records.ciphertext, [true, true, true]);
+            else assert.deepEqual(before.data.records.rows, rows);
+            await old.close();
+
+            deployment = buildMode + '/protected';
+            const current = await context.newPage();
+            const manifestUrl = `/releases/legacy-numeric/${scenario}/manifest.json`;
+            assert.ok((await current.goto(origin + manifestUrl)).ok());
+            const after = await current.evaluate(async ({ manifestUrl, route, numeric, store, encryption, rows, legacyProtected }) => {
+                const api = await import('/_content/Magic.IndexedDb/magicDB.js');
+                const manifest = await (await fetch(manifestUrl)).json();
+                const reference = manifest.schemas.find(schema => schema.revision === manifest.targetRevision);
+                const model = await (await fetch(new URL(reference.path, location.href))).json();
+                await api.createDb({ name: route, ...numeric, migrationManifestUrl: manifestUrl, migrationSchema: model,
+                    encryption: { ...encryption, explicitPhysicalBinding: true },
+                    storeSchemas: [{ ...store, ...(legacyProtected ? { exposedFields: ['Name', 'Id'] } : { encryptedFields: ['Secret'] }) }] });
+                await api.unlockProtectedDatabase(route, 'fixture-key', new Uint8Array(32).fill(55), !legacyProtected);
+                await api.ensureProtectedMigration(route);
+                const result = await Promise.all(rows.map(row => api.findItem(route, 'records', [row.Name, row.Id])));
+                api.releaseProtectedDatabase(route);
+                return result;
+            }, { manifestUrl, route, numeric, store, encryption, rows, legacyProtected });
+            assert.deepEqual(after, rows);
+            const final = await snapshot(current, physical, legacyProtected ? '__magic_record' : 'Secret');
+            assert.deepEqual(final.data.records.keys, before.data.records.keys);
+            assert.deepEqual(final.data.records.indexes, before.data.records.indexes);
+            assert.equal(final.data.__magic_migrations__.rows[0].protocolVersion, 3);
+            assert.equal(final.data.__magic_migrations__.rows[0].revision, 2);
+            assert.equal(final.data.__magic_numeric_policy.rows[0].mode, 'lossless');
+            assert.deepEqual(final.data.records.ciphertext, [true, true, true]);
+            if (legacyProtected) assert.ok(final.data.records.rows.every(row =>
+                !Object.hasOwn(row, 'Secret') && !Object.hasOwn(row, 'Wide') && !Object.hasOwn(row, 'Reference')));
+            else assert.ok(final.data.records.rows.every((row, index) =>
+                row.Wide === rows[index].Wide && row.Reference === rows[index].Reference));
+            result.seededBy = 'Magic.IndexedDb 2.0.7 static adapter';
+        });
+    }
 
     if (cutoverCases.length) {
         await runCase(cutoverCases[0], async context => {

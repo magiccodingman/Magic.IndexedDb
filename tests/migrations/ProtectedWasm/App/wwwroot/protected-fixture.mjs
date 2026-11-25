@@ -20,13 +20,15 @@ async function rawRows() {
 }
 
 export async function seed() {
-    await api.createDb({ name: route, encryption: { account: 'published-account', physicalName: physical },
-        storeSchemas: [{ tableName: 'records', primaryKeyAuto: false, columnNamesInCompoundKey: ['Id'],
-            indexes: ['Id'], uniqueIndexes: [], columnNamesInCompoundIndex: [], encryptedFields: ['Secret'] }] });
-    await api.unlockProtectedDatabase(route, 'fixture-key', new Uint8Array(32).fill(55), true);
-    for (const Id of [1, 2, 3]) await api.addItem({ dbName: route, storeName: 'records',
-        record: { Id, Name: 'Public ' + Id, Secret: 'Private ' + Id, Visits: 0 } });
-    api.releaseProtectedDatabase(route);
+    if (!new URLSearchParams(location.search).has('released')) {
+        await api.createDb({ name: route, encryption: { account: 'published-account', physicalName: physical },
+            storeSchemas: [{ tableName: 'records', primaryKeyAuto: false, columnNamesInCompoundKey: ['Id'],
+                indexes: ['Id'], uniqueIndexes: [], columnNamesInCompoundIndex: [], encryptedFields: ['Secret'] }] });
+        await api.unlockProtectedDatabase(route, 'fixture-key', new Uint8Array(32).fill(55), true);
+        for (const Id of [1, 2, 3]) await api.addItem({ dbName: route, storeName: 'records',
+            record: { Id, Name: 'Public ' + Id, Secret: 'Private ' + Id, Visits: 0 } });
+        api.releaseProtectedDatabase(route);
+    }
     await assertOriginalCiphertext();
     globalThis.pauseProtectedFixture = true;
     globalThis.wholeProtectionObserved = 0;
@@ -47,6 +49,7 @@ export async function waitForHook() {
 }
 
 export function releaseHook() { globalThis.pauseProtectedFixture = false; }
+export function resetHookProbe() { globalThis.protectedFixtureHookPending = false; }
 
 export async function assertOriginalCiphertext() {
     const rows = await rawRows();

@@ -31,8 +31,8 @@ fail, if an unhandled browser exception appears, or if the expected scenario cou
 is not executed. JSON and JUnit reports, failure logs, and screenshots are written
 under `artifacts/migration-browser` (or the optional third argument).
 
-The standalone suite currently registers 115 cases. Installed CLI fixtures add
-four, for 119 cases per browser, including authenticated transitions and recovery. The two CLI recovery cases use published neutral
+The standalone suite currently registers 121 cases. Installed CLI fixtures add
+four, for 125 cases per browser, including authenticated transitions and recovery. The two CLI recovery cases use published neutral
 schema snapshots where the affected store's optional `recordCodec` changes
 between omission and explicit null in each direction.
 The required jobs also load the reviewed, pinned v1 engine to verify it rejects
@@ -108,16 +108,21 @@ tab/worker bridge that stays fenced after an injected initialization failure.
 
 The migration workflow builds the historical and managed static assets once
 and shares them with Chromium, Firefox, Linux WebKit and macOS WebKit jobs.
-Each configuration requires eleven cases per mode: seven adoption/forward
-upgrades, two cutover cases, one explicit Blazor recovery, and one authenticated
-Blazor lifecycle. No skips are
+Each configuration requires thirteen cases per mode: seven adoption/forward
+upgrades, two cutover cases, one explicit Blazor recovery, one authenticated
+Blazor lifecycle seeded by the released 2.0.7 protected adapter, and two in-place
+Lossless upgrades seeded by the released 2.0.7 protected and plain adapters. No skips are
 allowed. The recovery fixture publishes static assets with the installed CLI,
 causes a partial migration, cancels during verification, resumes and opens the
 application's later ordinary target. It asserts disposal of the observer. The
 authenticated fixture adopts field ciphertext, revokes a pending transform through
-the C# lock API, reauthorizes, writes whole-record ciphertext, and explicitly
+the C# lock API, distinguishes caller-wait and browser cancellation, checks absent
+and invalid credentials and account switching, writes whole-record ciphertext, and explicitly
 declassifies it while retaining authenticated history. It checks raw intermediate
-storage and typed CRUD in both published modes. The runner uploads reports and build
+storage, stale released writer fencing, and typed CRUD in both published modes.
+The Lossless upgrades check compound keys, index definitions, exact wide-number
+wire strings, converter-shaped values, and raw field or whole-record envelopes.
+The runner uploads reports and build
 metadata. The release workflow requires migration validation, including this gate.
 
 ## What the suite checks
@@ -155,6 +160,9 @@ metadata. The release workflow requires migration validation, including this gat
 - Authenticated plaintext/field/whole-record transitions, allowlist changes,
   explicit protection-loss decisions, stable physical enrollment, and exact
   policy/journal proofs across lock, resume, termination, and approved recovery.
+- Authenticated preflight rejects restored metadata and numeric-policy damage.
+  Controlled CSP and service-worker cache tests require verified historical bytes.
+  Two tabs and a worker migrate 1,024 protected records once.
 - Managed Lossless numeric-policy tampering, reopen behavior, reserved metadata,
   and prevention of unguarded database handles.
 

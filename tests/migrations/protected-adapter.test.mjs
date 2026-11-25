@@ -46,7 +46,7 @@ test('legacy protected policy fingerprints stay exact and can be adopted semanti
     assert.equal(legacy.policyFingerprint, '[["rows",["id"],false,[],[],[],["notes"],null]]');
     const saved = await encryptValue(JSON.stringify(['Magic.IndexedDb/policy', 1, legacy.policyFingerprint]), key, identity.keyId, metadataContext);
     const adapter = await createProtectedMigrationAdapter(identity);
-    await adapter.verifyPolicy(saved, model());
+    await rejects(adapter.verifyPolicy(saved, model()), 'MAGDB_PROTECTION_STATE_INVALID');
     await adapter.verifyPolicy(saved, model(), { legacyOnly: true });
     const managed = await adapter.createPolicy(model());
     assert.notDeepEqual(saved, managed);
@@ -197,12 +197,15 @@ test('aborted authorization and unsupported rotation fail before producing ciphe
 
 test('managed CRUD pins the ready journal and includes it in the write transaction', async () => {
     const adapter = await createProtectedMigrationAdapter(identity);
-    const schema = model();
+    const schema = model(); schema.numericFormat = 'lossless-v1';
     const journal = { protocolVersion: 3, revision: 2, status: 'ready', schemaId: 'fixture', history: [], active: null };
     const seal = await adapter.sealState(journal);
+    const policySeal = await adapter.createPolicy(schema);
+    const numericPolicy = { version: 1, mode: 'lossless', schema: [] };
     const data = new Map([
-        ['__magic_encryption', new Map([['policy', await adapter.createPolicy(schema)], ['migration-state', seal]])],
+        ['__magic_encryption', new Map([['policy', policySeal], ['migration-state', seal]])],
         ['__magic_migrations__', new Map([['state', structuredClone(journal)]])],
+        ['__magic_numeric_policy', new Map([['policy', numericPolicy]])],
         ['rows', new Map()]
     ]);
     let transactions = [], writes = 0;
@@ -212,12 +215,13 @@ test('managed CRUD pins the ready journal and includes it in the write transacti
     }));
     const db = { name: identity.name, tables, table: name => tables.find(table => table.name === name),
         async open() {}, async transaction(mode, stores, action) { transactions.push(stores.map(store => store.name)); return action(); } };
-    const storage = createProtectedStorage(db, identity.account, native(), null, { managedSchema: schema, allowEmptyProtection: true });
-    storage.setManagedReadiness({ journal, journalSeal: seal });
+    const storage = createProtectedStorage(db, identity.account, native(), { version: 1, mode: 'lossless' },
+        { managedSchema: schema, allowEmptyProtection: true });
+    storage.setManagedReadiness({ journal, journalSeal: seal, policySeal, numericPolicy });
     await storage.unlock(identity.keyId, key, false);
     await storage.forTable('rows').patch(1, { name: 'allowed' });
     assert.equal(writes, 1);
-    assert.deepEqual(transactions[0], ['rows', '__magic_encryption', '__magic_migrations__']);
+    assert.deepEqual(transactions[0], ['rows', '__magic_encryption', '__magic_migrations__', '__magic_numeric_policy']);
     for (const corrupt of [
         () => data.get('__magic_migrations__').set('state', { ...journal, revision: 3 }),
         () => { const altered = structuredClone(seal); new Uint8Array(altered.ciphertext)[0] ^= 1; data.get('__magic_encryption').set('migration-state', altered); }
@@ -228,6 +232,10 @@ test('managed CRUD pins the ready journal and includes it in the write transacti
         await rejects(storage.forTable('rows').patch(1, { name: 'must not write' }), 'MAGDB_PROTECTION_STATE_INVALID');
         assert.equal(writes, 1);
     }
+    data.get('__magic_encryption').set('migration-state', seal);
+    data.get('__magic_numeric_policy').delete('policy');
+    await rejects(storage.forTable('rows').patch(1, { name: 'must not write' }), 'MAGDB_CODEC_POLICY_MISMATCH');
+    assert.equal(writes, 1);
     assert.throws(() => storage.setManagedReadiness({ journal: { ...journal, status: 'recovering' }, journalSeal: seal }),
         error => error.code === 'MAGDB_PROTECTION_STATE_INVALID');
 });

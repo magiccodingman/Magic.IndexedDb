@@ -102,8 +102,11 @@ export async function createProtectedMigrationAdapter(options) {
             // A valid managed sentinel is evidence that authenticated history
             // already existed. Removing its journal/proof must never turn it
             // back into an adoptable legacy vault and replay old transforms.
-            if (legacyOnly && parsed[2] === portableProtectionPolicy(schema).policyFingerprint)
+            const managed = parsed[2] === portableProtectionPolicy(schema).policyFingerprint;
+            if (legacyOnly && managed)
                 throw error("MAGDB_PROTECTION_STATE_INVALID", "A managed protection policy requires its authenticated migration journal.");
+            if (!legacyOnly && !managed)
+                throw error("MAGDB_PROTECTION_STATE_INVALID", "An authenticated migration journal requires a managed protection policy.");
             return structuredClone(envelope);
         },
         createPolicy(schema) {

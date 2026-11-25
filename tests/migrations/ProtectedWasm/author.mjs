@@ -57,3 +57,31 @@ await transform(3, `export async function transform(row) {
 }`, true);
 run(['migrations', 'validate', '--schema', 'public-model.json']);
 run(['migrations', 'publish', '--schema', 'public-model.json', '--output', 'App/wwwroot/releases/final']);
+
+for (const legacyProtected of [false, true]) {
+    const source = structuredClone(fieldModel);
+    source.schemaId = legacyProtected ? 'released-numeric-vault' : 'released-numeric-enrollment';
+    source.numericFormat = 'lossless-v1';
+    const table = source.stores[0];
+    table.keyPath = ['Name', 'Id'];
+    table.fields.push(
+        { name: 'Wide', type: 'integer64', nullable: false, codec: 'lossless-integer' },
+        { name: 'Reference', type: 'string', nullable: false, codec: 'fixture-reference-v1' });
+    if (!legacyProtected) delete table.encryptedFields;
+
+    const next = structuredClone(source), protectedTable = next.stores[0];
+    if (legacyProtected) {
+        delete protectedTable.encryptedFields;
+        protectedTable.exposedFields = ['Name', 'Id'];
+    } else protectedTable.encryptedFields = ['Secret'];
+
+    const firstFile = source.schemaId + '-source.json', nextFile = source.schemaId + '-target.json';
+    await writeFile(firstFile, JSON.stringify(source));
+    await writeFile(nextFile, JSON.stringify(next));
+    run(['migrations', 'add', 'AdoptReleased', '--schema', firstFile]);
+    run(['migrations', 'baseline', '--database', source.schemaId, '--legacy-schema', firstFile,
+        '--revision', '1', '--id', 'released-v2', '--acknowledge-data-contract']);
+    run(['migrations', 'add', 'ProtectReleased', '--schema', nextFile, '--mode', 'resumable']);
+    run(['migrations', 'validate', '--schema', nextFile]);
+    run(['migrations', 'publish', '--schema', nextFile, '--output', 'App/wwwroot/releases/legacy-numeric']);
+}

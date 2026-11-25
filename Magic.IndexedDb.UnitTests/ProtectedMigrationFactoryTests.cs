@@ -42,6 +42,15 @@ public sealed class ProtectedMigrationFactoryTests
     }
 
     [TestMethod]
+    public async Task ExplicitBrowserCancellationReportsCancelled()
+    {
+        var browser = new Browser { MigrationDiagnostic = "MAGDB_CANCELLED: Migration was cancelled." };
+        await using var factory = Create(browser, new());
+
+        Assert.AreEqual(MagicUnlockResult.Cancelled, await factory.UnlockDetailedAsync(Repository.Database));
+    }
+
+    [TestMethod]
     public async Task RecoveryAuthorizesWithoutRetryingTheFailedOriginalMigration()
     {
         var browser = new Browser();
@@ -119,6 +128,7 @@ public sealed class ProtectedMigrationFactoryTests
         public string? DestroyedPhysicalName { get; private set; }
         public string? DestroyedRoute { get; private set; }
         public bool HoldMigration { get; init; }
+        public string? MigrationDiagnostic { get; init; }
         public TaskCompletionSource MigrationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private TaskCompletionSource<bool> MigrationFinished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -148,6 +158,7 @@ public sealed class ProtectedMigrationFactoryTests
             {
                 MigrationRoute = (string)args![0]!;
                 MigrationStarted.TrySetResult();
+                if (MigrationDiagnostic is not null) throw new JSException(MigrationDiagnostic);
                 return HoldMigration ? WaitForMigration<T>() : ValueTask.FromResult(default(T)!);
             }
             if (identifier == "recoverMigration")
