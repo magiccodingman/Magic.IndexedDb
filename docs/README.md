@@ -27,6 +27,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Database management](guides/database-management.md) — open, close, delete, existence, and quota operations
 - [Schema evolution](guides/schema-evolution.md) — model and persisted-data change planning
 - [Managed migrations](guides/migrations.md) — static assets, readiness, events, and recovery
+- [Legacy writer cutover](guides/legacy-writer-cutover.md)
 - [Migration CLI](guides/migration-cli.md) — tool installation, project export, validation, and publication
 - [Migration schema declarations](guides/migration-schema.md) — default/explicit membership and shared C# model export
 
@@ -46,6 +47,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Universal predicate language](architecture/universal-predicate-language.md)
 - [Encryption at rest design](architecture/encryption-at-rest.md)
 - [Migration protocol v1](architecture/migration-protocol.md)
+- [Partial migration recovery proposal](architecture/adr-partial-migration-recovery.md)
 - [Version 3 implementation contract](architecture/v3-implementation-contract.md)
 
 ## Contributing
