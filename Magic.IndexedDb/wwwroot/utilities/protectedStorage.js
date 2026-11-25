@@ -64,7 +64,7 @@ export function ensureProtectedSchema(name, schemas) {
     });
 }
 
-export function createProtectedStorage(db, account, schemas) {
+export function createProtectedStorage(db, account, schemas, numericStorage = null) {
     const policies = new Map();
     const schemaFingerprint = [];
     let hasProtection = false;
@@ -100,7 +100,11 @@ export function createProtectedStorage(db, account, schemas) {
 
     if (!hasProtection) throw new Error("Magic encryption configuration contains no protected stores.");
     const session = new EncryptionSession();
-    const policyFingerprint = JSON.stringify(schemaFingerprint);
+    // Keep existing Legacy vault fingerprints byte-for-byte compatible. The
+    // opt-in codec is a separate authenticated policy, including for public keys.
+    const policyFingerprint = numericStorage === null
+        ? JSON.stringify(schemaFingerprint)
+        : JSON.stringify({ schema: schemaFingerprint, numericStorage });
     let verified;
     let mismatch = false;
     let disposed = false;

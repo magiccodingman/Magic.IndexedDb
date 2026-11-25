@@ -15,6 +15,7 @@ Treat these as persisted-data changes:
 - Changing a primary key or its auto-increment behavior
 - Changing the serialized type or meaning of a property
 - Changing an enum between numeric and named-string storage
+- Changing a database between Legacy and lossless numeric storage, or changing a numeric codec version
 - Adding required data that older records do not contain
 - Changing constructor requirements for materialization
 
@@ -76,3 +77,5 @@ Never silently delete a user's IndexedDB database merely because the runtime mod
 See [browser storage and multiple tabs](../reference/browser-support-and-storage.md) for connection and deletion details, and [serialization](../reference/serialization.md) before changing numeric, date, enum, collection, or converter representations.
 
 Migration-related types found in the source are not a usable migration API yet.
+
+For numeric format changes, see the [lossless storage cutover guide](lossless-numbers.md#existing-databases-and-cutover). Lossless storage uses a separate physical namespace and refuses to silently adopt an existing Legacy database.

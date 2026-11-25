@@ -136,7 +136,7 @@ internal class MagicQueryExtensions<T> :
         Expression<Func<T, bool>> preprocessedPredicate = PreprocessPredicate();
 
 
-        var builder = new UniversalExpressionBuilder<T>(preprocessedPredicate);
+        var builder = new UniversalExpressionBuilder<T>(preprocessedPredicate, MagicQuery.Manager.Settings(MagicQuery.DatabaseName));
         var result = builder.Build();
         return result;
     }

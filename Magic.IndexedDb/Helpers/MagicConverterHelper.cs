@@ -19,7 +19,7 @@ internal static class MagicConverterHelper
         // that same path before Magic attempts to materialize a complex object.
         return AttributedTypes.GetOrAdd(underlying,
                    candidate => candidate.IsDefined(typeof(JsonConverterAttribute), inherit: true)) ||
-               options.Converters.Any(converter => !IsMagicResolver(converter) &&
+               options.Converters.Any(converter => converter is not IMagicNumericConverter && !IsMagicResolver(converter) &&
                    (converter.CanConvert(type) || (underlying != type && converter.CanConvert(underlying))));
     }
 

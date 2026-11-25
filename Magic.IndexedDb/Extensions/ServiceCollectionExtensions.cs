@@ -1,6 +1,7 @@
 ﻿using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.JSInterop;
 
 namespace Magic.IndexedDb;
@@ -84,6 +85,22 @@ public static class ServiceCollectionExtensions
         where TProvider : class, IMagicEncryptionKeyProvider =>
         services.AddMagicIndexedDbEncryption<TProvider>(_ => []);
 
+    /// <summary>Registers per-database numeric storage. Unlisted databases retain the Legacy format.</summary>
+    /// <remarks>Lossless databases use a separate physical namespace. Existing Legacy data requires an explicit migration or rebuild.</remarks>
+    public static IServiceCollection AddMagicIndexedDbNumericStorage(this IServiceCollection services,
+        params MagicNumericStorageOptions[] databases)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(databases);
+        var existing = services.Where(descriptor => descriptor.ServiceType == typeof(NumericStorageConfiguration))
+            .Select(descriptor => (NumericStorageConfiguration)descriptor.ImplementationInstance!)
+            .SelectMany(configuration => configuration.Modes.Select(pair => new MagicNumericStorageOptions(pair.Key, pair.Value)));
+        var configuration = new NumericStorageConfiguration(existing.Concat(databases));
+        services.RemoveAll<NumericStorageConfiguration>();
+        services.AddSingleton(configuration);
+        return services;
+    }
+
     private static Type[] ValidateSchemaTypes(IEnumerable<Type> types, string parameterName,
         Func<Type, bool> isValidType, string expectedType)
     {
@@ -119,7 +136,8 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<IMagicIndexedDb>(sp =>
             new MagicDbFactory(sp.GetRequiredService<IJSRuntime>(), jsMessageSizeBytes, isDebug, tableTypes, repositoryTypes,
-                sp.GetService<Dictionary<string, EncryptionConfiguration>>(), sp.GetService<IMagicEncryptionKeyProvider>()));
+                sp.GetService<Dictionary<string, EncryptionConfiguration>>(), sp.GetService<IMagicEncryptionKeyProvider>(),
+                numericStorage: sp.GetService<NumericStorageConfiguration>()));
 
         if (isDebug)
         {

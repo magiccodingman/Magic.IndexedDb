@@ -162,7 +162,13 @@ internal class MagicContractResolver<T> : JsonConverter<T>
 
                 try
                 {
-                    object? value = ReadPropertyValue(ref reader, mpe, options);
+                    bool nativeKey = MagicNumericSerialization.IsLossless(options) &&
+                                     MagicNumericSerialization.IsNativeAutoIncrementKey(mpe.Property, type);
+                    if (nativeKey && MagicConverterHelper.HasCustomConverter(mpe.Property, options))
+                        throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
+                    object? value = nativeKey
+                        ? MagicNumericSerialization.ReadNativeKey(ref reader, mpe.Property.PropertyType)
+                        : ReadPropertyValue(ref reader, mpe, options);
                     propertyValues[csharpPropertyName] = value;
                 }
                 catch (Exception ex) when (ex is not JsonException)
@@ -473,6 +479,14 @@ internal class MagicContractResolver<T> : JsonConverter<T>
                     : mpe.JsPropertyName);
 
             writer.WritePropertyName(finalPropertyName);
+
+            if (MagicNumericSerialization.IsLossless(options) && mpe.PrimaryKey && autoIncrement)
+            {
+                if (MagicConverterHelper.HasCustomConverter(mpe.Property, options))
+                    throw new InvalidOperationException("A lossless auto-increment key cannot use a custom JSON converter. Use an explicit key instead.");
+                MagicNumericSerialization.SerializeNativeKey(propValue, mpe.Property.PropertyType).WriteTo(writer);
+                continue;
+            }
 
             if (MagicConverterHelper.HasCustomConverter(mpe.Property, options))
             {

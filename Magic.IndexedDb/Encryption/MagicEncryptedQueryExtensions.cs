@@ -15,13 +15,26 @@ public static class MagicEncryptedQueryExtensions
         where T : class
     {
         var query = MagicProjectionExtensions.GetQuery(source);
-        string name = MappedMember(member);
+        var property = MappedMember(member);
+        string name = property.JsPropertyName;
         var predicate = new MagicQueryExtensions<T>(query).GetCollectedBinaryJsonExpressions();
         var rows = await query.Manager.ProjectPublicAsync(query, predicate, name, cancellationToken);
-        var settings = new MagicJsonSerializationSettings { UseCamelCase = true };
+        var settings = query.Manager.Settings(query.DatabaseName);
+        var nativeKey = settings.NumericStorageMode == MagicNumericStorageMode.Lossless &&
+            MagicNumericSerialization.IsNativeAutoIncrementKey(property.Property, typeof(T));
+        var options = MagicConverterHelper.ForProperty(property.Property,
+            nativeKey ? settings.Options : settings.GetOptionsWithNumericConverters());
         return rows.Select(row => row.TryGetProperty(name, out var value) && value.ValueKind != JsonValueKind.Null
-            ? MagicSerializationHelper.DeserializeObject<TValue>(value.GetRawText(), settings)
+            ? (TValue?)ReadValue(value)
             : default).ToArray();
+
+        object? ReadValue(JsonElement value)
+        {
+            if (!nativeKey && !MagicConverterHelper.HasCustomConverter(property.Property, options))
+                return MagicSerializationHelper.DeserializeObject<TValue>(value.GetRawText(), settings);
+            var result = JsonSerializer.Deserialize(value.GetRawText(), property.Property.PropertyType, options);
+            return nativeKey ? MagicNumericSerialization.ValidateNativeKey(result, property.Property.PropertyType) : result;
+        }
     }
 
     /// <summary>Updates one explicitly public member without replacing the record or its ciphertext.</summary>
@@ -32,8 +45,8 @@ public static class MagicEncryptedQueryExtensions
         if (source is not MagicQuery<T> query)
             throw new ArgumentException("A Magic table query is required.", nameof(source));
         ArgumentNullException.ThrowIfNull(recordWithKey);
-        string name = MappedMember(member);
-        var settings = new MagicJsonSerializationSettings { UseCamelCase = true };
+        string name = MappedMember(member).JsPropertyName;
+        var settings = query.Manager.Settings(query.DatabaseName);
         var serialized = MagicSerializationHelper.SerializeObjectToJsonElement(recordWithKey, settings);
         var keyParts = AttributeHelpers.GetPrimaryKeys(recordWithKey)
             .Select(part => serialized.GetProperty(part.JsName)).ToArray();
@@ -45,7 +58,7 @@ public static class MagicEncryptedQueryExtensions
             JsonSerializer.SerializeToElement(new Dictionary<string, JsonElement> { [name] = value }), cancellationToken);
     }
 
-    private static string MappedMember<T, TValue>(Expression<Func<T, TValue>> member)
+    private static MagicPropertyEntry MappedMember<T, TValue>(Expression<Func<T, TValue>> member)
     {
         ArgumentNullException.ThrowIfNull(member);
         if (member.Body is not MemberExpression { Member: PropertyInfo property } access ||
@@ -56,6 +69,6 @@ public static class MagicEncryptedQueryExtensions
         if (entry.NotMapped)
             throw new ArgumentException("Select a persisted property.", nameof(member));
 
-        return entry.JsPropertyName;
+        return entry;
     }
 }

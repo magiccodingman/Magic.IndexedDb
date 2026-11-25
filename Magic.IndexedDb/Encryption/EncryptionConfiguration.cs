@@ -11,25 +11,38 @@ internal sealed class EncryptionConfiguration
 {
     private static readonly ConcurrentDictionary<Type, string[]> Fields = new();
     private readonly Dictionary<string, string[]> _recordPolicies;
+    private readonly MagicEncryptionOptions _options;
+    private readonly MagicNumericStorageMode _numericMode;
+    private readonly string _legacyPhysicalName;
     public MagicEncryptionKeyRequest Request { get; }
     public string PhysicalName { get; }
     public string Route { get; }
 
-    public EncryptionConfiguration(MagicEncryptionOptions options)
+    public EncryptionConfiguration(MagicEncryptionOptions options, MagicNumericStorageMode numericMode = MagicNumericStorageMode.Legacy)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(options.DatabaseName);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.AccountScope);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.KeyId);
         if (options.DatabaseName.StartsWith("__magic_protected__:", StringComparison.Ordinal))
             throw new ArgumentException("The logical database name uses a reserved prefix.", nameof(options));
+        if (!Enum.IsDefined(numericMode)) throw new ArgumentOutOfRangeException(nameof(numericMode));
 
         Request = new(options.DatabaseName, options.AccountScope, options.KeyId);
         var identity = JsonSerializer.SerializeToUtf8Bytes(new[] { options.DatabaseName, options.AccountScope });
-        PhysicalName = $"__magic_protected__:{Convert.ToHexString(SHA256.HashData(identity))}";
+        _legacyPhysicalName = $"__magic_protected__:{Convert.ToHexString(SHA256.HashData(identity))}";
+        _numericMode = numericMode;
+        PhysicalName = numericMode == MagicNumericStorageMode.Legacy ? _legacyPhysicalName :
+            $"__magic_protected__:{Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
+                new[] { options.DatabaseName, options.AccountScope, "numeric:lossless-v1" })))}";
         Route = $"{PhysicalName}:{Guid.NewGuid():N}";
         _recordPolicies = options.RecordPolicies?.ToDictionary(
             pair => pair.Key, pair => pair.Value.ToArray(), StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
+        _options = options with { RecordPolicies = _recordPolicies.ToDictionary(
+            pair => pair.Key, pair => (IReadOnlyCollection<string>)pair.Value, StringComparer.Ordinal) };
     }
+
+    internal EncryptionConfiguration WithNumericStorage(MagicNumericStorageMode mode) =>
+        mode == _numericMode ? this : new EncryptionConfiguration(_options, mode);
 
     public static string[] ProtectedFields(Type type) => Fields.GetOrAdd(type, static table =>
         table.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
@@ -101,12 +114,18 @@ internal sealed class EncryptionConfiguration
         if (_recordPolicies.Keys.Any(table => !rows.Any(row => row.TableName == table)))
             throw new InvalidOperationException("A Magic record policy names an unregistered table.");
 
-        return JsonSerializer.SerializeToElement(new
+        var payload = new Dictionary<string, object?>
         {
-            Name = Route,
-            Version = 1,
-            StoreSchemas = rows,
-            Encryption = new { Account = Request.AccountScope, PhysicalName }
-        }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            ["name"] = Route,
+            ["version"] = 1,
+            ["storeSchemas"] = rows,
+            ["encryption"] = new { Account = Request.AccountScope, PhysicalName }
+        };
+        if (_numericMode == MagicNumericStorageMode.Lossless)
+        {
+            payload["numericStorage"] = NumericStorageConfiguration.Policy;
+            payload["numericLegacyName"] = _legacyPhysicalName;
+        }
+        return JsonSerializer.SerializeToElement(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
     }
 }
