@@ -75,11 +75,14 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
             prematureVerification: true, writeGeneration: 'target' });
     });
 
-    for (const mode of ['exclusive', 'read-only', 'online']) {
-        test(`rotation storage enforces ${mode} access and restores a target-only managed vault`, async ({ page }) => {
-            const source = model({ encryptedFields: ['name'] });
+    for (const mode of ['exclusive', 'read-only', 'online']) for (const [layout, policy] of [
+        ['field', { encryptedFields: ['name'] }],
+        ['whole-record', { exposedFields: ['id', 'visits'] }]
+    ]) {
+        test(`rotation storage enforces ${mode} access for ${layout} protection and restores a target-only vault`, async ({ page }) => {
+            const source = model(policy);
             await seed(page, source);
-            const observed = await page.evaluate(async ({ schema, mode }) => {
+            const observed = await page.evaluate(async ({ schema, mode, policy }) => {
                 const { Dexie } = await import('/engine/dexie/dexie.js');
                 const { createProtectedStorage } = await import('/engine/utilities/protectedStorage.js');
                 const { admitRotation, enterRotationVerification, finishRotation } = await import('/engine/utilities/rotationLifecycle.js');
@@ -94,7 +97,7 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
                 const vault = { database: db.name, account: 'protected-test' };
                 const storage = createProtectedStorage(dexie, vault.account, [{ tableName: 'clients',
                     columnNamesInCompoundKey: ['id'], primaryKeyAuto: false, indexes: [], uniqueIndexes: [],
-                    columnNamesInCompoundIndex: [], encryptedFields: ['name'] }], null, { managedSchema: schema });
+                    columnNamesInCompoundIndex: [], ...policy }], null, { managedSchema: schema });
                 const keys = new Map([['test-key', await importEncryptionKey(new Uint8Array(32).fill(73))],
                     ['target', await importEncryptionKey(new Uint8Array(32).fill(76))]]);
                 storage.setManagedReadiness(ready);
@@ -136,8 +139,10 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
                 const logical = [];
                 for (const row of raw) logical.push(await target.openRecord(row, schema, 'clients', row.id));
                 return { read, write, verificationWrite, lineage: target.keyLineage.generations,
-                    retirement: finalized.lineage.completed, revision: reopened.revision, logical, deployed: raw.map(row => row.name.keyId) };
-            }, { schema: source, mode });
+                    retirement: finalized.lineage.completed, revision: reopened.revision, logical,
+                    publicRows: raw.map(row => ({ id: row.id, visits: row.visits })),
+                    deployed: raw.map(row => (row.__magic_record ?? row.name).keyId) };
+            }, { schema: source, mode, policy });
             assert.equal(observed.read.allowed, mode !== 'exclusive');
             if (!observed.read.allowed) assert.equal(observed.read.fenced, true);
             assert.equal(observed.write.allowed, mode === 'online');
@@ -148,6 +153,7 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
             assert.equal(observed.retirement.verified, mode === 'online' ? 4 : 3);
             assert.equal(observed.revision, 1);
             assert.deepEqual(observed.logical, mode === 'online' ? [...rows, { id: 4, name: 'New generation', visits: 0 }] : rows);
+            assert.deepEqual(observed.publicRows, observed.logical.map(({ id, visits }) => ({ id, visits })));
             assert.ok(observed.deployed.every(generation => generation === 'target'));
         });
     }

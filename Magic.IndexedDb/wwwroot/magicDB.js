@@ -101,6 +101,9 @@ async function authorizeProtectedMigration(registration, keyId, input, initializ
 export async function ensureProtectedMigration(name) {
     const registration = managedDatabases.get(name);
     if (!registration?.protected) return;
+    // Finalization has committed but the target session may still be opening.
+    if (registration.rotationTask && !registration.rotation && !registration.result)
+        await registration.rotationTask;
     return runProtectedMigration(registration);
 }
 
@@ -401,6 +404,16 @@ function assertRotationProgress(previous, current) {
 async function runRotation(registration, options, start) {
     if (registration.rotationTask || registration.pending)
         throw new Error("MAGIC_ROTATION_IN_PROGRESS: This connection is already running a vault lifecycle operation.");
+    const attempt = runRotationAttempt(registration, options, start);
+    registration.rotationTask = attempt;
+    try {
+        return await attempt;
+    } finally {
+        registration.rotationTask = null;
+    }
+}
+
+async function runRotationAttempt(registration, options, start) {
     const authorization = requireMigrationAuthorization(registration);
     const controller = new AbortController();
     const revoke = () => controller.abort();
@@ -454,7 +467,6 @@ async function runRotation(registration, options, start) {
                 return { finalized, targetKeyId, target };
             }
         });
-        registration.rotationTask = task;
         const result = await task;
         if (!result.finalized) return result;
         // Reauthorize with the target only after releasing the lifecycle lock.
@@ -465,7 +477,6 @@ async function runRotation(registration, options, start) {
         return notifyRotation(registration, await getManagedKeyRotationStatus(registration.name));
     } finally {
         authorization.controller.signal.removeEventListener("abort", revoke);
-        registration.rotationTask = null;
         registration.rotationController = null;
     }
 }

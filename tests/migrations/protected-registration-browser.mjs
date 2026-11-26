@@ -195,6 +195,83 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
         await peer.close();
     });
 
+    test('abrupt tab termination releases rotation ownership to a worker without replaying a committed batch', async ({ page, context }) => {
+        const physical = '__magic_protected__:rotation-tab-close';
+        const source = model();
+        const config = configuration(physical, 'route', source, initial(source).url);
+        const workerUrl = '/rotation-resume-worker.js';
+        assets.set(workerUrl, { type: 'text/javascript', body: `
+            import * as api from '/engine/magicDB.js';
+            self.onmessage = async ({ data: config }) => {
+                try {
+                    await api.createDb(config);
+                    const partial = await api.authorizeManagedKeyRotation(config.name, 'original', new Uint8Array(32).fill(41),
+                        'target', new Uint8Array(32).fill(55));
+                    const completed = await api.resumeManagedEncryptionKeyRotation(config.name, { batchSize: 1 });
+                    self.postMessage({ partial, completed, rows: await api.toArray(config.name, 'clients') });
+                } catch (error) { self.postMessage({ error: error.message }); }
+                finally { api.releaseProtectedDatabase(config.name); }
+            };
+        ` });
+        const readCiphertext = async physicalName => {
+            const db = await new Promise((resolve, reject) => {
+                const request = indexedDB.open(physicalName);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            try {
+                return await new Promise((resolve, reject) => {
+                    const request = db.transaction('clients').objectStore('clients').get(1);
+                    request.onsuccess = () => resolve(request.result.secret);
+                    request.onerror = () => reject(request.error);
+                });
+            } finally { db.close(); }
+        };
+        const peer = await context.newPage();
+        await peer.goto(page.url());
+        await page.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'original', new Uint8Array(32).fill(41), true);
+            await api.ensureProtectedMigration(config.name);
+            for (const id of [1, 2, 3]) await api.addItem({ dbName: config.name, storeName: 'clients',
+                record: { id, name: 'Document ' + id, secret: 'Content ' + id } });
+            api.subscribeKeyRotationEvents(event => {
+                if (event.phase !== 'converting' || event.converted !== 1) return;
+                crypto.subtle.encrypt = () => {
+                    globalThis.rotationEncryptionPending = true;
+                    return new Promise(() => {});
+                };
+            });
+            void api.rotateManagedEncryptionKey(config.name, {
+                targetKeyId: 'target', mode: 'online', batchSize: 1, recoverable: true
+            }, new Uint8Array(32).fill(55)).catch(error => { globalThis.rotationFailure = error.message; });
+        }, config);
+        await page.waitForFunction(() => globalThis.rotationEncryptionPending || globalThis.rotationFailure);
+        assert.equal(await page.evaluate(() => globalThis.rotationFailure ?? null), null);
+        const committed = await peer.evaluate(readCiphertext, physical);
+        assert.equal(typeof committed, 'object');
+        await page.close();
+        const result = await peer.evaluate(async ({ config, workerUrl }) => {
+            const worker = new Worker(workerUrl, { type: 'module' });
+            try {
+                return await new Promise((resolve, reject) => {
+                    worker.onmessage = event => resolve(event.data);
+                    worker.onerror = event => reject(new Error(event.message));
+                    worker.postMessage(config);
+                });
+            } finally { worker.terminate(); }
+        }, { config, workerUrl });
+        assert.equal(result.error, undefined);
+        assert.equal(result.partial.converted, 1);
+        assert.equal(result.completed.converted, 3);
+        assert.equal(result.completed.verified, 3);
+        assert.equal(result.completed.retirementReady, true);
+        assert.deepEqual(await peer.evaluate(readCiphertext, physical), committed);
+        assert.deepEqual(result.rows.map(row => row.secret), ['Content 1', 'Content 2', 'Content 3']);
+        await peer.close();
+    });
+
     if (process.env.MAGIC_ROTATION_BENCHMARK === '1') {
         for (const records of [1000, 10000, 100000]) for (const mode of ['exclusive', 'read-only', 'online']) {
             test(`rotation benchmark: ${mode}, ${records} documents`, async ({ page }) => {
