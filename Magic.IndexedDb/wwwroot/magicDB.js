@@ -14,6 +14,12 @@ import {
 import { debugLog } from "./utilities/utilityHelpers.js";
 import { recoverDatabase, ensureDatabase, assertDatabaseReady, inspectDatabase, subscribeMigrationEvents, MigrationError } from "./migrations/migrationEngine.js";
 import { canonicalJson, metadataStore } from "./migrations/protocol.js";
+import { inspectOpen, notifyManagedLifecycle, verifyRotationDeployment } from "./migrations/migrationEngine.js";
+import { portableProtectionPolicy } from "./utilities/protectionPolicy.js";
+import { advanceRotationPass } from "./utilities/rotationPass.js";
+import { rotationJournalKey } from "./utilities/rotationJournal.js";
+import { admitRotation, enterRotationVerification, finishRotation, openRotation, rotationCoordinator,
+    setRotationPaused } from "./utilities/rotationLifecycle.js";
 /**
  * @typedef {Object} DatabasesItem
  * @property {string} name
@@ -64,7 +70,7 @@ async function authorizeProtectedMigration(registration, keyId, input, initializ
         !registration.authorization.controller.signal.aborted)
         return; // Concurrent callers share the active authorization and attempt.
     registration.authorization?.controller.abort();
-    const authorization = { controller: new AbortController(), adapter: null, key: null, keyId, initialize };
+    const authorization = { controller: new AbortController(), adapter: null, key: null, keyId, initialize, id: crypto.randomUUID() };
     authorization.assertCurrent = () => {
         if (registration.stale || registration.authorization !== authorization || authorization.controller.signal.aborted)
             throw new MigrationError("MAGDB_AUTHORIZATION_LOST", "The migration authorization was revoked. Unlock again to resume.", {}, true);
@@ -102,6 +108,11 @@ async function runProtectedMigration(registration, recovery) {
     if (registration.stale)
         throw new MigrationError("MAGDB_DATABASE_INCOMPATIBLE", "This account's database changed in another application. Reload before continuing.");
     const authorization = requireMigrationAuthorization(registration);
+    if (registration.rotation) {
+        if (recovery) throw new Error("MAGIC_ROTATION_IN_PROGRESS: Complete key rotation before migration recovery.");
+        await registration.protection.assertRotationReadiness();
+        return registration.result;
+    }
     if (registration.pending) {
         if (recovery) throw new MigrationError("MAGDB_RECOVERY_IN_PROGRESS", "This connection already has an authenticated migration attempt.");
         return registration.pending;
@@ -277,8 +288,264 @@ export function unlockProtectedDatabase(name, keyId, key, initialize = false) {
     return storage.unlock(keyId, key, initialize);
 }
 
-export function isProtectedDatabaseUnlocked(name) {
-    return protectedDatabases.get(name)?.isUnlocked() ?? false;
+function managedRotationRegistration(name) {
+    const registration = managedDatabases.get(name);
+    if (!registration?.protected || registration.stale)
+        throw new Error("MAGIC_ROTATION_MANAGED_REQUIRED: Key rotation requires a managed protected vault.");
+    return registration;
+}
+
+async function rotationKey(input) {
+    const key = input instanceof Uint8Array ? await importEncryptionKey(input) : input;
+    assertEncryptionKey(key);
+    return key;
+}
+
+function rotationContext(registration, keys, signal) {
+    const authorization = requireMigrationAuthorization(registration);
+    return { db: registration.db.backendDB(), vault: { database: registration.db.name, account: registration.account },
+        schema: registration.schema, ready: registration.result, authorization: authorization.adapter,
+        keys, assertCurrent: authorization.assertCurrent, signal };
+}
+
+const rotationListeners = new Set();
+
+export function subscribeKeyRotationEvents(listener) {
+    if (typeof listener !== "function") throw new TypeError("A rotation observer must be a function.");
+    rotationListeners.add(listener);
+    return () => rotationListeners.delete(listener);
+}
+
+function notifyRotation(registration, status) {
+    const event = Object.freeze({ database: registration.name, ...status });
+    for (const listener of rotationListeners) {
+        try { Promise.resolve(listener(event)).catch(() => {}); } catch { /* Observers cannot affect committed state. */ }
+    }
+    notifyManagedLifecycle({ name: registration.name, schema: registration.schema }, "key-rotation", {
+        rotation: status, processedRecords: status.converted, verifiedRecords: status.verified
+    });
+    return status;
+}
+
+function rotationStatus(document) {
+    const { rotationId, sourceKeyId, targetKeyId, mode, phase, paused, converted, verified } = document.state;
+    return { rotationId, sourceKeyId, targetKeyId, mode, phase, paused, converted, verified, retirementReady: false,
+        readsAllowed: mode !== "exclusive", writesAllowed: mode === "online" && phase === "converting" };
+}
+
+async function attachRotation(registration, active, context, ready) {
+    if (ready) {
+        registration.protection.setManagedReadiness(ready);
+    }
+    await registration.protection.setRotationAccess(active.document, active.fence, context.keys, context.assertCurrent);
+    context.assertCurrent();
+    if (ready) registration.result = ready;
+    registration.rotation = { active, keys: context.keys };
+}
+
+// Key IDs here are untrusted routing hints. They do not authorize access or
+// become status until the supplied keys verify the durable proofs.
+export async function getManagedEncryptionKeyHints(name) {
+    const managed = managedDatabases.get(name);
+    if (!managed?.protected) return null;
+    try { await managed.db.open(); } catch (error) {
+        if (error.name === "NoSuchDatabaseError") return null;
+        throw error;
+    }
+    const snapshot = await inspectOpen(managed.db.backendDB(), rotationJournalKey);
+    return snapshot.rotation ? { active: true, keyId: snapshot.rotation.state?.sourceKeyId,
+        targetKeyId: snapshot.rotation.state?.targetKeyId }
+        : snapshot.protectionPolicy?.keyId ? { active: false, keyId: snapshot.protectionPolicy.keyId } : null;
+}
+
+export async function authorizeManagedKeyRotation(name, sourceKeyId, sourceInput, targetKeyId, targetInput) {
+    const managed = managedRotationRegistration(name);
+    await authorizeProtectedMigration(managed, sourceKeyId, sourceInput, false);
+    const authorization = requireMigrationAuthorization(managed);
+    try {
+        const target = await rotationKey(targetInput);
+        const keys = new Map([[sourceKeyId, authorization.key], [targetKeyId, target]]);
+        await managed.db.open();
+        const context = rotationContext(managed, keys, authorization.controller.signal);
+        const active = await openRotation(context);
+        if (!active) throw new Error("MAGIC_ROTATION_NOT_ACTIVE: No incomplete rotation was found.");
+        await verifyRotationDeployment({ schema: managed.schema, manifestUrl: managed.manifestUrl,
+            signal: authorization.controller.signal }, active.ready.revision);
+        await attachRotation(managed, active, context, active.ready);
+        return rotationStatus(active.document);
+    } catch (error) {
+        if (managed.authorization === authorization) lockProtectedDatabase(name);
+        throw error;
+    }
+}
+
+export async function getManagedKeyRotationStatus(name) {
+    const managed = managedRotationRegistration(name);
+    const rotation = managed.rotation;
+    if (rotation) {
+        const current = await openRotation(rotationContext(managed, rotation.keys));
+        if (!current) throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Reauthorize the finalized vault.");
+        return rotationStatus(current.document);
+    }
+    if (!managed.authorization?.adapter || !managed.result) return { phase: "authorization-required", retirementReady: false };
+    await assertDatabaseReady(managed.db.backendDB(), managed.result, managed.authorization.adapter);
+    const lineage = managed.authorization.adapter.keyLineage;
+    return lineage ? { phase: "completed", rotationId: lineage.completed.rotationId,
+        sourceKeyId: lineage.generations.at(-2), targetKeyId: lineage.generations.at(-1),
+        converted: lineage.completed.converted, verified: lineage.completed.verified, retirementReady: true,
+        readsAllowed: true, writesAllowed: true } : { phase: "not-started", retirementReady: false };
+}
+
+async function runRotation(registration, options, start) {
+    if (registration.rotationTask || registration.pending)
+        throw new Error("MAGIC_ROTATION_IN_PROGRESS: This connection is already running a vault lifecycle operation.");
+    const authorization = requireMigrationAuthorization(registration);
+    const controller = new AbortController();
+    const revoke = () => controller.abort();
+    authorization.controller.signal.addEventListener("abort", revoke, { once: true });
+    registration.rotationController = controller;
+    const batchSize = options.batchSize ?? 128;
+    try {
+        if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 4096)
+            throw new RangeError("Magic rotation batch size must be between 1 and 4096.");
+        const task = rotationCoordinator(registration.db, controller.signal, async () => {
+            const { active: initial, context } = await start(controller.signal);
+            let active = initial;
+            const { policies } = portableProtectionPolicy(context.schema);
+            if (active.document.state.paused) {
+                active = await setRotationPaused({ ...context, ...active, paused: false });
+            }
+            await attachRotation(registration, active, context);
+            notifyRotation(registration, rotationStatus(active.document));
+            for (;;) {
+                controller.signal.throwIfAborted();
+                const result = await advanceRotationPass({ ...context, document: active.document, policies, batchSize,
+                    expectations: [...active.checks, { store: encryptionMetadataStore, key: "policy", value: active.fence }] });
+                if (result.outcome === "paused") return rotationStatus(result.document);
+                if (result.outcome === "retry") {
+                    const current = await openRotation(context);
+                    if (!current || canonicalJson(current.document.state) !== canonicalJson(active.document.state))
+                        throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Rotation metadata changed during a batch.");
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                    continue;
+                }
+                if (result.outcome === "advanced") {
+                    active = { ...active, document: result.document };
+                    registration.rotation.active = active;
+                    notifyRotation(registration, rotationStatus(active.document));
+                    if (options.yieldBetweenBatches) await new Promise(resolve => setTimeout(resolve, 0));
+                    continue;
+                }
+                if (active.document.state.phase === "converting") {
+                    active = await enterRotationVerification({ ...context, ...active });
+                    await attachRotation(registration, active, context);
+                    notifyRotation(registration, rotationStatus(active.document));
+                    continue;
+                }
+                const finalized = await finishRotation({ ...context, ...active });
+                const { targetKeyId } = active.document.state;
+                const target = context.keys.get(targetKeyId);
+                authorization.assertCurrent();
+                registration.protection.lock();
+                registration.result = null;
+                registration.rotation = null;
+                return { finalized, targetKeyId, target };
+            }
+        });
+        registration.rotationTask = task;
+        const result = await task;
+        if (!result.finalized) return result;
+        // Reauthorize with the target only after releasing the lifecycle lock.
+        // A concurrent application lock must never be undone here.
+        authorization.assertCurrent();
+        await authorizeProtectedMigration(registration, result.targetKeyId, result.target, false);
+        await runProtectedMigration(registration);
+        return notifyRotation(registration, await getManagedKeyRotationStatus(registration.name));
+    } finally {
+        authorization.controller.signal.removeEventListener("abort", revoke);
+        registration.rotationTask = null;
+        registration.rotationController = null;
+    }
+}
+
+export function getManagedRotationAdmission(name) {
+    const managed = managedRotationRegistration(name);
+    const authorization = requireMigrationAuthorization(managed);
+    return { authorizationId: authorization.id, keyId: authorization.keyId };
+}
+
+export async function rotateManagedEncryptionKey(name, options, targetInput) {
+    const managed = managedRotationRegistration(name);
+    if (!managed.result || managed.rotation)
+        throw new Error("MAGIC_ROTATION_AUTHORIZATION_REQUIRED: Unlock a ready vault, or resume its active rotation.");
+    return runRotation(managed, options, async signal => {
+        const authorization = requireMigrationAuthorization(managed);
+        if (options.authorizationId && options.authorizationId !== authorization.id)
+            throw new Error("MAGDB_AUTHORIZATION_LOST: The rotation admission authorization was replaced.");
+        const target = await rotationKey(targetInput);
+        authorization.assertCurrent();
+        const keys = new Map([[authorization.keyId, authorization.key], [options.targetKeyId, target]]);
+        const context = rotationContext(managed, keys, signal);
+        // Keep the two identities distinct before constructing the key map.
+        if (options.targetKeyId === authorization.keyId)
+            throw new Error("MAGIC_ROTATION_KEY_REUSED: The target key identifier is already active.");
+        const active = await admitRotation({ ...context, targetKeyId: options.targetKeyId,
+            mode: options.mode ?? "exclusive", recoverable: options.recoverable });
+        return { active, context };
+    });
+}
+
+export async function resumeManagedEncryptionKeyRotation(name, options = {}) {
+    const managed = managedRotationRegistration(name);
+    if (!managed.rotation) throw new Error("MAGIC_ROTATION_AUTHORIZATION_REQUIRED: Authorize both rotation keys before resuming.");
+    return runRotation(managed, options, async signal => {
+        const context = rotationContext(managed, managed.rotation.keys, signal);
+        const active = await openRotation(context);
+        if (!active) throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Reauthorize the finalized vault.");
+        return { active, context };
+    });
+}
+
+export function scheduleManagedKeyRotationResume(name) {
+    const managed = managedRotationRegistration(name);
+    if (!managed.rotation || managed.rotation.active.document.state.paused || managed.rotationTask) return;
+    void resumeManagedEncryptionKeyRotation(name, { yieldBetweenBatches: true }).catch(error => {
+        if (error.name === "AbortError") return;
+        notifyManagedLifecycle({ name, schema: managed.schema }, "key-rotation-failed", {
+            code: "MAGIC_ROTATION_RESUME_FAILED", retryable: false
+        });
+    });
+}
+
+export function cancelManagedEncryptionKeyRotation(name) {
+    managedDatabases.get(name)?.rotationController?.abort();
+}
+
+export async function pauseManagedEncryptionKeyRotation(name) {
+    const managed = managedRotationRegistration(name);
+    const rotation = managed.rotation;
+    if (!rotation) throw new Error("MAGIC_ROTATION_AUTHORIZATION_REQUIRED: Authorize both rotation keys before pausing.");
+    cancelManagedEncryptionKeyRotation(name);
+    const authorization = requireMigrationAuthorization(managed);
+    return rotationCoordinator(managed.db, authorization.controller.signal, async () => {
+        const context = rotationContext(managed, rotation.keys, authorization.controller.signal);
+        const active = await openRotation(context);
+        if (!active) throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Reauthorize the finalized vault.");
+        const paused = await setRotationPaused({ ...context, ...active, paused: true });
+        rotation.active = paused;
+        return notifyRotation(managed, rotationStatus(paused.document));
+    });
+}
+
+export async function isProtectedDatabaseUnlocked(name, refreshGeneration = false) {
+    try { return await (protectedDatabases.get(name)?.isUnlocked() ?? false); }
+    catch (error) {
+        if (!refreshGeneration || !managedDatabases.get(name)?.protected ||
+            !/^(MAGIC_ENCRYPTION_POLICY_MISMATCH|MAGIC_ROTATION_CONCURRENT_CHANGE|MAGDB_PROTECTION_STATE_INVALID):/.test(error.message))
+            throw error;
+        lockProtectedDatabase(name);
+        return false;
+    }
 }
 
 export function getProtectedDatabaseState(name) {
@@ -293,6 +560,7 @@ export function lockProtectedDatabase(name) {
         managed.authorization?.controller.abort();
         if (managed.authorization) managed.authorization.key = null;
         managed.authorization = null;
+        managed.rotation = null;
         managed.result = null;
     }
     protectedDatabases.get(name)?.lock();

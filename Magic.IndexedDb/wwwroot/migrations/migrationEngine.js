@@ -24,6 +24,8 @@ function notify(options, phase, details = {}) {
     }
 }
 
+export { notify as notifyManagedLifecycle };
+
 function abortCheck(signal) {
     if (signal?.aborted) throw new MigrationError("MAGDB_CANCELLED", "Migration was cancelled; committed checkpoints are retained.", {}, true);
 }
@@ -103,7 +105,7 @@ function nativeStores(db, transaction) {
         }).sort((a, b) => compareNames(a.name, b.name));
 }
 
-async function inspectOpen(db) {
+export async function inspectOpen(db, rotationKey = null) {
     if (!db.objectStoreNames.length) return { name: db.name, nativeVersion: db.version, stores: [], state: null, numericPolicy: null };
     const transaction = db.transaction([...db.objectStoreNames], "readonly");
     const done = transactionDone(transaction);
@@ -111,16 +113,18 @@ async function inspectOpen(db) {
     const protection = db.objectStoreNames.contains(encryptionMetadataStore) ? transaction.objectStore(encryptionMetadataStore) : null;
     if (protection) requireCondition(protection.keyPath === null && !protection.autoIncrement && !protection.indexNames.length,
         "MAGDB_PROTECTION_INVALID", "The authenticated metadata store has an unsupported layout.");
-    const [state, numericPolicy, protectionPolicy, protectionState] = await Promise.all([
+    const [state, numericPolicy, protectionPolicy, protectionState, rotation] = await Promise.all([
         db.objectStoreNames.contains(metadataStore) ? requestResult(transaction.objectStore(metadataStore).get(stateKey)) : null,
         db.objectStoreNames.contains(numericStore) ? requestResult(transaction.objectStore(numericStore).get("policy")) : null,
         protection ? requestResult(protection.get(encryptionMetadataKey)) : null,
-        protection ? requestResult(protection.get(protectedStateKey)) : null
+        protection ? requestResult(protection.get(protectedStateKey)) : null,
+        protection && rotationKey ? requestResult(protection.get(rotationKey)) : null
     ]);
     await done;
     return { name: db.name, nativeVersion: db.version, stores, state: state ?? null, numericPolicy: numericPolicy ?? null,
         hasNumericMetadata: db.objectStoreNames.contains(numericStore),
-        hasProtectionMetadata: Boolean(protection), protectionPolicy: protectionPolicy ?? null, protectionState: protectionState ?? null };
+        hasProtectionMetadata: Boolean(protection), protectionPolicy: protectionPolicy ?? null, protectionState: protectionState ?? null,
+        ...(rotationKey ? { rotation } : {}) };
 }
 
 async function inspectDatabaseInternal(name, signal) {
@@ -162,7 +166,7 @@ function writeNumericPolicy(db, transaction, schema) {
     store.put({ version: 1, mode: "lossless", schema: physicalStores(schema) }, "policy");
 }
 
-function assertNumericPolicy(snapshot, schema, legacyProtected = false) {
+export function assertNumericPolicy(snapshot, schema, legacyProtected = false) {
     if (schema.numericFormat === "lossless-v1") {
         // The released protected adapter authenticated its numeric mode in the
         // legacy sentinel without provisioning a separate numeric policy store.
@@ -622,11 +626,9 @@ async function runManaged(options, recovering) {
     }
 }
 
-async function ensureLocked(options, recovering) {
-    notify(options, "preflight");
-    abortCheck(options.signal);
-    const expectedHash = await sha256(canonicalJson(options.schema));
-    let manifest, base = new URL(options.manifestUrl ?? ".", globalThis.location.href).href;
+async function loadPinnedManifest(options) {
+    let manifest;
+    const base = new URL(options.manifestUrl ?? ".", globalThis.location.href).href;
     requireCondition(new URL(base).origin === globalThis.location.origin && ["http:", "https:"].includes(new URL(base).protocol),
         "MAGDB_ASSET_ORIGIN", "The application-pinned manifest must use the application's HTTP(S) origin.");
     if (options.manifestUrl) {
@@ -634,6 +636,22 @@ async function ensureLocked(options, recovering) {
         manifest = decodeJson(bytes);
     } else if (options.manifest) manifest = structuredClone(options.manifest);
     else manifest = null;
+
+    return { manifest, base };
+}
+
+export async function verifyRotationDeployment(options, revision) {
+    const { manifest } = await loadPinnedManifest(options);
+    if (manifest) validateManifest(manifest, options.schema.schemaId);
+    requireCondition((manifest?.targetRevision ?? 1) === revision,
+        "MAGIC_ROTATION_DEPLOYMENT_CHANGED", "Resume rotation from the deployment that admitted it before upgrading this vault.");
+}
+
+async function ensureLocked(options, recovering) {
+    notify(options, "preflight");
+    abortCheck(options.signal);
+    const expectedHash = await sha256(canonicalJson(options.schema));
+    const { manifest, base } = await loadPinnedManifest(options);
 
     const models = new Map();
     async function model(revision) {

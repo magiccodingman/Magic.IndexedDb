@@ -179,6 +179,11 @@ binding for reviewed in-place enrollment and requires a pinned manifest. Keep
 that account context after all fields become public. See
 [encrypted migrations](../guides/encrypted-migrations.md).
 
+`MagicEncryptionContext.KeyRotation` exposes managed key rotation. Implement
+`IMagicEncryptionRotationKeyProvider` for dynamic generation lookup. Rotation
+provides exclusive, read-only, and online availability and supports status,
+pause, resume, and cancellation. See [managed key rotation](../guides/managed-key-rotation.md).
+
 `RetryMigrationAsync` retries failed initialization or resumes committed progress;
 its token cancels the .NET wait. `CancelMigrationAsync` cancels the browser attempt
 at a safe boundary. `ObserveMigrationsAsync` returns a disposable subscription for

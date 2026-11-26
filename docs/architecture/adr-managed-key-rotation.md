@@ -1,6 +1,6 @@
 # Managed data encryption key rotation
 
-Status: proposed implementation contract. The rotation API is under development.
+Status: implementation under validation.
 
 ## Existing boundaries
 

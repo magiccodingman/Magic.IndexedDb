@@ -30,8 +30,8 @@ This is a breaking major release: old all-tables deployment becomes explicit
 membership, and existing databases require a reviewed adoption path. Version 3
 includes [authenticated migrations](docs/guides/encrypted-migrations.md), including
 adding and removing record protection while preserving database identity.
-Data-key rotation, numeric codec cutovers, and key-changing resumable migrations
-remain unsupported. See [test and release acceptance](docs/contributing/migration-testing.md)
+[Managed key rotation](docs/guides/managed-key-rotation.md) is separate from schema migrations.
+Numeric codec cutovers and key-changing resumable migrations remain unsupported. See [test and release acceptance](docs/contributing/migration-testing.md)
 and the [implementation handoff](docs/engineering/v3-handoff.md).
 
 ## Why use Magic IndexedDB?

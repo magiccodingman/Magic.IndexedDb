@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.JSInterop;
 
 namespace Magic.IndexedDb;
@@ -67,34 +68,63 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
             await previousLock;
             token.ThrowIfCancellationRequested();
             var module = await getModule().WaitAsync(token);
-            if (await InvokeAsync<bool>(module, "isProtectedDatabaseUnlocked", false, configuration.Route))
+            if (await InvokeAsync<bool>(module, "isProtectedDatabaseUnlocked", false, configuration.Route,
+                provider is IMagicEncryptionRotationKeyProvider))
             {
                 token.ThrowIfCancellationRequested();
                 attempt.Result.TrySetResult(MagicUnlockResult.AlreadyUnlocked);
                 return;
             }
 
-            var key = await provider.GetKeyAsync(configuration.Request, token);
+            var request = configuration.Request;
+            string? targetId = null;
+            if (!initialize && provider is IMagicEncryptionRotationKeyProvider)
+            {
+                var hints = await InvokeAsync<JsonElement>(module, "getManagedEncryptionKeyHints", false, configuration.Route);
+                if (hints.ValueKind == JsonValueKind.Object)
+                {
+                    if (hints.TryGetProperty("keyId", out var keyId) && keyId.GetString() is { Length: > 0 } active)
+                        request = request with { KeyId = active };
+                    if (hints.TryGetProperty("targetKeyId", out var target) && target.GetString() is { Length: > 0 } id)
+                        targetId = id;
+                }
+            }
+            var key = await provider.GetKeyAsync(request, token);
+            var targetKey = key is not null && targetId is not null
+                ? await provider.GetKeyAsync(request with { KeyId = targetId }, token) : null;
             await _browser.WaitAsync(token);
             try
             {
                 token.ThrowIfCancellationRequested();
-                if (key is not null)
+                var available = key is not null && (targetId is null || targetKey is not null);
+                if (available)
                 {
-                    var temporary = (key.Material as byte[])?.ToArray();
+                    var temporary = (key!.Material as byte[])?.ToArray();
+                    var temporaryTarget = (targetKey?.Material as byte[])?.ToArray();
                     try
                     {
-                        await InvokeAsync<bool>(module, "unlockProtectedDatabase", true,
-                            configuration.Route, configuration.Request.KeyId, temporary ?? key.Material, initialize);
+                        if (targetKey is null)
+                            await InvokeAsync<bool>(module, "unlockProtectedDatabase", true,
+                                configuration.Route, request.KeyId, temporary ?? key.Material, initialize);
+                        else
+                        {
+                            await InvokeAsync<JsonElement>(module, "authorizeManagedKeyRotation", false,
+                                configuration.Route, request.KeyId, temporary ?? key.Material,
+                                targetId, temporaryTarget ?? targetKey.Material);
+                            token.ThrowIfCancellationRequested();
+                            if (configuration.ResumeKeyRotationOnUnlock)
+                                await InvokeAsync<bool>(module, "scheduleManagedKeyRotationResume", true, configuration.Route);
+                        }
                     }
                     finally
                     {
                         if (temporary is not null) CryptographicOperations.ZeroMemory(temporary);
+                        if (temporaryTarget is not null) CryptographicOperations.ZeroMemory(temporaryTarget);
                     }
                 }
 
                 token.ThrowIfCancellationRequested();
-                attempt.Result.TrySetResult(key is null ? MagicUnlockResult.KeyUnavailable : MagicUnlockResult.Unlocked);
+                attempt.Result.TrySetResult(available ? MagicUnlockResult.Unlocked : MagicUnlockResult.KeyUnavailable);
             }
             finally
             {

@@ -1727,7 +1727,7 @@ test('rotation checkpoints resume a bounded conversion and authenticate a target
 registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage, recoveryPackage,
     appendRevision, jsonAsset, assets, cliFixture, getOrigin: () => origin });
 registerProtectedRegistrationTests({ test, schema, bundle, jsonAsset, copy, registrationStore, inspect, appendRevision, assets });
-const expectedScenarioCount = cliFixture ? 132 : 128;
+const expectedScenarioCount = (cliFixture ? 134 : 130) + (process.env.MAGIC_ROTATION_BENCHMARK === "1" ? 9 : 0);
 assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
 
 if (listOnly) {
@@ -1792,7 +1792,8 @@ try {
             let timer;
             try {
                 await Promise.race([scenario.run({ page, context }), new Promise((_, reject) => {
-                    timer = setTimeout(() => reject(new Error('Scenario exceeded 35 seconds.')), 35_000);
+                    const timeout = scenario.name.startsWith('rotation benchmark:') ? 900_000 : 35_000;
+                    timer = setTimeout(() => reject(new Error(`Scenario exceeded ${timeout / 1000} seconds.`)), timeout);
                 })]);
             } finally { clearTimeout(timer); }
             if (pageErrors.length) throw new Error('Unhandled browser error:\n' + pageErrors.join('\n'));

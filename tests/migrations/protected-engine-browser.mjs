@@ -64,7 +64,7 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
             catch { oldOpenFenced = true; }
             let prematureVerification = false;
             try {
-                await enterRotationVerification({ ...admitted, db, vault, keys, storeCount: 1,
+                await enterRotationVerification({ ...admitted, db, vault, schema, keys,
                     assertCurrent: protectionAdapter.assertCurrent });
             } catch { prematureVerification = true; }
             db.close();
@@ -124,7 +124,7 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
                     throw Error('The bounded pass did not complete.');
                 };
                 await run();
-                active = await enterRotationVerification({ ...common, ...active, storeCount: 1 });
+                active = await enterRotationVerification({ ...common, ...active });
                 await attach();
                 const verificationWrite = await attempt(() => table.patch(1, { visits: 10 }));
                 await run();

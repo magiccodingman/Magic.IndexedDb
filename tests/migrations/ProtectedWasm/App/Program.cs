@@ -10,7 +10,7 @@ builder.Services.AddMagicIndexedDbEncryption<FixtureKeys>(_ =>
         { PhysicalDatabaseName = ProtectedRepository.PhysicalName }]);
 await builder.Build().RunAsync();
 
-public sealed class FixtureKeys : IMagicEncryptionKeyProvider
+public sealed class FixtureKeys : IMagicEncryptionRotationKeyProvider
 {
     public static byte? KeyByte { get; set; } = 55;
     public static int Requests { get; private set; }
@@ -18,7 +18,11 @@ public sealed class FixtureKeys : IMagicEncryptionKeyProvider
     {
         Requests++;
         return ValueTask.FromResult(KeyByte is { } value
-            ? MagicEncryptionKey.FromBytes(Enumerable.Repeat(value, 32).ToArray())
+            ? MagicEncryptionKey.FromBytes(Enumerable.Repeat(request.KeyId == "rotated-fixture-key" ? (byte)89 : value, 32).ToArray())
             : null);
     }
+
+    public ValueTask<bool> CanReacquireKeysAsync(MagicEncryptionKeyRequest source, MagicEncryptionKeyRequest target,
+        CancellationToken cancellationToken) => ValueTask.FromResult(
+            source.KeyId == "fixture-key" && target.KeyId == "rotated-fixture-key");
 }

@@ -71,6 +71,214 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
         assert.deepEqual(result.row, { id: 1, name: 'Public', secret: 'Never persist this plaintext' });
     });
 
+    test('public rotation API resumes after release and unlocks with the new key only', async ({ page }) => {
+        const physical = '__magic_protected__:public-rotation';
+        const target = model();
+        const config = configuration(physical, 'route', target, initial(target).url);
+        const value = await page.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            const old = new Uint8Array(32).fill(41), next = new Uint8Array(32).fill(83);
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'first', old, true);
+            await api.ensureProtectedMigration(config.name);
+            for (const id of [1, 2, 3]) await api.addItem({ dbName: config.name, storeName: 'clients',
+                record: { id, name: 'Document ' + id, secret: 'Content ' + id } });
+            const events = [];
+            const unsubscribe = api.subscribeKeyRotationEvents(event => {
+                events.push([event.phase, event.converted]);
+                if (event.phase === 'converting' && event.converted === 1) api.cancelManagedEncryptionKeyRotation(config.name);
+            });
+            let cancelled = false;
+            try { await api.rotateManagedEncryptionKey(config.name, { targetKeyId: 'next', mode: 'online', batchSize: 1,
+                recoverable: true }, next); }
+            catch (error) { cancelled = error.name === 'AbortError'; }
+            unsubscribe();
+            const partial = await api.getManagedKeyRotationStatus(config.name);
+            const during = await api.findItem(config.name, 'clients', 2);
+            api.releaseProtectedDatabase(config.name);
+            await api.createDb(config);
+            const hints = await api.getManagedEncryptionKeyHints(config.name);
+            await api.authorizeManagedKeyRotation(config.name, 'first', old, 'next', next);
+            const completed = await api.resumeManagedEncryptionKeyRotation(config.name, { batchSize: 1 });
+            api.releaseProtectedDatabase(config.name);
+            await api.createDb(config);
+            const active = await api.getManagedEncryptionKeyHints(config.name);
+            await api.unlockProtectedDatabase(config.name, 'next', next);
+            await api.ensureProtectedMigration(config.name);
+            const row = await api.findItem(config.name, 'clients', 1);
+            const second = await api.rotateManagedEncryptionKey(config.name, {
+                targetKeyId: 'third', mode: 'read-only', recoverable: true, batchSize: 1
+            }, new Uint8Array(32).fill(94));
+            let reused = false;
+            try {
+                await api.rotateManagedEncryptionKey(config.name, { targetKeyId: 'first', recoverable: true }, old);
+            } catch (error) { reused = error.message.startsWith('MAGIC_ROTATION_KEY_REUSED:'); }
+            const retained = await api.findItem(config.name, 'clients', 1);
+            api.releaseProtectedDatabase(config.name);
+            return { cancelled, partial, during, hints, completed, active, row, events, second, retained, reused };
+        }, config);
+        assert.equal(value.cancelled, true);
+        assert.equal(value.partial.converted, 1);
+        assert.equal(value.partial.retirementReady, false);
+        assert.equal(value.during.secret, 'Content 2');
+        assert.deepEqual(value.hints, { active: true, keyId: 'first', targetKeyId: 'next' });
+        assert.equal(value.completed.retirementReady, true);
+        assert.equal(value.completed.converted, 3);
+        assert.equal(value.completed.verified, 3);
+        assert.deepEqual(value.active, { active: false, keyId: 'next' });
+        assert.deepEqual(value.row, { id: 1, name: 'Document 1', secret: 'Content 1' });
+        assert.deepEqual(value.events, [['converting', 0], ['converting', 1]]);
+        assert.equal(value.second.retirementReady, true);
+        assert.equal(value.second.targetKeyId, 'third');
+        assert.deepEqual(value.retained, value.row);
+        assert.equal(value.reused, true);
+    });
+
+    test('online rotation preserves independently authorized tab mutations while paused and resumed', async ({ page, context }) => {
+        const physical = '__magic_protected__:rotation-shared-tabs';
+        const target = model();
+        const config = configuration(physical, 'route', target, initial(target).url);
+        await page.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'original', new Uint8Array(32).fill(41), true);
+            await api.ensureProtectedMigration(config.name);
+            for (const id of [1, 2, 3]) await api.addItem({ dbName: config.name, storeName: 'clients',
+                record: { id, name: 'Document ' + id, secret: 'Content ' + id } });
+            const unsubscribe = api.subscribeKeyRotationEvents(event => {
+                if (event.converted === 1) api.cancelManagedEncryptionKeyRotation(config.name);
+            });
+            try {
+                await api.rotateManagedEncryptionKey(config.name, { targetKeyId: 'target', mode: 'online',
+                    batchSize: 1, recoverable: true }, new Uint8Array(32).fill(55));
+                throw new Error('Expected rotation interruption.');
+            } catch (error) {
+                if (error.name !== 'AbortError') throw error;
+            } finally { unsubscribe(); }
+            const paused = await api.pauseManagedEncryptionKeyRotation(config.name);
+            if (!paused.paused || !paused.writesAllowed) throw new Error('The pause changed the online write policy.');
+        }, config);
+        const peer = await context.newPage();
+        await peer.goto(page.url());
+        await peer.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            await api.createDb(config);
+            await api.authorizeManagedKeyRotation(config.name, 'original', new Uint8Array(32).fill(41),
+                'target', new Uint8Array(32).fill(55));
+            const row = await api.findItem(config.name, 'clients', 2);
+            if (row.secret !== 'Content 2') throw new Error('The source generation was not readable.');
+            await api.putItem({ dbName: config.name, storeName: 'clients',
+                record: { id: 2, name: 'Updated in peer', secret: 'Updated content' } });
+            await api.deleteItem({ dbName: config.name, storeName: 'clients', record: { id: 3 } });
+            await api.addItem({ dbName: config.name, storeName: 'clients',
+                record: { id: 4, name: 'Inserted in peer', secret: 'New content' } });
+        }, config);
+        const completed = await page.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            const status = await api.resumeManagedEncryptionKeyRotation(config.name, { batchSize: 1 });
+            return { status, rows: await api.toArray(config.name, 'clients') };
+        }, config);
+        assert.equal(completed.status.retirementReady, true);
+        assert.equal(completed.status.verified, 3);
+        assert.deepEqual(completed.rows, [
+            { id: 1, name: 'Document 1', secret: 'Content 1' },
+            { id: 2, name: 'Updated in peer', secret: 'Updated content' },
+            { id: 4, name: 'Inserted in peer', secret: 'New content' }
+        ]);
+        const rejected = await peer.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            try { await api.putItem({ dbName: config.name, storeName: 'clients',
+                record: { id: 1, name: 'Stale write', secret: 'Must fail' } }); return false; }
+            catch { return true; }
+        }, config);
+        assert.equal(rejected, true);
+        await peer.close();
+    });
+
+    if (process.env.MAGIC_ROTATION_BENCHMARK === '1') {
+        for (const records of [1000, 10000, 100000]) for (const mode of ['exclusive', 'read-only', 'online']) {
+            test(`rotation benchmark: ${mode}, ${records} documents`, async ({ page }) => {
+                const source = model();
+                const config = configuration('__magic_protected__:rotation-benchmark', 'route', source, initial(source).url);
+                const result = await page.evaluate(async ({ config, records, mode }) => {
+                    const api = await import('/engine/magicDB.js');
+                    const route = config.name;
+                    const sourceKey = new Uint8Array(32).fill(71), targetKey = new Uint8Array(32).fill(91);
+                    await api.createDb(config);
+                    await api.unlockProtectedDatabase(route, 'source', sourceKey, true);
+                    await api.ensureProtectedMigration(route);
+                    const payload = 'Text '.repeat(25);
+                    for (let offset = 0; offset < records; offset += 256) {
+                        const rows = Array.from({ length: Math.min(256, records - offset) }, (_, index) => ({
+                            id: offset + index + 1, name: 'Example', secret: payload
+                        }));
+                        await api.bulkAddItem(route, 'clients', rows);
+                    }
+                    const usage = () => navigator.storage.estimate().then(value => value.usage ?? null).catch(() => null);
+                    const startUsage = await usage();
+                    const readSamples = [], writeSamples = [];
+                    let observe;
+                    let sampleError;
+                    let verifyStart;
+                    let maxTimerLag = 0;
+                    let peakHeap = performance.memory?.usedJSHeapSize ?? null;
+                    let previous = performance.now();
+                    const read = () => api.findItem(route, 'clients', 1);
+                    const sample = async (fn, values) => {
+                        const start = performance.now();
+                        try { await fn(); values.push(performance.now() - start); }
+                        catch (error) {
+                            if (!/^(MAGIC_ROTATION_ACCESS_FENCED|MAGIC_ROTATION_CONCURRENT_CHANGE|MAGIC_ENCRYPTION_POLICY_MISMATCH|MAGDB_AUTHORIZATION_REQUIRED):/.test(error.message)) throw error;
+                        }
+                    };
+                    const baseline = [];
+                    for (let i = 0; i < 12; i++) await sample(read, baseline);
+                    const unsubscribe = api.subscribeKeyRotationEvents(event => {
+                        if (event.phase === 'verifying') verifyStart ??= performance.now();
+                    });
+                    const interval = setInterval(() => {
+                        const now = performance.now();
+                        maxTimerLag = Math.max(maxTimerLag, now - previous - 20);
+                        previous = now;
+                        if (peakHeap !== null) peakHeap = Math.max(peakHeap, performance.memory.usedJSHeapSize);
+                        if (observe || mode === 'exclusive') return;
+                        observe = (async () => {
+                            await sample(read, readSamples);
+                            if (mode === 'online') await sample(() => api.putItem({ dbName: route, storeName: 'clients',
+                                record: { id: records, name: 'Concurrent', secret: payload } }), writeSamples);
+                        })().catch(error => { sampleError = error; }).finally(() => { observe = undefined; });
+                    }, 20);
+                    const started = performance.now();
+                    let status;
+                    let elapsed;
+                    try {
+                        status = await api.rotateManagedEncryptionKey(route, {
+                            targetKeyId: 'target', mode, batchSize: 128, yieldBetweenBatches: true, recoverable: true
+                        }, targetKey);
+                        elapsed = performance.now() - started;
+                    } finally {
+                        clearInterval(interval);
+                        unsubscribe();
+                        await observe;
+                    }
+                    if (sampleError) throw sampleError;
+                    const percentile = values => values.length ? [...values].sort((a, b) => a - b)
+                        [Math.min(values.length - 1, Math.floor(values.length * 0.95))] : null;
+                    const endUsage = await usage();
+                    return { records, mode, elapsed, verificationElapsed: verifyStart === undefined ? null :
+                        elapsed - (verifyStart - started), converted: status.converted, verified: status.verified,
+                        retirementReady: status.retirementReady, baselineReadP95: percentile(baseline),
+                        foregroundReadP95: percentile(readSamples), foregroundWriteP95: percentile(writeSamples),
+                        foregroundReads: readSamples.length, foregroundWrites: writeSamples.length,
+                        maxTimerLag, peakHeap, startUsage, endUsage };
+                }, { config, records, mode });
+                assert.equal(result.retirementReady, true);
+                assert.equal(result.verified, records);
+                console.log('ROTATION_BENCHMARK ' + JSON.stringify(result));
+            });
+        }
+    }
+
     test('authenticated registration adopts a legacy vault and retires the older protected route', async ({ page }) => {
         const physical = '__magic_protected__:managed-legacy-adoption';
         const before = model();

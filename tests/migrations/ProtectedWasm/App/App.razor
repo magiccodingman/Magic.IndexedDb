@@ -76,6 +76,12 @@
                 final.GetProperty("history").GetArrayLength() == 2, "Authenticated lineage was not retained.");
             await encryption.LockAsync(records);
             Require(await encryption.EnsureUnlockedAsync(records), "The public final policy could not be reopened.");
+            var rotation = await context.KeyRotation.RotateEncryptionKeyAsync(records,
+                new("rotated-fixture-key", MagicKeyRotationMode.Online, BatchSize: 1));
+            Require(rotation.Phase == MagicKeyRotationPhase.Completed && rotation.RetirementReady &&
+                rotation.TargetKeyId == "rotated-fixture-key", "Managed rotation did not finalize through published Blazor.");
+            await encryption.LockAsync(records);
+            Require(await encryption.EnsureUnlockedAsync(records), "The provider could not resolve the finalized generation.");
             var other = await Activate("another-account");
             Require(await encryption.GetStateAsync(records) == MagicEncryptionState.Inactive, "The previous account context survived switching.");
             Require(await other.Encryption.UnlockDetailedAsync(records) == MagicUnlockResult.InvalidKey,
@@ -86,7 +92,7 @@
             Require(await resumed.Encryption.GetStateAsync(records) == MagicEncryptionState.Inactive, "Sign-out did not release the account context.");
             Require(FixtureKeys.Requests >= 3, "Explicit locking did not require fresh authorization.");
             state = "passed";
-            message = "Authenticated legacy adoption, lock/resume, field-to-record encryption and approved declassification passed.";
+            message = "Authenticated legacy adoption, lock/resume, field-to-record encryption approved declassification, and managed key rotation passed.";
         }
         catch (Exception error)
         {
