@@ -56,7 +56,7 @@ Create a small console project that references the shared model project and `Mag
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../App.Models/App.Models.csproj" />
-    <PackageReference Include="Magic.IndexedDb" Version="3.0.0-preview.1" />
+    <PackageReference Include="Magic.IndexedDb" Version="3.0.0" />
   </ItemGroup>
 </Project>
 ```

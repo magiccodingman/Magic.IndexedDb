@@ -67,6 +67,12 @@ jobs:
             echo "Runtime and CLI source versions must match." >&2
             exit 1
           fi
+          # Pin the initial stable release so a partial publication can be
+          # retried at the same version after either package reaches NuGet.
+          if [[ "$current_version" == "3.0.0" ]]; then
+            echo "package_version=3.0.0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           published_versions="${RUNNER_TEMP}/magic-indexeddb-versions.json"
           curl \
             --fail \
