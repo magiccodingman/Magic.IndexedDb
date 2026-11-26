@@ -1667,7 +1667,7 @@ test('rotation batch preserves a concurrent write and commits conversion with it
         label: 'concurrent', bytes: [2], remainder: [] });
 });
 
-test('rotation checkpoints resume a bounded conversion and authenticate a target-only verification scan', async ({ page }) => {
+test('rotation checkpoints preserve compound keys across protected and public stores', async ({ page }) => {
     await page.goto(origin + '/');
     const result = await page.evaluate(async () => {
         const { advanceRotationPass } = await import('/engine/utilities/rotationPass.js');
@@ -1683,7 +1683,9 @@ test('rotation checkpoints resume a bounded conversion and authenticate a target
             operation.onerror = () => reject(operation.error);
         });
         open.onupgradeneeded = () => {
-            open.result.createObjectStore('documents', { keyPath: 'id' });
+            open.result.createObjectStore('documents', { keyPath: ['group', 'id'] }).createIndex('byGroup', 'group');
+            open.result.createObjectStore('archive', { keyPath: 'id' });
+            open.result.createObjectStore('settings', { keyPath: 'id' });
             open.result.createObjectStore(encryptionMetadataStore);
         };
         const db = await request(open);
@@ -1695,7 +1697,12 @@ test('rotation checkpoints resume a bounded conversion and authenticate a target
             await request(key === undefined ? store.put(value) : store.put(value, key));
         };
         const get = (storeName, key) => request(db.transaction(storeName).objectStore(storeName).get(key));
-        for (const id of [1, 2]) await put('documents', await sealRecord({ id, content: 'value-' + id }, policy, keys.get('old'), 'old', context(id)));
+        const group = 'catalog';
+        const documentKeys = ['9007199254740993', '9007199254740994'].map(id => [group, id]);
+        const contents = documentKeys.map(([, id]) => ({ nested: [{ exact: id, decimal: '1.00000000000000000001' }] }));
+        for (const [index, key] of documentKeys.entries())
+            await put('documents', await sealRecord({ group, id: key[1], content: contents[index] }, policy, keys.get('old'), 'old', context(key)));
+        await put('settings', { id: 1, label: 'Public configuration' });
         const assertCurrent = () => {};
         const document = await sealRotationJournal({
             version: 1, rotationId: 'rotation', sourceKeyId: 'old', targetKeyId: 'new', mode: 'exclusive',
@@ -1705,23 +1712,39 @@ test('rotation checkpoints resume a bounded conversion and authenticate a target
         await put(encryptionMetadataStore, document, rotationJournalKey);
         const install = async state => put(encryptionMetadataStore, await sealRotationJournal(state, keys, vault, assertCurrent), rotationJournalKey);
         const step = async () => advanceRotationPass({ db, vault, keys, document: await get(encryptionMetadataStore, rotationJournalKey),
-            policies: new Map([['documents', policy]]), expectations: [], batchSize: 1, assertCurrent });
-        await step();
-        const mixed = [(await get('documents', 1)).content.keyId, (await get('documents', 2)).content.keyId];
-        for (let i = 0; i < 4; i++) if ((await step()).outcome === 'pass-complete') break;
+            policies: new Map([['archive', policy], ['documents', policy],
+                ['settings', { fields: new Set(), exposed: null }]]), expectations: [], batchSize: 1, assertCurrent });
+        await step(); // Skip the empty protected store.
+        await step(); // Commit one record and its compound checkpoint.
+        const mixed = await Promise.all(documentKeys.map(async key => (await get('documents', key)).content.keyId));
+        const finishPass = async () => {
+            for (let i = 0; i < 6; i++) if ((await step()).outcome === 'pass-complete') return;
+            throw new Error('The bounded rotation pass did not finish.');
+        };
+        await finishPass();
         const converted = (await get(encryptionMetadataStore, rotationJournalKey)).state;
         // Exercise the verification scan against a persisted phase. The full
         // lifecycle coordinator installs its finalization fence at this boundary.
         await install({ ...converted, phase: 'verifying', storeIndex: 0 });
-        for (let i = 0; i < 4; i++) if ((await step()).outcome === 'pass-complete') break;
+        await finishPass();
         const final = (await get(encryptionMetadataStore, rotationJournalKey)).state;
         const rows = [];
-        for (const id of [1, 2]) rows.push(await openRecord(await get('documents', id), policy, keys.get('new'), 'new', context(id)));
+        for (const key of documentKeys)
+            rows.push(await openRecord(await get('documents', key), policy, keys.get('new'), 'new', context(key)));
+        let oldKeyRejected = false;
+        try {
+            const key = documentKeys[0];
+            await openRecord(await get('documents', key), policy, keys.get('old'), 'new', context(key));
+        } catch { oldKeyRejected = true; }
+        const indexedKeys = await request(db.transaction('documents').objectStore('documents').index('byGroup').getAllKeys(group));
+        const publicRow = await get('settings', 1);
         db.close();
-        return { mixed, converted: final.converted, verified: final.verified, rows };
+        return { mixed, converted: final.converted, verified: final.verified, rows, indexedKeys, publicRow, oldKeyRejected };
     });
+    const ids = ['9007199254740993', '9007199254740994'];
     assert.deepEqual(result, { mixed: ['new', 'old'], converted: 2, verified: 2,
-        rows: [{ id: 1, content: 'value-1' }, { id: 2, content: 'value-2' }] });
+        rows: ids.map(id => ({ group: 'catalog', id, content: { nested: [{ exact: id, decimal: '1.00000000000000000001' }] } })),
+        indexedKeys: ids.map(id => ['catalog', id]), publicRow: { id: 1, label: 'Public configuration' }, oldKeyRejected: true });
 });
 
 registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage, recoveryPackage,
