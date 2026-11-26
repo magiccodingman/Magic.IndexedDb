@@ -6,7 +6,7 @@ migration source in Git, validates the complete retained history, and publishes 
 static migration package. The browser engine consumes that package without loading
 C# or contacting a migration API.
 
-The package version starts at `3.0.0-preview.1`. The portable document protocol is
+The package version starts at `3.0.0`. The portable document protocol is
 version `1`; application schema revisions are separate positive integers. Updating
 a NuGet package does not increment a database revision.
 
@@ -18,7 +18,7 @@ pin the version in a repository tool manifest:
 
 ```sh
 dotnet new tool-manifest
-dotnet tool install Magic.IndexedDb.Cli --version 3.0.0-preview.1
+dotnet tool install Magic.IndexedDb.Cli --version 3.0.0
 dotnet tool run magicdb -- --help
 ```
 
@@ -26,7 +26,7 @@ For a local checkout, pack and install the actual tool without publishing it:
 
 ```sh
 dotnet pack Magic.IndexedDb.Cli/Magic.IndexedDb.Cli.csproj -c Release -o artifacts/packages
-dotnet tool install Magic.IndexedDb.Cli --version 3.0.0-preview.1 --add-source artifacts/packages
+dotnet tool install Magic.IndexedDb.Cli --version 3.0.0 --add-source artifacts/packages
 ```
 
 The examples below use `magicdb` as shorthand. With a local tool manifest, use
@@ -69,7 +69,7 @@ runtime package. It must be executable and opt in with this property:
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/App.Models/App.Models.csproj" />
-    <PackageReference Include="Magic.IndexedDb" Version="3.0.0-preview.1" />
+    <PackageReference Include="Magic.IndexedDb" Version="3.0.0" />
   </ItemGroup>
 </Project>
 ```

@@ -1,6 +1,6 @@
 # Encrypted migrations
 
-The v3 preview connects managed migrations to the existing authenticated
+Version 3 connects managed migrations to the existing authenticated
 encryption lifecycle. The C# model and CLI describe the intended storage policy;
 the shared JavaScript engine performs the transition after the application
 provides authorization. Review the [design contract](../architecture/adr-authenticated-migrations.md)

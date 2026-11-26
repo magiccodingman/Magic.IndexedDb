@@ -6,7 +6,7 @@ database independently. The engine has no .NET, Blazor, REST API, or server runt
 dependency. The existing Razor class library imports it as an ES module, so Blazor
 applications do not add a script tag to `index.html`.
 
-This branch is `3.0.0-preview.1`. See [validation and release acceptance](../contributing/migration-testing.md)
+Version 3 starts at `3.0.0`. See [validation and release acceptance](../contributing/migration-testing.md)
 before deployment. [Authenticated migrations](encrypted-migrations.md) connect the
 existing encryption lifecycle to the same engine, including both directions of
 protection changes and explicit recovery. This extension has its own acceptance
@@ -238,7 +238,7 @@ abort it if it becomes runnable after cancellation.
 Already committed history is immutable. Fix a completed migration with a new forward
 revision. Replacing a partially executed resumable module under the same migration
 ID is refused because different clients could have applied different logic. This
-preview does not expose a force-complete, rewrite-checkpoint, automatic rollback, or
+release does not expose a force-complete, rewrite-checkpoint, automatic rollback, or
 automatic reset API. For a supported faulty partial migration, deploy an
 explicitly bound recovery package with application-specific repairs and
 verification.
@@ -282,7 +282,7 @@ The engine checks bytes even when an HTTP or service-worker cache serves them. A
 upgrade while offline succeeds only when all required static assets are already
 available. Magic does not install a service worker, evict caches, reload tabs, or
 select an application deployment policy for you. Retain history references; this
-preview does not support pruning a committed chain through an implicit checkpoint.
+release does not support pruning a committed chain through an implicit checkpoint.
 Fresh clients fetch the target schema rather than all historical migration bodies.
 
 ## Diagnostics

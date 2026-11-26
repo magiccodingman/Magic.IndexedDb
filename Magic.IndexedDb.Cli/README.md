@@ -6,7 +6,7 @@ static browser assets. It never connects to or rewrites customers' browser data.
 
 ```sh
 dotnet new tool-manifest
-dotnet tool install --local Magic.IndexedDb.Cli --version 3.0.0-preview.1
+dotnet tool install --local Magic.IndexedDb.Cli --version 3.0.0
 dotnet tool run magicdb -- --help
 ```
 
@@ -37,7 +37,7 @@ history. A released history cannot be silently edited, truncated, or overwritten
 Use immutable deployment directories and pin the manifest to the running app release.
 
 See the [CLI guide](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/migration-cli.md)
-for exporter setup, commands, adoption, automated tests, and diagnostics. This preview
+for exporter setup, commands, adoption, automated tests, and diagnostics. Version 3
 is intended for validation before production use; the release acceptance checklist
 and supported operations are documented in the repository.
 

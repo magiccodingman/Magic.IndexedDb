@@ -49,6 +49,9 @@ assert_version "2.0.2" '{"versions":["2.0.999-alpha1","3.0.0"]}' "2.0.3"
 assert_version "3.0.0" '{"versions":["2.0.7","3.0.0-preview.1"]}' "3.0.0"
 assert_version "3.0.0" '{"versions":["3.0.0"]}' "3.0.1"
 assert_version "3.0.0" '{"versions":["3.0.2","3.1.0"]}' "3.0.3"
+assert_version "3.0.1" '{"versions":["3.0.0"]}' "3.0.1"
+assert_version "3.0.2" '{"versions":["3.0.0"]}' "3.0.2"
+assert_version "3.0.1" '{"versions":["3.0.1"]}' "3.0.2"
 assert_failure "3.0.0-preview.1" '{"versions":["2.0.7"]}'
 assert_failure "2.0" '{"versions":["2.0.2"]}'
 assert_failure "02.0.2" '{"versions":["2.0.2"]}'
