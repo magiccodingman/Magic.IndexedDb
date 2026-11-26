@@ -5,12 +5,15 @@ import Dexie from "./dexie/dexie.js";
 import { magicQueryAsync, magicQueryYield, selectFields } from "./magicLinqToIndexedDb.js";
 import { createProtectedStorage, ensureProtectedSchema, protectedDatabasePrefix } from "./utilities/protectedStorage.js";
 import { encryptionMetadataStore } from "./utilities/encryptionPolicy.js";
+import { assertEncryptionKey, importEncryptionKey } from "./utilities/encryptionEnvelope.js";
+import { createProtectedMigrationAdapter } from "./migrations/protectedMigrationAdapter.js";
 import {
     numericDatabasePrefix, numericMetadataStore, normalizeNumericStorage,
-    createNumericPolicy, numericPolicyIdentity, requireFreshNumericTarget,
-    ensureNumericSchema, assertNumericPolicy
+    createNumericPolicy, requireFreshNumericTarget, assertNumericPolicy
 } from "./utilities/numericStorage.js";
 import { debugLog } from "./utilities/utilityHelpers.js";
+import { recoverDatabase, ensureDatabase, assertDatabaseReady, inspectDatabase, subscribeMigrationEvents, MigrationError } from "./migrations/migrationEngine.js";
+import { canonicalJson, metadataStore } from "./migrations/protocol.js";
 /**
  * @typedef {Object} DatabasesItem
  * @property {string} name
@@ -22,66 +25,225 @@ import { debugLog } from "./utilities/utilityHelpers.js";
  */
 
 
-//export async function initializeMagicMigration() {
-//    const { MagicMigration } = await import('/magicMigration.js');  // Dynamically import it
-//    const magicMigration = new MagicMigration(db);  // Pass only Dexie.js
-//    magicMigration.Initialize();  // Call method (optional)
-//}
-
 let databases = new Map(); // Change array to a Map
 const protectedDatabases = new Map();
 const numericDatabases = new Map();
+const managedDatabases = new Map();
+const recoveryAttempts = new Map();
+
+export { inspectDatabase, subscribeMigrationEvents };
+
+/** Cancel this tab's pending attempt without changing its committed journal. */
+export function cancelMigration(name) {
+    managedDatabases.get(name)?.controller?.abort();
+    recoveryAttempts.get(name)?.abort();
+}
+
+export async function recoverMigration(options) {
+    const managed = managedDatabases.get(options.name);
+    if (managed?.protected) return runProtectedMigration(managed, options.recovery);
+    if (recoveryAttempts.has(options.name))
+        throw new MigrationError("MAGDB_RECOVERY_IN_PROGRESS", "This tab already has a recovery attempt for this database.");
+    const controller = new AbortController();
+    recoveryAttempts.set(options.name, controller);
+    try { return await recoverDatabase({ ...options, signal: controller.signal }); }
+    finally { recoveryAttempts.delete(options.name); }
+}
+
+function requireMigrationAuthorization(registration) {
+    const authorization = registration.authorization;
+    if (!authorization?.adapter || authorization.controller.signal.aborted)
+        throw new MigrationError("MAGDB_AUTHORIZATION_REQUIRED", "Unlock this account's database before running its authenticated migrations.", {}, true);
+    authorization.assertCurrent();
+    return authorization;
+}
+
+/** Authorization is separate from migration execution so locking never waits for a long-running migration. */
+async function authorizeProtectedMigration(registration, keyId, input, initialize) {
+    if (registration.pending && registration.authorization?.adapter &&
+        !registration.authorization.controller.signal.aborted)
+        return; // Concurrent callers share the active authorization and attempt.
+    registration.authorization?.controller.abort();
+    const authorization = { controller: new AbortController(), adapter: null, key: null, keyId, initialize };
+    authorization.assertCurrent = () => {
+        if (registration.stale || registration.authorization !== authorization || authorization.controller.signal.aborted)
+            throw new MigrationError("MAGDB_AUTHORIZATION_LOST", "The migration authorization was revoked. Unlock again to resume.", {}, true);
+    };
+    registration.authorization = authorization;
+    try {
+        let key;
+        try {
+            key = input instanceof Uint8Array ? await importEncryptionKey(input) : input;
+            assertEncryptionKey(key);
+        } catch {
+            throw new Error("MAGIC_ENCRYPTION_INVALID_KEY: The provider did not supply a usable AES-GCM key.");
+        }
+        authorization.assertCurrent();
+        authorization.key = key;
+        authorization.adapter = await createProtectedMigrationAdapter({ name: registration.db.name,
+            account: registration.account, keyId, key, signal: authorization.controller.signal,
+            assertCurrent: authorization.assertCurrent });
+        authorization.assertCurrent();
+    } catch (error) {
+        authorization.controller.abort();
+        authorization.key = null;
+        if (registration.authorization === authorization) registration.authorization = null;
+        throw error;
+    }
+}
+
+export async function ensureProtectedMigration(name) {
+    const registration = managedDatabases.get(name);
+    if (!registration?.protected) return;
+    return runProtectedMigration(registration);
+}
+
+async function runProtectedMigration(registration, recovery) {
+    if (registration.stale)
+        throw new MigrationError("MAGDB_DATABASE_INCOMPATIBLE", "This account's database changed in another application. Reload before continuing.");
+    const authorization = requireMigrationAuthorization(registration);
+    if (registration.pending) {
+        if (recovery) throw new MigrationError("MAGDB_RECOVERY_IN_PROGRESS", "This connection already has an authenticated migration attempt.");
+        return registration.pending;
+    }
+    if (!recovery && registration.result) {
+        await registration.db.open();
+        await assertDatabaseReady(registration.db.backendDB(), registration.result, authorization.adapter);
+        return registration.result;
+    }
+    const controller = new AbortController();
+    registration.controller = controller;
+    const revoke = () => controller.abort();
+    authorization.controller.signal.addEventListener("abort", revoke, { once: true });
+    registration.protection.lock();
+    registration.db.close();
+    const attempt = (async () => {
+        try {
+            authorization.assertCurrent();
+            if (registration.numericStorage) await requireFreshNumericTarget(registration.db.name, registration.numericLegacyName);
+            const options = { name: registration.db.name, schema: registration.schema,
+                manifestUrl: registration.manifestUrl, protection: authorization.adapter,
+                initialize: authorization.initialize, signal: controller.signal,
+                ...(recovery ? { recovery } : {}) };
+            if (recovery) {
+                // Recovery completes only its approved edge. Normal opening still advances later revisions.
+                registration.result = null;
+                return await recoverDatabase(options);
+            }
+            const result = await ensureDatabase(options);
+            authorization.assertCurrent();
+            await registration.db.open();
+            await assertDatabaseReady(registration.db.backendDB(), result, authorization.adapter);
+            registration.protection.setManagedReadiness(result);
+            await registration.protection.unlock(authorization.keyId, authorization.key, false);
+            authorization.assertCurrent();
+            registration.result = result;
+            return result;
+        } catch (error) {
+            registration.result = null;
+            registration.protection.lock();
+            registration.db.close();
+            throw error;
+        } finally {
+            authorization.controller.signal.removeEventListener("abort", revoke);
+        }
+    })();
+    registration.pending = attempt;
+    try { return await attempt; }
+    finally { if (registration.pending === attempt) registration.pending = null; }
+}
+
+function registerProtectedMigration(dbStore, numericStorage) {
+    const schema = structuredClone(nativeSchema(dbStore, numericStorage));
+    const identity = canonicalJson({ schema, manifestUrl: dbStore.migrationManifestUrl,
+        account: dbStore.encryption.account, physicalName: dbStore.encryption.physicalName ?? dbStore.name });
+    const previous = managedDatabases.get(dbStore.name);
+    if (previous) {
+        if (!previous.protected || previous.identity !== identity)
+            throw new MigrationError("MAGDB_CONFIGURATION_CONFLICT", "This protected route is already registered with another model or manifest.");
+        if (previous.stale) throw new MigrationError("MAGDB_DATABASE_INCOMPATIBLE", "Reload this account's database before reopening.");
+        return;
+    }
+    if (protectedDatabases.has(dbStore.name))
+        throw new MigrationError("MAGDB_CONFIGURATION_CONFLICT", "Release the existing protected route before registering its managed history.");
+    const db = new Dexie(dbStore.encryption.physicalName ?? dbStore.name);
+    const protection = createProtectedStorage(db, dbStore.encryption.account, dbStore.storeSchemas, numericStorage,
+        { allowEmptyProtection: true, managedSchema: schema });
+    const registration = { protected: true, identity, name: dbStore.name, db, protection, schema,
+        manifestUrl: dbStore.migrationManifestUrl, account: dbStore.encryption.account,
+        numericStorage, numericLegacyName: dbStore.numericLegacyName, result: null,
+        pending: null, authorization: null, controller: null, stale: false };
+    managedDatabases.set(dbStore.name, registration);
+    protectedDatabases.set(dbStore.name, protection);
+    databases.set(dbStore.name, db);
+    db.on("versionchange", () => {
+        registration.stale = true;
+        registration.authorization?.controller.abort();
+        protection.dispose();
+        db.close();
+    });
+}
+
+function nativeSchema(dbStore, numericStorage) {
+    return dbStore.migrationSchema ?? {
+        protocolVersion: 1, schemaId: dbStore.schemaId ?? dbStore.numericLegacyName ?? dbStore.name,
+        numericFormat: numericStorage ? "lossless-v1" : "legacy",
+        requiredCapabilities: dbStore.encryption ? ["authenticatedMigrationsV1"] : [],
+        stores: dbStore.storeSchemas.map(store => {
+            const indexes = new Map();
+            for (const member of store.indexes ?? []) indexes.set(member, { name: member, keyPath: member, unique: false, multiEntry: false });
+            for (const member of store.uniqueIndexes ?? []) indexes.set(member, { name: member, keyPath: member, unique: true, multiEntry: false });
+            for (const parts of store.columnNamesInCompoundIndex ?? []) indexes.set(`[${parts.join("+")}]`, {
+                name: `[${parts.join("+")}]`, keyPath: parts, unique: false, multiEntry: false });
+            const keys = store.columnNamesInCompoundKey;
+            return { name: store.tableName, keyPath: keys.length === 0 ? null : keys.length === 1 ? keys[0] : keys,
+                autoIncrement: Boolean(store.primaryKeyAuto),
+                indexes: [...indexes.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0), fields: [],
+                ...(store.encryptedFields !== undefined ? { encryptedFields: structuredClone(store.encryptedFields) } : {}),
+                ...(store.exposedFields !== undefined ? { exposedFields: structuredClone(store.exposedFields) } : {}) };
+        }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    };
+}
+
+function createManagedDatabase(dbStore, numericStorage) {
+    const schema = nativeSchema(dbStore, numericStorage);
+    const identity = canonicalJson({ schema, manifestUrl: dbStore.migrationManifestUrl ?? null });
+    const previous = managedDatabases.get(dbStore.name);
+    if (previous) {
+        if (previous.identity !== identity) throw new MigrationError("MAGDB_CONFIGURATION_CONFLICT", "This physical database is already registered with another model or manifest.");
+        if (previous.stale) throw new MigrationError("MAGDB_DATABASE_INCOMPATIBLE", "This connection was invalidated by another application. Reload before reopening.");
+        return previous.ready.then(() => getDb(dbStore.name)).then(() => undefined);
+    }
+    const db = new Dexie(dbStore.name);
+    const registration = { identity, db, ready: null, result: null, stale: false, controller: new AbortController(),
+        numericPolicy: numericStorage ? createNumericPolicy(dbStore.storeSchemas, numericStorage) : null };
+    managedDatabases.set(dbStore.name, registration);
+    databases.set(dbStore.name, db);
+    if (numericStorage) numericDatabases.set(dbStore.name, registration);
+    db.on("versionchange", () => { registration.stale = true; db.close(); });
+    registration.ready = (async () => {
+        try {
+            if (numericStorage) await requireFreshNumericTarget(dbStore.name, dbStore.numericLegacyName);
+            registration.result = await ensureDatabase({ name: dbStore.name, schema, manifestUrl: dbStore.migrationManifestUrl,
+                signal: registration.controller.signal });
+            await db.open(); // Dynamic open: Dexie must not repair or infer a schema.
+            await assertDatabaseReady(db.backendDB(), registration.result);
+            if (registration.numericPolicy) await assertNumericPolicy(db, registration.numericPolicy);
+        } catch (error) {
+            if (managedDatabases.get(dbStore.name) === registration) {
+                managedDatabases.delete(dbStore.name); databases.delete(dbStore.name); numericDatabases.delete(dbStore.name);
+            }
+            db.close();
+            throw error;
+        }
+    })();
+    return registration.ready;
+}
 
 function rejectUnconfiguredNumericDatabase(name) {
     if (name.startsWith(numericDatabasePrefix) && !numericDatabases.has(name)) {
         throw new Error("MAGIC_NUMERIC_POLICY_REQUIRED: The lossless database is not configured.");
     }
-}
-
-function releaseNumericDatabase(name) {
-    const registration = numericDatabases.get(name);
-    if (!registration) return;
-    registration.released = true;
-    registration.db.close();
-    numericDatabases.delete(name);
-    databases.delete(name);
-}
-
-function createNumericDatabase(dbStore, numericStorage) {
-    const name = dbStore.name;
-    if (!name.startsWith(numericDatabasePrefix)) {
-        throw new Error("MAGIC_NUMERIC_POLICY_INVALID: Lossless databases require their reserved physical namespace.");
-    }
-    const policy = createNumericPolicy(dbStore.storeSchemas, numericStorage);
-    const identity = numericPolicyIdentity(policy);
-    const previous = numericDatabases.get(name);
-    if (previous) {
-        if (previous.identity !== identity) {
-            throw new Error("MAGIC_NUMERIC_POLICY_MISMATCH: This connection already has a different numeric storage policy.");
-        }
-        return previous.ready.then(() => getDb(name)).then(() => undefined);
-    }
-
-    const db = new Dexie(name);
-    const registration = { db, policy, identity, ready: null, released: false };
-    numericDatabases.set(name, registration);
-    databases.set(name, db);
-    db.on("versionchange", () => releaseNumericDatabase(name));
-    registration.ready = (async () => {
-        try {
-            await requireFreshNumericTarget(name, dbStore.numericLegacyName);
-            await ensureNumericSchema(name, policy);
-            await db.open();
-            await assertNumericPolicy(db, policy);
-            if (registration.released || numericDatabases.get(name) !== registration) {
-                throw new Error("MAGIC_NUMERIC_POLICY_REQUIRED: The numeric database connection was released.");
-            }
-        } catch (error) {
-            if (numericDatabases.get(name) === registration) releaseNumericDatabase(name);
-            throw error;
-        }
-    })();
-    return registration.ready;
 }
 
 function rejectUnconfiguredProtectedDatabase(name) {
@@ -91,6 +253,7 @@ function rejectUnconfiguredProtectedDatabase(name) {
 }
 
 function protectedTable(database, store) {
+    if (store === metadataStore) throw new MigrationError("MAGDB_RESERVED_STORE", "Migration metadata is reserved for the engine.");
     rejectUnconfiguredNumericDatabase(database);
     if (numericDatabases.has(database) && store === numericMetadataStore) {
         throw new Error("Magic numeric storage metadata is reserved.");
@@ -99,6 +262,9 @@ function protectedTable(database, store) {
     if (protectedDatabases.has(database) && store === encryptionMetadataStore) {
         throw new Error("Magic encryption metadata is reserved.");
     }
+    const managed = managedDatabases.get(database);
+    if (managed?.protected && (managed.stale || managed.pending || !managed.result))
+        throw new MigrationError("MAGDB_AUTHORIZATION_REQUIRED", "Complete the authenticated migration before accessing this database.", {}, true);
     return protectedDatabases.get(database)?.forTable(store);
 }
 
@@ -106,6 +272,8 @@ export function unlockProtectedDatabase(name, keyId, key, initialize = false) {
     rejectUnconfiguredProtectedDatabase(name);
     const storage = protectedDatabases.get(name);
     if (!storage) throw new Error("The database does not have a Magic encryption policy.");
+    const managed = managedDatabases.get(name);
+    if (managed?.protected) return authorizeProtectedMigration(managed, keyId, key, initialize);
     return storage.unlock(keyId, key, initialize);
 }
 
@@ -114,26 +282,43 @@ export function isProtectedDatabaseUnlocked(name) {
 }
 
 export function getProtectedDatabaseState(name) {
+    const managed = managedDatabases.get(name);
+    if (managed?.protected && !managed.result) return managed.stale ? "PolicyMismatch" : "Locked";
     return protectedDatabases.get(name)?.state() ?? "Inactive";
 }
 
 export function lockProtectedDatabase(name) {
+    const managed = managedDatabases.get(name);
+    if (managed?.protected) {
+        managed.authorization?.controller.abort();
+        if (managed.authorization) managed.authorization.key = null;
+        managed.authorization = null;
+        managed.result = null;
+    }
     protectedDatabases.get(name)?.lock();
 }
 
 export function releaseProtectedDatabase(name) {
     const protection = protectedDatabases.get(name);
     if (!protection) return;
+    lockProtectedDatabase(name);
+    const managed = managedDatabases.get(name);
+    if (managed?.protected) {
+        managed.stale = true;
+        managedDatabases.delete(name);
+    }
     protection.dispose();
     protectedDatabases.delete(name);
     databases.get(name).close();
     databases.delete(name);
 }
 
-export async function destroyProtectedDatabase(physicalName) {
-    if (!physicalName.startsWith(protectedDatabasePrefix)) {
-        throw new Error("A protected database name is required.");
-    }
+export async function destroyProtectedDatabase(physicalName, registeredRoute = null) {
+    const boundRoute = registeredRoute !== null && protectedDatabases.has(registeredRoute) &&
+        managedDatabases.get(registeredRoute)?.protected && databases.get(registeredRoute)?.name === physicalName;
+    if (typeof physicalName !== "string" ||
+        (registeredRoute !== null ? !boundRoute : !physicalName.startsWith(protectedDatabasePrefix)))
+        throw new Error("A protected database name or its explicitly registered managed route is required.");
     for (const [name, db] of databases) {
         if (db.name === physicalName && protectedDatabases.has(name)) releaseProtectedDatabase(name);
     }
@@ -157,7 +342,7 @@ export async function projectPublicRecords(name, store, predicate, additions, fo
 export async function openDb(dbName) {
     const db = await getDb(dbName);
     // Managed storage policies do not hand out an unguarded Dexie handle.
-    return protectedDatabases.has(dbName) || numericDatabases.has(dbName) ? undefined : db;
+    return protectedDatabases.has(dbName) || numericDatabases.has(dbName) || managedDatabases.has(dbName) ? undefined : db;
 }
 
 async function getDb(dbName) {
@@ -168,15 +353,18 @@ async function getDb(dbName) {
     rejectUnconfiguredProtectedDatabase(dbName);
     rejectUnconfiguredNumericDatabase(dbName);
 
-    const numeric = numericDatabases.get(dbName);
-    if (numeric) {
-        await numeric.ready;
-        if (!numeric.db.isOpen()) await numeric.db.open();
-        await assertNumericPolicy(numeric.db, numeric.policy);
-        if (numeric.released || numericDatabases.get(dbName) !== numeric) {
-            throw new Error("MAGIC_NUMERIC_POLICY_REQUIRED: The numeric database connection was released.");
+    const managed = managedDatabases.get(dbName);
+    if (managed) {
+        if (managed.protected) {
+            await ensureProtectedMigration(dbName);
+            return managed.db;
         }
-        return numeric.db;
+        await managed.ready;
+        if (managed.stale) throw new MigrationError("MAGDB_DATABASE_INCOMPATIBLE", "The database changed in another application. Reload before continuing.");
+        if (!managed.db.isOpen()) await managed.db.open();
+        await assertDatabaseReady(managed.db.backendDB(), managed.result);
+        if (managed.numericPolicy) await assertNumericPolicy(managed.db, managed.numericPolicy);
+        return managed.db;
     }
 
     if (databases.has(dbName)) {
@@ -187,10 +375,7 @@ async function getDb(dbName) {
         return existingDb;
     }
 
-    const db = new Dexie(dbName);
-    await db.open();
-    databases.set(dbName, db);
-    return db;
+    throw new MigrationError("MAGDB_DATABASE_UNREGISTERED", "Declare and initialize the logical database before querying an instance.");
 }
 
 
@@ -198,7 +383,7 @@ export async function closeDb(dbName) {
     const db = databases.get(dbName);
     lockProtectedDatabase(dbName);
     if (db?.isOpen()) db.close();
-    if (protectedDatabases.has(dbName) || numericDatabases.has(dbName)) return;
+    if (protectedDatabases.has(dbName) || numericDatabases.has(dbName) || managedDatabases.has(dbName)) return;
     databases.delete(dbName);
 }
 
@@ -233,122 +418,54 @@ export function listOpenDatabases() {
 export function createDb(dbStore) {
     debugLog("Received dbStore in createDb", dbStore);
 
-    if (!dbStore || !dbStore.name) {
-        console.error("Blazor.IndexedDB.Framework - Invalid dbStore provided");
-        return;
-    }
+    if (!dbStore || typeof dbStore.name !== "string" || !dbStore.name || !Array.isArray(dbStore.storeSchemas))
+        throw new MigrationError("MAGDB_CONFIGURATION_INVALID", "A database name and store schema array are required.");
 
     
     const dbName = dbStore.name;
 
     const encryption = dbStore.encryption;
     const numericStorage = normalizeNumericStorage(dbStore.numericStorage);
-    if (!encryption && numericStorage) return createNumericDatabase(dbStore, numericStorage);
-    if (!encryption && dbName.startsWith(numericDatabasePrefix)) {
-        throw new Error("MAGIC_NUMERIC_POLICY_REQUIRED: The lossless namespace requires its numeric storage policy.");
+    if (!encryption) {
+        if (numericStorage && !dbName.startsWith(numericDatabasePrefix)) throw new Error("MAGIC_NUMERIC_POLICY_INVALID: Lossless databases require their reserved physical namespace.");
+        if (!numericStorage && dbName.startsWith(numericDatabasePrefix)) throw new Error("MAGIC_NUMERIC_POLICY_REQUIRED: Lossless namespace requires its policy.");
+        if (dbName.startsWith(protectedDatabasePrefix)) throw new Error("Protected database names require their storage policy.");
+        return createManagedDatabase(dbStore, numericStorage);
     }
-    const existingProtection = protectedDatabases.get(dbName);
-    if (encryption) {
-        if (!dbName.startsWith(protectedDatabasePrefix) ||
-            typeof encryption.account !== "string" || !encryption.account ||
-            (encryption.physicalName != null &&
-                (!encryption.physicalName.startsWith(protectedDatabasePrefix) ||
-                    !dbName.startsWith(encryption.physicalName + ":")))) {
-            throw new Error("Magic encrypted databases require a reserved name and account.");
-        }
-        if (existingProtection) throw new Error("This protected database is already configured.");
-    } else if (dbName.startsWith(protectedDatabasePrefix)) {
-        throw new Error("Protected Magic database names require a storage policy.");
-    } else if (isDbOpen(dbName)) {
-        return;
+    if (!dbName.startsWith(protectedDatabasePrefix) ||
+        typeof encryption.account !== "string" || !encryption.account ||
+        (encryption.physicalName != null &&
+            (typeof encryption.physicalName !== "string" || !encryption.physicalName ||
+                /[\u0000-\u001f\u007f]/.test(encryption.physicalName) ||
+                (encryption.explicitPhysicalBinding !== true &&
+                    (!encryption.physicalName.startsWith(protectedDatabasePrefix) ||
+                        !dbName.startsWith(encryption.physicalName + ":")))))) {
+        throw new Error("Magic encrypted databases require a reserved name and account.");
     }
+    if (encryption.explicitPhysicalBinding === true && dbStore.migrationManifestUrl == null)
+        throw new MigrationError("MAGDB_CONFIGURATION_INVALID", "An explicit physical binding requires a managed migration manifest.");
+    if (dbStore.migrationManifest != null)
+        throw new MigrationError("MAGDB_CONFIGURATION_INVALID", "Managed protected registration requires an application-pinned manifest URL.");
+    if (dbStore.migrationManifestUrl != null) return registerProtectedMigration(dbStore, numericStorage);
+    if (protectedDatabases.has(dbName)) throw new Error("This protected database is already configured.");
 
-
-    const db = new Dexie(encryption?.physicalName ?? dbName);
-    const stores = Object.create(null);
-
-    for (let i = 0; i < dbStore.storeSchemas.length; i++) {
-        const schema = dbStore.storeSchemas[i];
-
-        if (!schema || !schema.tableName) {
-            console.error(`Invalid schema at index ${i}:`, schema);
-            continue;
-        }
-
-        let def = "";
-
-        // **Handle Primary Key (Single or Compound)**
-        if (Array.isArray(schema.columnNamesInCompoundKey) && schema.columnNamesInCompoundKey.length > 0) {
-            if (schema.columnNamesInCompoundKey.length === 1) {
-                // Single primary key
-                if (schema.primaryKeyAuto) def += "++"; // Auto increment
-                def += schema.columnNamesInCompoundKey[0]; // Primary key column
-            } else {
-                // Compound primary key
-                def += `[${schema.columnNamesInCompoundKey.join('+')}]`;
-            }
-        }
-
-        // **Handle Unique Indexes**
-        const uniqueIndexes = new Set(Array.isArray(schema.uniqueIndexes) ? schema.uniqueIndexes : []);
-        for (const member of uniqueIndexes) {
-            def += `,&${member}`;
-        }
-
-        // **Handle Standard Indexes**
-        if (Array.isArray(schema.indexes)) {
-            for (const member of new Set(schema.indexes)) {
-                // Compound members and explicit annotations can also be unique.
-                // Emit one native index without changing the original schema
-                // payload used by authenticated Legacy vault fingerprints.
-                if (!uniqueIndexes.has(member)) def += `,${member}`;
-            }
-        }
-
-        // **Handle Compound Indexes**
-        if (Array.isArray(schema.columnNamesInCompoundIndex)) {
-            for (let j = 0; j < schema.columnNamesInCompoundIndex.length; j++) {
-                let compoundIndex = schema.columnNamesInCompoundIndex[j];
-                if (compoundIndex.length > 0) {
-                    def += `,[${compoundIndex.join('+')}]`; // Correct format for compound indexes
-                }
-            }
-        }
-
-        stores[schema.tableName] = def;
-    }
-
-    debugLog("Dexie Store Definition:", stores);
-
-    const protection = encryption
-        ? createProtectedStorage(db, encryption.account, dbStore.storeSchemas, numericStorage)
-        : null;
-    if (protection) {
-        protectedDatabases.set(dbName, protection);
-        db.on("versionchange", () => releaseProtectedDatabase(dbName));
-    } else {
-        db.version(dbStore.version).stores(stores);
-    }
-
-    // Store the database in the Map (overwriting if it already exists)
+    // The legacy no-manifest path only creates genuinely new native storage.
+    // Existing protection changes require the authenticated managed path above.
+    const db = new Dexie(encryption.physicalName ?? dbName);
+    const protection = createProtectedStorage(db, encryption.account, dbStore.storeSchemas, numericStorage);
+    protectedDatabases.set(dbName, protection);
+    db.on("versionchange", () => releaseProtectedDatabase(dbName));
     databases.set(dbName, db);
-
-    if (protection) {
-        return (async () => {
-            if (numericStorage) await requireFreshNumericTarget(db.name, dbStore.numericLegacyName);
-            await ensureProtectedSchema(db.name, dbStore.storeSchemas);
-            await db.open();
-        })().then(() => undefined, error => {
-            protectedDatabases.delete(dbName);
-            databases.delete(dbName);
-            protection.dispose();
-            db.close();
-            throw error;
-        });
-    }
-
-    db.open().catch(error => {
-        console.error(`Failed to open IndexedDB for "${dbName}":`, error);
+    return (async () => {
+        if (numericStorage) await requireFreshNumericTarget(db.name, dbStore.numericLegacyName);
+        await ensureProtectedSchema(db.name, dbStore.storeSchemas);
+        await db.open();
+    })().then(() => undefined, error => {
+        protectedDatabases.delete(dbName);
+        databases.delete(dbName);
+        protection.dispose();
+        db.close();
+        throw error;
     });
 }
 
@@ -373,6 +490,7 @@ export async function countTable(dbName, storeName) {
  * Closes all open databases.
  */
 export function closeAll() {
+    for (const controller of recoveryAttempts.values()) controller.abort();
     databases.forEach((db, dbName) => {
         if (protectedDatabases.has(dbName)) return;
         if (db.isOpen?.()) db.close();
@@ -391,12 +509,19 @@ export async function deleteDb(dbName) {
 
     rejectUnconfiguredProtectedDatabase(dbName);
     rejectUnconfiguredNumericDatabase(dbName);
-    if (numericDatabases.has(dbName)) {
-        const registration = numericDatabases.get(dbName);
-        try { await registration.ready; }
-        catch { /* Explicit deletion may discard an invalid numeric target. */ }
-        releaseNumericDatabase(dbName);
-        await registration.db.delete();
+    const managed = managedDatabases.get(dbName);
+    if (managed) {
+        if (managed.protected) {
+            const physical = managed.db.name;
+            releaseProtectedDatabase(dbName);
+            await Dexie.delete(physical);
+            return;
+        }
+        try { await managed.ready; } catch { /* This is an explicit caller-requested delete. */ }
+        managed.stale = true;
+        managed.db.close();
+        await Dexie.delete(dbName);
+        managedDatabases.delete(dbName); databases.delete(dbName); numericDatabases.delete(dbName);
         return;
     }
     if (protectedDatabases.has(dbName)) {
@@ -422,7 +547,7 @@ export async function deleteDb(dbName) {
         await Dexie.delete(dbName);
         debugLog(`Database '${dbName}' deleted.`);
     } catch (deleteErr) {
-        console.error(`deleteDb: Failed to delete DB '${dbName}'`, deleteErr);
+        throw deleteErr;
     }
 }
 

@@ -25,7 +25,12 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Streaming results](guides/streaming.md) — choosing between `ToListAsync()` and `AsAsyncEnumerable()`
 - [Lossless numbers](guides/lossless-numbers.md) — exact `long`, `ulong`, and `decimal` storage with native indexes and explicit compatibility policy
 - [Database management](guides/database-management.md) — open, close, delete, existence, and quota operations
-- [Schema evolution](guides/schema-evolution.md) — the current migration status and how to change persisted models safely
+- [Schema evolution](guides/schema-evolution.md) — model and persisted-data change planning
+- [Managed migrations](guides/migrations.md) — static assets, readiness, events, and recovery
+- [Encrypted migrations](guides/encrypted-migrations.md) — authorization, protection changes, and in-place enrollment
+- [Legacy writer cutover](guides/legacy-writer-cutover.md)
+- [Migration CLI](guides/migration-cli.md) — tool installation, project export, validation, and publication
+- [Migration schema declarations](guides/migration-schema.md) — default/explicit membership and shared C# model export
 
 ## Reference
 
@@ -42,21 +47,35 @@ Start with the four pages below. The guides and reference pages are there when y
 - [How the query engine works](architecture/query-engine.md)
 - [Universal predicate language](architecture/universal-predicate-language.md)
 - [Encryption at rest design](architecture/encryption-at-rest.md)
+- [Migration protocol and capabilities](architecture/migration-protocol.md)
+- [Partial migration recovery](architecture/adr-partial-migration-recovery.md)
+- [Authenticated migration contract](architecture/adr-authenticated-migrations.md)
+- [Version 3 implementation contract](architecture/v3-implementation-contract.md)
 
 ## Contributing
 
+- [Contribution and licensing terms](../CONTRIBUTING.md)
 - [Testing Magic IndexedDB](contributing/testing.md)
 - [Query planner diagnostics](contributing/query-planner-diagnostics.md)
+- [Migration testing and release acceptance](contributing/migration-testing.md)
+- [Version 3 implementation handoff](engineering/v3-handoff.md)
+- [Authenticated migration acceptance handoff](engineering/protected-migrations-handoff.md)
 
 ## Upgrading and legacy versions
 
+- [Version 3 upgrade and adoption](upgrading/v3.md)
+- [Version 3 licensing and historical rights](licensing/README.md)
+- [Licensing philosophy](licensing/philosophy.md)
+- [Licensing frequently asked questions](licensing/faq.md)
+- [Competitive scope and release records](licensing/competitive-scope.md)
+- [Request written authorization](licensing/request-authorization.md)
 - [.NET 10 upgrade notes](upgrading/dotnet-10.md)
 - [Version 1 documentation](../MagicIndexDbWiki/Version-1.0-Legacy.md)
 
 ## A few things to know
 
-- Magic does not currently migrate existing data when a schema changes. Plan schema changes with the [schema evolution guide](guides/schema-evolution.md).
+- Version 3 uses explicit reviewed migration history. Existing databases need adoption; model drift never triggers automatic deletion. Read the [migration guide](guides/migrations.md).
 - You cannot call `OrderBy` after `Where`. Use `Cursor(predicate).OrderBy(...)`, or load the filtered records and sort them in .NET.
 - `ToListAsync()` returns a materialized result with the requested query ordering applied.
 - `AsAsyncEnumerable()` delivers records progressively, so records from different query branches may arrive out of order. Buffer and sort them if order matters.
-- Application code should use the C# API. The JavaScript query modules are implementation details.
+- Blazor applications use the C# API. The migration protocol is language-independent; direct JavaScript callers can use the documented migration engine boundary.

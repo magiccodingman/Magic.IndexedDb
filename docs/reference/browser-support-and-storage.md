@@ -48,6 +48,19 @@ An older tab can also block a schema change or database deletion. Test schema up
 
 ## Which tables are created
 
-Magic discovers all `IMagicRepository` and `IMagicTable<TDbSets>` types loaded by the application. Right now, it gives every discovered Magic database the full set of discovered table schemas.
+Magic discovers registered `IMagicRepository` and `IMagicTable<TDbSets>` types, then resolves membership through each table's `GetDefaultDatabase()` plus repository includes/excludes. Prefer explicit type registration for predictable app/project boundaries. An explicit-only declaration uses just its included types.
 
-The `Databases` property gives you strongly typed choices when querying a table, but it does not limit which object stores Magic creates. It is also not a security boundary.
+The `Databases` property gives strongly typed query choices; the chosen database must actually include that table. Membership is a schema contract, not a security boundary. See [v3 schema declarations](../guides/migration-schema.md).
+
+## Managed migration requirements
+
+Version 3 requires IndexedDB, Web Crypto, ES modules, and Web Locks in a secure
+context. Unknown capabilities fail before writes. The engine coordinates migration
+ownership with a Web Lock and uses native upgrade transactions to invalidate older
+connections. A `blocked` event lets the application ask users to close/reload old
+tabs. A stale managed handle fails rather than continuing with a mismatched model.
+
+Static manifest and asset URLs are pinned per app release. Offline upgrades require
+all needed assets to be cached; Magic does not install or manage a service worker.
+Custom transform modules execute verified bytes as Blob modules and need CSP `blob:`
+permission. Read [migration deployment and recovery](../guides/migrations.md).

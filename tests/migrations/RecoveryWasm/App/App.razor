@@ -1,0 +1,71 @@
+@namespace RecoveryFixture
+@using Magic.IndexedDb
+@using Microsoft.JSInterop
+@inject IMagicIndexedDb Magic
+@inject IJSRuntime Js
+<output id="fixture-result" data-state="@state">@message</output>
+
+@code {
+    private string state = "running";
+    private string message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await using var fixture = await Js.InvokeAsync<IJSObjectReference>("import", "./recovery-fixture.mjs");
+            var digest = await fixture.InvokeAsync<string>("seed");
+            var database = await Magic.Database(RecoveryRepository.Records);
+            var original = (await database.InspectMigrationAsync())!.Value.GetProperty("state");
+            Require(original.GetProperty("active").GetProperty("processedRecords").GetInt32() == 1, "Original batch was not committed.");
+            var notifications = 0;
+            await using (await Magic.ObserveMigrationsAsync(notification =>
+            {
+                if (notification.RecoveryId == "fixture-repair") notifications++;
+                return ValueTask.CompletedTask;
+            }))
+            {
+                var pending = database.RecoverMigrationAsync("fixture-repair", digest);
+                await fixture.InvokeVoidAsync("waitForVerifier");
+                await database.CancelMigrationAsync();
+                try
+                {
+                    await pending;
+                    throw new InvalidOperationException("Recovery ignored cancellation.");
+                }
+                catch (JSException error) when (error.Message.Contains("MAGDB_CANCELLED", StringComparison.Ordinal)) { }
+                var checkpoint = (await database.InspectMigrationAsync())!.Value.GetProperty("state").GetProperty("recovery");
+                Require(checkpoint.GetProperty("repaired").GetInt32() == 3 && checkpoint.GetProperty("verified").GetInt32() == 0 &&
+                    !checkpoint.TryGetProperty("lastKey", out _), "Unexpected recovery checkpoint.");
+                Require(notifications > 0, "Recovery observation did not run.");
+            }
+            var disposedCount = notifications;
+            await fixture.InvokeVoidAsync("releaseVerifier");
+            var result = await database.RecoverMigrationAsync("fixture-repair", digest);
+            Require(result.GetProperty("outcome").GetString() == "recovered" &&
+                result.GetProperty("revision").GetInt32() == 2 &&
+                result.GetProperty("applicationTargetRevision").GetInt32() == 3, "Unexpected explicit recovery result.");
+            await database.OpenAsync();
+            var query = await database.Query<RecoveryRow>();
+            var rows = await query.ToListAsync();
+            Require(rows.Count == 3 && rows.All(row => row.Value == 10 && row.Repairs == 1 && row.Normalized),
+                "Expected repaired data and the ordinary later migration.");
+            var final = (await database.InspectMigrationAsync())!.Value.GetProperty("state");
+            Require(final.GetProperty("protocolVersion").GetInt32() == 2 && final.GetProperty("revision").GetInt32() == 3 &&
+                final.GetProperty("history")[0].GetProperty("outcome").GetString() == "recovered", "Missing recovery lineage.");
+            Require(notifications == disposedCount, "Disposed recovery observer still received events.");
+            state = "passed";
+            message = "Recovered, cancelled/resumed, and migrated to the application's target.";
+        }
+        catch (Exception error)
+        {
+            state = "failed";
+            message = error.ToString();
+        }
+    }
+
+    private static void Require(bool condition, string message)
+    {
+        if (!condition) throw new InvalidOperationException(message);
+    }
+}

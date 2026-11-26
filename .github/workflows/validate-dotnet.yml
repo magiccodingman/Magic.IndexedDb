@@ -45,15 +45,31 @@ jobs:
       - name: Pack the NuGet artifact from a clean build state
         run: bash .github/scripts/pack-nuget.sh artifacts/package
 
+      - name: Pack the CLI and validate licenses in both NuGet archives
+        shell: bash
+        run: |
+          version="$(dotnet msbuild Magic.IndexedDb/Magic.IndexedDb.csproj -nologo -getProperty:Version)"
+          dotnet pack Magic.IndexedDb.Cli/Magic.IndexedDb.Cli.csproj --configuration Release --output artifacts/package
+          runtime="artifacts/package/Magic.IndexedDb.$version.nupkg"
+          cli="artifacts/package/Magic.IndexedDb.Cli.$version.nupkg"
+          python3 .github/scripts/validate_package_licenses.py --version "$version" --report artifacts/package/licensing.json "$runtime" "$cli"
+          python3 .github/scripts/test-package-licenses.py "$version" "$runtime" "$cli"
+
       - name: Verify package contents
         shell: bash
         run: |
-          package="$(find artifacts/package -maxdepth 1 -name '*.nupkg' -print -quit)"
+          package="$(find artifacts/package -maxdepth 1 -name 'Magic.IndexedDb.[0-9]*.nupkg' -print -quit)"
           test -n "${package}"
           unzip -Z1 "${package}" | grep -Fx README.md
           unzip -Z1 "${package}" | grep -Fx LICENSE.txt
           unzip -Z1 "${package}" | grep -Fx wizardHatIcon.png
           unzip -Z1 "${package}" | grep -F 'staticwebassets/'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/migrations/migrationEngine.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/migrations/protocol.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/migrations/protectedMigrationAdapter.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/utilities/protectionPolicy.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/utilities/protectedStorage.js'
+          unzip -Z1 "${package}" | grep -Fx 'staticwebassets/magicDbMethods.js'
 
       - name: Run unit and contract tests
         run: >-
@@ -75,5 +91,6 @@ jobs:
           path: |
             artifacts/test-results/*.trx
             artifacts/package/*.nupkg
+            artifacts/package/licensing.json
           if-no-files-found: warn
           overwrite: true

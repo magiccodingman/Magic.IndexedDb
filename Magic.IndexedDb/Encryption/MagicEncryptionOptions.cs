@@ -2,12 +2,20 @@ using Microsoft.JSInterop;
 
 namespace Magic.IndexedDb;
 
-/// <summary>Associates a logical Magic database with an account-specific protected browser database.</summary>
+/// <summary>Associates a logical Magic database with an account-specific authenticated browser database.</summary>
+/// <remarks>Keep this configuration when a managed migration removes the last protected field.
+/// The authenticated account/database identity remains stable while record protection changes.</remarks>
 public sealed record MagicEncryptionOptions(
     string DatabaseName,
     string AccountScope,
     string KeyId,
-    IReadOnlyDictionary<string, IReadOnlyCollection<string>>? RecordPolicies = null);
+    IReadOnlyDictionary<string, IReadOnlyCollection<string>>? RecordPolicies = null)
+{
+    /// <summary>Explicitly binds a managed account context to an existing physical database without moving its records.</summary>
+    /// <remarks>Use a reviewed migration history/baseline and retire older writers before enrollment.
+    /// Retain this binding after enrollment, including when every record field becomes public again.</remarks>
+    public string? PhysicalDatabaseName { get; init; }
+}
 
 public sealed record MagicEncryptionKeyRequest(string DatabaseName, string AccountScope, string KeyId);
 
@@ -43,10 +51,10 @@ public sealed class MagicEncryptionKey
 
 public interface IMagicIndexedDbEncryption
 {
-    /// <summary>Explicitly provisions an empty protected database and unlocks it.</summary>
+    /// <summary>Explicitly provisions a protected database or enrolls an approved unprotected baseline, then applies its managed target.</summary>
     Task<bool> InitializeAsync(IndexedDbSet database, CancellationToken cancellationToken = default);
 
-    /// <summary>Unlocks an existing database. False means the provider supplied no key.</summary>
+    /// <summary>Unlocks an existing database and applies its configured authenticated migrations. False means the provider supplied no key.</summary>
     /// <remarks>Cancelling the caller's token cancels its wait only. Call <see cref="LockAsync"/> to invalidate the pending attempt.</remarks>
     Task<bool> EnsureUnlockedAsync(IndexedDbSet database, CancellationToken cancellationToken = default);
 

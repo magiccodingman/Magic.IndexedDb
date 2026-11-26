@@ -69,6 +69,20 @@ public sealed class EncryptionUnlockTests
     }
 
     [TestMethod]
+    public void ExplicitPhysicalBindingPreservesTheAccountIdentityAndReservedSessionRoute()
+    {
+        var options = new MagicEncryptionOptions("logical-records", "account", "test-key")
+            { PhysicalDatabaseName = "existing-browser-records" };
+        var configuration = new EncryptionConfiguration(options);
+        Assert.AreEqual("existing-browser-records", configuration.PhysicalName);
+        Assert.IsTrue(configuration.Route.StartsWith("__magic_protected__:", StringComparison.Ordinal));
+        Assert.AreEqual("logical-records", configuration.Request.DatabaseName);
+        Assert.AreEqual("account", configuration.Request.AccountScope);
+        Assert.IsTrue(configuration.HasExplicitPhysicalBinding);
+        Assert.ThrowsExactly<ArgumentException>(() => new EncryptionConfiguration(options with { PhysicalDatabaseName = " " }));
+    }
+
+    [TestMethod]
     public async Task InitializationDoesNotShareOrdinaryUnlockResult()
     {
         var config = new EncryptionConfiguration(new("records", "account", "test-key"));

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "ordinal property order and preserved arrays",
+    "json": "{\"z\":[3,1],\"a\":{\"z\":false,\"a\":null}}",
+    "canonical": "{\"a\":{\"a\":null,\"z\":false},\"z\":[3,1]}"
+  },
+  {
+    "name": "Unicode and HTML characters remain UTF8",
+    "json": "{\"text\":\"café <>& ' 😀\",\"line\":\"\u2028\u2029\"}",
+    "canonical": "{\"line\":\"\u2028\u2029\",\"text\":\"café <>& ' 😀\"}"
+  },
+  {
+    "name": "short control escapes and lone surrogates",
+    "json": "{\"z\":\"\\uD800\",\"controls\":\"\\b\\f\\n\\r\\t\\u0001\"}",
+    "canonical": "{\"controls\":\"\\b\\f\\n\\r\\t\\u0001\",\"z\":\"\\ud800\"}"
+  },
+  {
+    "name": "numeric object keys use ordinal not numeric sorting",
+    "json": "{\"2\":2,\"10\":10,\"1\":1}",
+    "canonical": "{\"1\":1,\"10\":10,\"2\":2}"
+  },
+  {
+    "name": "negative zero and JS exponent boundaries",
+    "json": "[-0,1e-7,1e-6,1e20,1e21,333333333.33333329]",
+    "canonical": "[0,1e-7,0.000001,100000000000000000000,1e+21,333333333.3333333]"
+  },
+  {
+    "name": "UTF16 ordinal sorting including astral keys",
+    "json": "{\"\uE000\":1,\"😀\":2,\"z\":3,\"é\":4}",
+    "canonical": "{\"z\":3,\"é\":4,\"😀\":2,\"\uE000\":1}"
+  }
+]

@@ -15,8 +15,8 @@ if [[ -z "${package_version}" ]]; then
   package_version="$(sed -nE 's:.*<Version>([^<]+)</Version>.*:\1:p' "${project}")"
 fi
 
-if [[ ! "${package_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-  echo "Expected a stable major.minor.patch package version, found '${package_version}'." >&2
+if [[ ! "${package_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+  echo "Expected a major.minor.patch package version with an optional prerelease suffix, found '${package_version}'." >&2
   exit 1
 fi
 

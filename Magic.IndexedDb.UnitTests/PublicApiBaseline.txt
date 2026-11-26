@@ -126,9 +126,11 @@ interface Magic.IndexedDb.IMagicExecute<T>
   method System.Threading.Tasks.Task<System.Collections.Generic.List<T>> ToListAsync()
 interface Magic.IndexedDb.IMagicIndexedDb
   method System.Threading.Tasks.Task<Magic.IndexedDb.Models.QuotaUsage> GetStorageEstimateAsync(System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<System.IAsyncDisposable> ObserveMigrationsAsync(System.Func<Magic.IndexedDb.Migrations.MagicMigrationEvent, System.Threading.Tasks.ValueTask> observer, System.Threading.CancellationToken cancellationToken = null)
   method System.Threading.Tasks.ValueTask<Magic.IndexedDb.IMagicQuery<T>> Query<T>()
   method System.Threading.Tasks.ValueTask<Magic.IndexedDb.IMagicQuery<T>> Query<T>(System.Func<T, Magic.IndexedDb.IndexedDbSet> dbSetSelector)
   method System.Threading.Tasks.ValueTask<Magic.IndexedDb.LinqTranslation.Interfaces.IMagicDatabaseScoped> Database(Magic.IndexedDb.IndexedDbSet indexedDbSet)
+  method System.Threading.Tasks.ValueTask<Magic.IndexedDb.LinqTranslation.Interfaces.IMagicDatabaseScoped> Database(Magic.IndexedDb.IndexedDbSet indexedDbSet, System.String instanceName)
 interface Magic.IndexedDb.IMagicIndexedDbEncryption
   method System.Threading.Tasks.Task LockAsync(Magic.IndexedDb.IndexedDbSet database)
   method System.Threading.Tasks.Task<System.Boolean> EnsureUnlockedAsync(Magic.IndexedDb.IndexedDbSet database, System.Threading.CancellationToken cancellationToken = null)
@@ -185,7 +187,18 @@ interface Magic.IndexedDb.IMagicTable<TDbSets> : Magic.IndexedDb.Interfaces.IMag
 interface Magic.IndexedDb.IMagicUtilities
 class Magic.IndexedDb.IndexedDbSet
   ctor Magic.IndexedDb.IndexedDbSet(System.String databaseName)
+  method Magic.IndexedDb.IndexedDbSet Exclude<T>()
+  method Magic.IndexedDb.IndexedDbSet ExplicitTablesOnly()
+  method Magic.IndexedDb.IndexedDbSet Include<T>()
+  method Magic.IndexedDb.IndexedDbSet IncludeDefaultTables()
+  method Magic.IndexedDb.IndexedDbSet WithMigrations(System.String manifestUrl)
+  method Magic.IndexedDb.IndexedDbSet WithSchemaId(System.String schemaId)
+  property System.Boolean DiscoverDefaultTables { get; }
+  property System.Collections.Generic.IReadOnlyList<System.Type> ExcludedTypes { get; }
+  property System.Collections.Generic.IReadOnlyList<System.Type> IncludedTypes { get; }
   property System.String DatabaseName { get; }
+  property System.String ManifestUrl { get; }
+  property System.String SchemaId { get; }
 interface Magic.IndexedDb.Interfaces.IColumnNamed
   property System.String ColumnName { get; }
 interface Magic.IndexedDb.Interfaces.IMagicRepository
@@ -202,11 +215,16 @@ class Magic.IndexedDb.LinqTranslation.Extensions.UniversalExpressionBuilder<T>
   ctor Magic.IndexedDb.LinqTranslation.Extensions.UniversalExpressionBuilder<T>(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
   method Magic.IndexedDb.LinqTranslation.Models.FilterNode Build()
 interface Magic.IndexedDb.LinqTranslation.Interfaces.IMagicDatabaseScoped
+  method System.Threading.Tasks.Task CancelMigrationAsync()
   method System.Threading.Tasks.Task CloseAsync()
   method System.Threading.Tasks.Task DeleteAsync()
   method System.Threading.Tasks.Task OpenAsync()
+  method System.Threading.Tasks.Task RetryMigrationAsync(System.Threading.CancellationToken cancellationToken = null)
   method System.Threading.Tasks.Task<System.Boolean> DoesExistAsync()
   method System.Threading.Tasks.Task<System.Boolean> IsOpenAsync()
+  method System.Threading.Tasks.Task<System.Nullable<System.Text.Json.JsonElement>> InspectMigrationAsync(System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<System.Text.Json.JsonElement> RecoverMigrationAsync(System.String recoveryId, System.String sha256, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.ValueTask<Magic.IndexedDb.IMagicQuery<T>> Query<T>()
 enum Magic.IndexedDb.LinqTranslation.Models.FilterLogicalOperator : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
   field System.Int32 value__
   field static Magic.IndexedDb.LinqTranslation.Models.FilterLogicalOperator And = 0
@@ -263,6 +281,7 @@ class Magic.IndexedDb.MagicEncryptionOptions : System.IEquatable<Magic.IndexedDb
   property System.String AccountScope { get; set; }
   property System.String DatabaseName { get; set; }
   property System.String KeyId { get; set; }
+  property System.String PhysicalDatabaseName { get; set; }
 enum Magic.IndexedDb.MagicEncryptionState : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
   field System.Int32 value__
   field static Magic.IndexedDb.MagicEncryptionState Inactive = 4
@@ -304,6 +323,118 @@ enum Magic.IndexedDb.MagicUnlockResult : System.IComparable, System.IConvertible
   field static Magic.IndexedDb.MagicUnlockResult PolicyMismatch = 7
   field static Magic.IndexedDb.MagicUnlockResult Uninitialized = 6
   field static Magic.IndexedDb.MagicUnlockResult Unlocked = 0
+class Magic.IndexedDb.Migrations.MagicFieldDefinition : System.IEquatable<Magic.IndexedDb.Migrations.MagicFieldDefinition>
+  ctor Magic.IndexedDb.Migrations.MagicFieldDefinition()
+  method Magic.IndexedDb.Migrations.MagicFieldDefinition <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.Migrations.MagicFieldDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  property Magic.IndexedDb.Migrations.MagicFieldDefinition DictionaryKeys { get; set; }
+  property Magic.IndexedDb.Migrations.MagicFieldDefinition Items { get; set; }
+  property System.Boolean Nullable { get; set; }
+  property System.Collections.Generic.IReadOnlyDictionary<System.String, System.String> EnumNames { get; set; }
+  property System.Collections.Generic.IReadOnlyDictionary<System.String, System.String> EnumValues { get; set; }
+  property System.Collections.Generic.IReadOnlyList<Magic.IndexedDb.Migrations.MagicFieldDefinition> Properties { get; set; }
+  property System.Nullable<System.Boolean> EnumFlags { get; set; }
+  property System.String Codec { get; set; }
+  property System.String EnumUnderlyingType { get; set; }
+  property System.String Name { get; set; }
+  property System.String Reference { get; set; }
+  property System.String Type { get; set; }
+  property System.String WriteCondition { get; set; }
+class Magic.IndexedDb.Migrations.MagicIndexDefinition : System.IEquatable<Magic.IndexedDb.Migrations.MagicIndexDefinition>
+  ctor Magic.IndexedDb.Migrations.MagicIndexDefinition()
+  method Magic.IndexedDb.Migrations.MagicIndexDefinition <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.Migrations.MagicIndexDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  property System.Boolean MultiEntry { get; set; }
+  property System.Boolean Unique { get; set; }
+  property System.Object KeyPath { get; set; }
+  property System.String Name { get; set; }
+class Magic.IndexedDb.Migrations.MagicMigrationEvent : System.IEquatable<Magic.IndexedDb.Migrations.MagicMigrationEvent>
+  ctor Magic.IndexedDb.Migrations.MagicMigrationEvent()
+  method Magic.IndexedDb.Migrations.MagicMigrationEvent <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.Migrations.MagicMigrationEvent other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  property System.Boolean Retryable { get; set; }
+  property System.Collections.Generic.IDictionary<System.String, System.Text.Json.JsonElement> Details { get; set; }
+  property System.Int32 ProtocolVersion { get; set; }
+  property System.Nullable<System.Int32> Revision { get; set; }
+  property System.Nullable<System.Int32> TargetRevision { get; set; }
+  property System.Nullable<System.Int64> ProcessedRecords { get; set; }
+  property System.Nullable<System.Int64> VerifiedRecords { get; set; }
+  property System.String Code { get; set; }
+  property System.String DocumentationUrl { get; set; }
+  property System.String MigrationId { get; set; }
+  property System.String Name { get; set; }
+  property System.String Phase { get; set; }
+  property System.String RecoveryId { get; set; }
+  property System.String RecoveryPhase { get; set; }
+  property System.String SchemaId { get; set; }
+class Magic.IndexedDb.Migrations.MagicSchemaDocument : System.IEquatable<Magic.IndexedDb.Migrations.MagicSchemaDocument>
+  ctor Magic.IndexedDb.Migrations.MagicSchemaDocument()
+  method Magic.IndexedDb.Migrations.MagicSchemaDocument <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.Migrations.MagicSchemaDocument other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  property System.Collections.Generic.IReadOnlyList<Magic.IndexedDb.Migrations.MagicStoreDefinition> Stores { get; set; }
+  property System.Collections.Generic.IReadOnlyList<System.String> RequiredCapabilities { get; set; }
+  property System.Int32 ProtocolVersion { get; set; }
+  property System.String NumericFormat { get; set; }
+  property System.String SchemaId { get; set; }
+class Magic.IndexedDb.Migrations.MagicSchemaException : System.InvalidOperationException, System.Runtime.Serialization.ISerializable
+  ctor Magic.IndexedDb.Migrations.MagicSchemaException(System.String code, System.String message, System.Exception innerException = null)
+  property System.String Code { get; }
+  property System.String DocumentationUrl { get; }
+static class Magic.IndexedDb.Migrations.MagicSchemaExporter
+  method static System.Int32 Run(System.String[] args, System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<System.Type> repositoryTypes, Magic.IndexedDb.Migrations.MagicSchemaOptions options = null)
+  method static System.String Export(System.Collections.Generic.IEnumerable<Magic.IndexedDb.Migrations.ResolvedMagicDatabase> databases)
+  method static System.String Export(System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<System.Type> repositoryTypes, Magic.IndexedDb.Migrations.MagicSchemaOptions options = null)
+static class Magic.IndexedDb.Migrations.MagicSchemaJson
+  method static System.String Canonicalize(System.Text.Json.JsonElement element)
+  method static System.String Fingerprint(Magic.IndexedDb.Migrations.MagicSchemaDocument schema)
+  method static System.String Serialize<T>(T value)
+  method static System.Text.Json.JsonElement ToElement<T>(T value)
+  method static System.Text.Json.JsonSerializerOptions CreateSerializerOptions()
+class Magic.IndexedDb.Migrations.MagicSchemaOptions
+  ctor Magic.IndexedDb.Migrations.MagicSchemaOptions()
+  property System.Collections.Generic.IReadOnlyCollection<System.String> ProtectedDatabases { get; set; }
+  property System.Collections.Generic.IReadOnlyDictionary<System.String, Magic.IndexedDb.MagicNumericStorageMode> NumericModes { get; set; }
+  property System.Collections.Generic.IReadOnlyDictionary<System.String, System.Collections.Generic.IReadOnlyDictionary<System.String, System.Collections.Generic.IReadOnlyCollection<System.String>>> RecordPolicies { get; set; }
+static class Magic.IndexedDb.Migrations.MagicSchemaResolver
+  method static System.Collections.Generic.IReadOnlyList<Magic.IndexedDb.Migrations.ResolvedMagicDatabase> Resolve(System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<System.Type> repositoryTypes, Magic.IndexedDb.Migrations.MagicSchemaOptions options = null)
+  method static System.Collections.Generic.IReadOnlyList<Magic.IndexedDb.Migrations.ResolvedMagicDatabase> ResolveDefinitions(System.Collections.Generic.IEnumerable<System.Type> tableTypes, System.Collections.Generic.IEnumerable<Magic.IndexedDb.IndexedDbSet> databaseDefinitions, Magic.IndexedDb.Migrations.MagicSchemaOptions options = null)
+  method static System.Void ValidateSchemaId(System.String schemaId)
+class Magic.IndexedDb.Migrations.MagicStorageCodecAttribute : System.Attribute
+  ctor Magic.IndexedDb.Migrations.MagicStorageCodecAttribute(System.String id, System.Int32 version = 1)
+  property System.Int32 Version { get; }
+  property System.String Id { get; }
+class Magic.IndexedDb.Migrations.MagicStoreDefinition : System.IEquatable<Magic.IndexedDb.Migrations.MagicStoreDefinition>
+  ctor Magic.IndexedDb.Migrations.MagicStoreDefinition()
+  method Magic.IndexedDb.Migrations.MagicStoreDefinition <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.Migrations.MagicStoreDefinition other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  property System.Boolean AutoIncrement { get; set; }
+  property System.Collections.Generic.IReadOnlyList<Magic.IndexedDb.Migrations.MagicFieldDefinition> Fields { get; set; }
+  property System.Collections.Generic.IReadOnlyList<Magic.IndexedDb.Migrations.MagicIndexDefinition> Indexes { get; set; }
+  property System.Collections.Generic.IReadOnlyList<System.String> EncryptedFields { get; set; }
+  property System.Collections.Generic.IReadOnlyList<System.String> ExposedFields { get; set; }
+  property System.Object KeyPath { get; set; }
+  property System.String Name { get; set; }
+  property System.String RecordCodec { get; set; }
+class Magic.IndexedDb.Migrations.ResolvedMagicDatabase
+  property Magic.IndexedDb.IndexedDbSet Definition { get; }
+  property Magic.IndexedDb.Migrations.MagicSchemaDocument Schema { get; }
+  property System.Collections.Generic.IReadOnlyList<Magic.IndexedDb.StoreSchema> StoreSchemas { get; }
+  property System.Collections.Generic.IReadOnlyList<System.Type> TableTypes { get; }
 class Magic.IndexedDb.Models.IndexFilterValue
   ctor Magic.IndexedDb.Models.IndexFilterValue(System.String indexName, System.Object filterValue)
   property System.Object FilterValue { get; set; }

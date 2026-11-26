@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Interfaces;
+using Magic.IndexedDb.Migrations;
 using Magic.IndexedDb.SchemaAnnotations;
 using Microsoft.JSInterop;
 
@@ -129,6 +130,7 @@ public sealed class NumericFactoryCompatibilityTests
 
     [MagicEncryptRecord(nameof(Id))]
     [JsonConverter(typeof(VaultConverter))]
+    [MagicStorageCodec("test-vault", 1)]
     public sealed class ConvertedVaultRecord : MagicTableTool<ConvertedVaultRecord>, IMagicTable<VaultRepository>
     {
         [MagicName("id")]

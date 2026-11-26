@@ -9,6 +9,7 @@
  * https://dexie.org
  *
  * Apache License Version 2.0, January 2004, http://www.apache.org/licenses/
+ * Modified for Magic IndexedDB: reformatted and renamed from dexie.mjs.
  */
 
 /*! *****************************************************************************

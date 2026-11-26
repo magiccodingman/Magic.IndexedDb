@@ -1,21 +1,592 @@
-MIT License
+# Magic IndexedDB Community License
 
-Copyright (c) 2023 Magic Man
+**Version 1.0**
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+## Preamble
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Magic IndexedDB is developed and maintained with a commitment to technological transparency, community collaboration, accessibility, and sustainable software development.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This License is intended to provide broad freedoms to individuals, developers, businesses, and organizations while protecting the legitimate commercial interests of Sayou, which supports and invests in the continued development of the Software.
+
+Personal and commercial use is generally permitted without fees, royalties, or registration, except for the Reserved Fields of Use and Competitive Uses defined in this License.
+
+Individuals and organizations whose intended use falls within these restrictions are encouraged to contact Sayou. Separate authorization, including authorization without licensing fees, may be available.
+
+This preamble is provided to explain the purpose and philosophy of this License. The operative provisions below govern the legal rights, permissions, conditions, and restrictions applicable to the Software.
+
+---
+
+## 1. Definitions
+
+For the purposes of this License:
+
+**1.1. Software**
+
+“Software” means Magic IndexedDB and any associated source code, object code, compiled binaries, libraries, packages, command-line tools, documentation, examples, utilities, and other materials expressly made available under this License.
+
+The term includes copies, modifications, adaptations, and derivative works to the extent that they incorporate or are derived from materials governed by this License. It excludes independent applications, data, and generated output to the extent stated in Sections 8.3 and 8.6. Independently licensed materials retain their applicable rights under Section 15.
+
+**1.2. Licensor**
+
+“Licensor” means the copyright holder or other party lawfully authorized to grant licenses to the Software under these terms.
+
+**1.3. Sayou**
+
+“Sayou” means the business operating under the Sayou name and identified through https://sayou.io, together with its controlled affiliates and lawful successors to the applicable business or intellectual property interests.
+
+**1.4. Licensee**
+
+“Licensee” means any individual, business, organization, governmental entity, or other legal person exercising rights granted under this License.
+
+**1.5. Use**
+
+“Use” includes executing, installing, integrating, reproducing, modifying, adapting, distributing, deploying, hosting, providing, or otherwise utilizing the Software to the extent that such activities require permission from the applicable rights holder.
+
+**1.6. Product or Service**
+
+“Product or Service” includes any application, platform, system, hosted service, software-as-a-service offering, internal operational system, commercial solution, module, component, integration, or other software-enabled functionality.
+
+**1.7. Reserved Fields of Use**
+
+“Reserved Fields of Use” means the activities and functional applications identified in Section 4 of this License.
+
+**1.8. Competitive Use**
+
+“Competitive Use” means a use of the Software meeting the criteria established in Section 5 of this License.
+
+**1.9. Written Authorization**
+
+“Written Authorization” means express permission granted by the Licensor or its authorized representative through a written agreement, license, or other written communication identifying the permitted use.
+
+---
+
+## 2. Acceptance and applicability
+
+By exercising any rights granted under this License, the Licensee accepts the applicable terms and conditions.
+
+If the Licensee does not agree to these terms, the Licensee may not exercise rights granted exclusively under this License.
+
+This License applies only to versions and materials expressly distributed under it.
+
+Nothing in this License retroactively modifies, withdraws, or restricts permissions lawfully granted under previous licenses.
+
+---
+
+## 3. General grant of permissions
+
+Subject to compliance with this License, the Licensor grants the Licensee a worldwide, non-exclusive, royalty-free license, without a predetermined expiration date, to:
+
+a. Access, inspect, study, and use the Software;
+
+b. Copy, reproduce, and retain copies of the Software;
+
+c. Modify, adapt, extend, merge, and create derivative works of the Software;
+
+d. Publish, distribute, and redistribute the Software in source or compiled form;
+
+e. Incorporate the Software into personal, educational, academic, nonprofit, governmental, enterprise, proprietary, and commercial applications;
+
+f. Develop, operate, host, distribute, license, and sell products and services incorporating the Software;
+
+g. Distribute the Software as part of larger works, libraries, frameworks, platforms, and software products; and
+
+h. Sublicense and permit downstream recipients to exercise the rights granted by this License, subject to its applicable terms and conditions. No sublicensing authority under this License extends to restricted use without Written Authorization.
+
+These permissions do not require payment of licensing fees, royalties, registration charges, revenue-sharing payments, or other compensation to the Licensor for uses permitted under this License.
+
+There are no general restrictions based upon organizational size, revenue, number of employees, number of users, number of installations, or commercial success.
+
+Except where expressly stated otherwise, the Licensee is not required to publicly disclose independently developed source code or proprietary modifications solely because the Software is used within a product or service.
+
+The permissions granted under this Section are expressly subject to the restrictions established in Sections 4 and 5, unless separate Written Authorization has been obtained under Section 7.
+
+---
+
+## 4. Reserved Fields of Use
+
+### 4.1. General restriction
+
+Except as expressly permitted under Section 6 or through separate Written Authorization under Section 7, the Software may not be used in the development, deployment, operation, provision, distribution, or commercialization of a Product or Service whose relevant functionality falls within a Reserved Field of Use.
+
+The Reserved Fields of Use include the following categories.
+
+### 4.2. Healthcare and medical services
+
+Software functionality specifically intended to support the delivery, administration, documentation, management, coordination, funding, reimbursement, compliance, or oversight of healthcare and medical services.
+
+This includes, without limitation:
+
+- Electronic health records and electronic medical records;
+- Hospital and healthcare facility management;
+- Clinical documentation and assessments;
+- Patient management and care coordination;
+- Medical practice management;
+- Treatment planning and service delivery;
+- Healthcare-specific administrative and operational systems;
+- Healthcare billing, claims, reimbursement, and financial administration;
+- Pharmaceutical, pharmacy, and medication management;
+- Other substantially related healthcare information and management systems.
+
+### 4.3. Behavioral health and related services
+
+Software functionality specifically intended to support behavioral health, mental health, psychiatric services, counseling, therapy, addiction treatment, substance use services, and related programs.
+
+This includes associated clinical, administrative, financial, documentation, compliance, reporting, and operational functionality.
+
+### 4.4. Human, social, disability, and rehabilitation services
+
+Software functionality specifically intended to support human services, social services, community services, disability services, developmental disability services, rehabilitation, vocational rehabilitation, supported employment, workforce development services, and related assistance programs.
+
+This includes the administration, delivery, documentation, coordination, management, billing, funding, reporting, compliance, and oversight of such services.
+
+### 4.5. Elderly care and long-term services
+
+Software functionality specifically intended to support elderly services, long-term care, assisted living, skilled nursing, home healthcare, home and community-based services, hospice, residential care, and related care environments.
+
+This includes associated service delivery, documentation, coordination, administration, billing, compliance, and operational management.
+
+### 4.6. Case management and coordinated service management
+
+Software functionality specifically intended to manage individualized cases or coordinate the delivery of services to people or participants over the course of a case or service relationship. This restriction applies regardless of industry.
+
+Covered functionality includes case records, assessments, individualized plans, eligibility and service authorization, interventions, referrals, service documentation, participant progress, outcome monitoring, and related case or care coordination. A system need not implement every listed function to fall within this category.
+
+Ordinary contact management, sales CRM, general customer support or IT ticketing, project management, and membership administration do not fall within this category solely because they track customers, tickets, tasks, or members. Specialized case-management applications or modules remain restricted when their actual purpose meets the definition above or another provision of Section 4 or 5.
+
+### 4.7. Publicly funded, subsidized, and grant-funded programs
+
+Software functionality specifically intended to support the administration, management, delivery, documentation, coordination, funding, billing, reimbursement, compliance, reporting, or oversight of governmental, publicly funded, subsidized, grant-funded, or similarly financed service and assistance programs.
+
+This includes programs administered or delivered by federal, state, provincial, regional, municipal, or local governmental entities, nonprofit organizations, commercial service providers, contractors, and other participating organizations. The restriction concerns software specifically intended to administer or support such service or assistance programs; it does not apply solely because a product, organization, or research project receives public funding or a grant.
+
+Covered functionality includes:
+
+- Program and participant administration;
+- Funding allocation and utilization tracking;
+- Service authorization and eligibility management;
+- Grant-based service management;
+- Service documentation and verification;
+- Grant and program expenditure tracking;
+- Claims, billing, and reimbursement;
+- Contractual and regulatory compliance;
+- Outcome measurement and reporting;
+- Auditing and operational oversight.
+
+### 4.8. Associated financial, administrative, and operational functionality
+
+The Reserved Fields of Use also include software functionality specifically designed to support the financial, administrative, regulatory, workforce, documentation, analytical, or operational requirements of the fields identified in Sections 4.2 through 4.7.
+
+Such functionality may include billing, scheduling, payroll-related service administration, reimbursement, reporting, analytics, compliance, records management, staff oversight, artificial intelligence-assisted workflows, and other specialized functionality serving those fields.
+
+### 4.9. Applicability to integrated and ancillary functionality
+
+The restrictions established in this Section apply to the relevant functionality of a Product or Service regardless of whether that functionality constitutes:
+
+a. The primary business activity of the Licensee;
+
+b. The principal purpose of the Product or Service;
+
+c. A secondary, ancillary, optional, or integrated feature;
+
+d. An independently marketed module or component;
+
+e. An internal operational capability; or
+
+f. Functionality provided on behalf of another organization.
+
+An organization is not exempt from these restrictions merely because it operates predominantly outside a Reserved Field of Use.
+
+Subject to Section 6, the restriction applies to Use directly or indirectly in the development, deployment, operation, or provision of a restricted Product or Service or relevant integrated functionality, including through a dependency, wrapper, integration, hosted component, or intermediary. Use supporting the operation of a restricted application (including its ordinary application storage, preferences, synchronization, or infrastructure) is covered even if the particular records stored by the Software are not themselves clinical or case records. This does not prohibit general distribution of independent general-purpose tools or unrelated business applications under Sections 6.4 and 6.5, nor does it restrict an unrelated product merely because its owner also offers a restricted product.
+
+### 4.10. Organizational and funding neutrality
+
+The applicability of this Section is determined by the relevant use of the Software, rather than solely by the identity, organizational classification, ownership, profit status, or funding source of the Licensee.
+
+These restrictions may apply to commercial businesses, nonprofit organizations, governmental entities, contractors, independent developers, and other persons or organizations.
+
+The receipt of public funding, operation within a regulated industry, or provision of general-purpose products to customers within a Reserved Field of Use does not, by itself, constitute a restricted use.
+
+### 4.11. Related and substantially equivalent functionality
+
+The examples provided throughout this Section are illustrative and are not exhaustive.
+
+Functionality that is substantially equivalent to, or specifically supports the same operational purposes as, the activities expressly described in this Section may constitute a Reserved Field of Use regardless of differences in terminology, implementation, delivery method, or technical architecture.
+
+The restrictions established in this Section apply independently of whether Sayou currently offers a commercially available Product or Service within the relevant field.
+
+---
+
+## 5. Competitive Use
+
+### 5.1. General restriction
+
+In addition to the Reserved Fields of Use established in Section 4, the permissions granted under this License do not extend to Competitive Use of the Software without prior Written Authorization.
+
+### 5.2. Definition of Competitive Use
+
+Competitive Use occurs when the Software is utilized in connection with a Product or Service that materially competes with, serves as a practical commercial substitute for, or provides substantially equivalent market-specific functionality to a Product or Service commercially offered by Sayou.
+
+Competition may exist where a Product or Service competes with:
+
+a. An entire Sayou platform or offering;
+
+b. A material module, component, or specialized capability of a Sayou offering;
+
+c. A separately marketed Sayou Product or Service;
+
+d. A material specialized commercial or operational function provided by an applicable Sayou offering, including a vertical or horizontal extension only if it is commercially offered within the meaning of Section 5.5.
+
+A competing Product or Service need not duplicate the entirety of a Sayou offering.
+
+### 5.3. Form and method of competition
+
+Competitive Use may exist regardless of differences in:
+
+- Software architecture or implementation;
+- Programming language or technology;
+- Operating system or device;
+- Deployment or hosting model;
+- Commercial pricing;
+- Licensing arrangements;
+- Distribution method;
+- Organizational structure;
+- Branding or product classification.
+
+A Product or Service may compete with a Sayou offering even if it is provided without charge or operated as an internal substitute for that offering.
+
+### 5.4. Materiality and market context
+
+Competition shall be evaluated with consideration of the relevant functionality, intended users, target market, operational purpose, and reasonable substitutability of the Products or Services concerned.
+
+The mere presence of general-purpose functionality, such as authentication, data storage, scheduling, reporting, encryption, artificial intelligence, or offline access, does not independently establish Competitive Use.
+
+However, such functionality may constitute Competitive Use when specifically developed or applied to materially compete with a relevant Sayou offering.
+
+The absence of a particular industry or functionality from the Reserved Fields of Use does not exempt an otherwise Competitive Use. Subject to Section 6, indirect Use supporting a competing Product or Service, including through an intermediary or an ancillary integrated component, is covered on the same basis as direct Use. The mere fact that a Licensee operates a competing business does not restrict its independently unrelated products or activities.
+
+### 5.5. Future products and market expansion
+
+For purposes of this Section, competition shall be assessed against Sayou Products and Services actually commercially offered as of the first official public release of the applicable version of the Software under this License, including an officially released preview. Commercial availability includes offerings genuinely made available to customers on commercial terms, whether generally available or offered through direct agreements; it excludes merely contemplated products, internal prototypes, and unoffered roadmap items.
+
+The Licensor intends to maintain a release-dated record of applicable offerings for reference. Such records are evidentiary and explanatory, not an independent source of restrictions. A later edit, announcement, change in branding, or market expansion cannot retroactively broaden the competitive-use scope of an existing release. Corrections of factual errors do not create restrictions beyond those established by this Section at the applicable release date.
+
+If a previously permitted Product or Service subsequently becomes competitive solely because Sayou introduces a new offering or enters an additional market, the Licensee may continue using versions of the Software released before that expansion for the previously permitted Product or Service.
+
+This protection does not extend to subsequent versions released after the relevant Sayou offering becomes commercially available, nor does it authorize new uses that were otherwise restricted.
+
+The Reserved Fields of Use established in Section 4 remain applicable independently of this provision.
+
+---
+
+## 6. Permitted and exempt activities
+
+Notwithstanding Sections 4 and 5, the following activities are permitted, subject to the remaining terms of this License.
+
+### 6.1. Personal learning and experimentation
+
+Individuals may use the Software for personal learning, technical experimentation, education, and non-operational projects that are not intended for deployment as a restricted or competing Product or Service.
+
+### 6.2. Academic and non-operational research
+
+Academic institutions, researchers, students, and other persons may use the Software for genuine educational and non-operational research activities, including research relating to Reserved Fields of Use.
+
+This exemption does not authorize the deployment of the resulting Software as an operational restricted Product or Service.
+
+### 6.3. Technical evaluation
+
+Potential Licensees may inspect and evaluate the Software to determine its suitability for a proposed use, including a use that may require separate Written Authorization.
+
+Technical evaluation does not authorize operational deployment, production use, or the development of a restricted commercial offering beyond the reasonable scope of that evaluation.
+
+### 6.4. General-purpose products and infrastructure
+
+The development and distribution of general-purpose libraries, frameworks, developer tools, infrastructure, components, and applications is permitted when such activities do not independently constitute a Reserved Field of Use or Competitive Use.
+
+The possibility that a general-purpose product may subsequently be used by another party within a restricted field does not, by itself, render its development or general distribution prohibited.
+
+Downstream recipients remain responsible for compliance with the applicable terms of this License in their own use of the Software.
+
+This exemption does not authorize knowingly developing, supplying, or adapting the Software specifically for an unauthorized restricted deployment.
+
+### 6.5. Unrelated business operations
+
+An organization operating within a Reserved Field of Use may use the Software for unrelated purposes that do not themselves constitute a Reserved Field of Use or Competitive Use.
+
+The restrictions of this License concern the relevant application of the Software and do not establish a general prohibition against particular organizations or individuals.
+
+---
+
+## 7. Separate licensing and Written Authorization
+
+### 7.1. Availability of separate authorization
+
+The Licensor may grant separate Written Authorization for any use that would otherwise be restricted under this License.
+
+Such authorization may be provided through:
+
+- Individual written permissions;
+- Separate commercial licenses;
+- Project-specific agreements;
+- Partnership arrangements;
+- Enterprise agreements;
+- Other written licensing arrangements.
+
+### 7.2. Financial terms
+
+Separate authorization may be granted with or without licensing fees, royalties, or other financial consideration.
+
+Nothing in this License establishes a mandatory fee for obtaining authorization.
+
+### 7.3. Scope of authorization
+
+Separate Written Authorization shall apply to the persons, organizations, projects, activities, versions, and conditions identified in the applicable authorization.
+
+An authorization granted to one individual or organization does not automatically extend to another individual, organization, project, or use unless expressly stated.
+
+### 7.4. Licensing inquiries
+
+Individuals and organizations seeking authorization, or clarification concerning an intended use, are encouraged to contact Sayou using the contact information provided at:
+
+https://sayou.io
+
+### 7.5. Effect of separate agreements
+
+Where a separate written agreement expressly grants rights that differ from this License, that agreement shall govern the authorized use to the extent specified in the agreement.
+
+The submission of a licensing inquiry, absence of a response, or prior communication does not independently constitute Written Authorization.
+
+---
+
+## 8. Redistribution and derivative works
+
+### 8.1. Preservation of notices
+
+Copies or substantial portions of the Software distributed under this License must retain:
+
+a. Applicable copyright notices;
+
+b. A copy of this License;
+
+c. Applicable attribution notices; and
+
+d. Any legally required third-party licensing notices.
+
+These notices may be provided through accompanying documentation, distributed license files, electronic notices, package metadata, or another reasonably accessible means appropriate to the form of distribution.
+
+### 8.2. Continued applicability
+
+Redistribution, modification, incorporation, sublicensing, or inclusion within a larger work does not remove or supersede the conditions applicable to portions of the Software governed by this License.
+
+The Licensee may not represent that restricted rights are available to downstream recipients unless such rights have been separately granted by the Licensor.
+
+### 8.3. Independently developed software
+
+The Licensee may establish separate licensing terms for independently developed portions of a larger work, including proprietary terms.
+
+Such terms must not purport to remove, alter, or override the permissions and restrictions applicable to the Software itself.
+
+The mere use of the Software as a dependency does not automatically subject the entirety of an independently developed application to this License.
+
+### 8.4. Downstream responsibility
+
+Each downstream recipient exercising rights under this License is independently responsible for compliance with its terms.
+
+A distributor is not required to continuously monitor the activities of unrelated downstream recipients, provided that the distributor complies with this License and does not knowingly facilitate an unauthorized restricted use.
+
+### 8.5. Source availability
+
+This License does not require the Licensee to publicly distribute its proprietary source code or modifications.
+
+Where the Software itself is redistributed, the applicable copyright, attribution, and licensing requirements remain in effect.
+
+### 8.6. Data and generated output
+
+The Licensor claims no ownership of the Licensee's application data, model definitions, business logic, independently authored transformations, or other independent materials solely because the Software processes, exports, or generates files from them.
+
+Ordinary output produced by using the Software, including schema snapshots, migration manifests, migration descriptors, configuration, and scaffolding intended for use in a Licensee's project, is not subject to this License merely because the Software generated it. To the extent the Licensor owns incidental boilerplate expressly supplied by the Software for incorporation into ordinary generated output, the Licensor permits its use, modification, distribution, and sublicensing as part of that output without the restrictions of Sections 4 and 5. This permission does not extend to the Software's runtime, CLI, migration engine, reusable implementation modules, or other substantial implementation code copied into or distributed with output; those materials retain their applicable license and notices.
+
+This Section does not grant permission to use the Software itself for an otherwise restricted purpose. Rights in third-party materials and independently authored content are unaffected.
+
+---
+
+## 9. Intellectual property and patent rights
+
+### 9.1. Ownership
+
+The Software is licensed, not sold.
+
+Except for the permissions expressly granted under this License, all applicable intellectual property rights remain with their respective owners.
+
+No ownership interest in the Software is transferred by this License.
+
+### 9.2. Patent license
+
+To the extent that the Licensor has authority to grant such rights, the Licensor grants the Licensee a worldwide, non-exclusive, royalty-free patent license covering patent claims necessarily infringed by the Software as provided by the Licensor, solely in connection with activities permitted under this License.
+
+This grant does not extend to patent claims infringed solely as a result of unrelated modifications, independently developed functionality, or combinations not supplied by the Licensor.
+
+### 9.3. Defensive patent termination
+
+If the Licensee initiates patent litigation alleging that the Software, as provided by the Licensor, infringes a patent, the patent rights granted to that Licensee under Section 9.2 shall terminate to the extent permitted by applicable law.
+
+### 9.4. Trademarks and endorsement
+
+This License does not grant rights to use the names, trademarks, logos, branding, or other commercial identifiers of Magic IndexedDB, Sayou, or their respective rights holders, except for reasonable and truthful identification or attribution of the Software.
+
+The Licensee may not imply endorsement, sponsorship, certification, or affiliation without appropriate authorization.
+
+---
+
+## 10. Contributions
+
+This License does not automatically transfer ownership of independently created contributions to the Licensor or Sayou.
+
+Contributions submitted for inclusion in the official Magic IndexedDB project shall be governed by the applicable contribution terms and contributor agreements established by the project.
+
+Acceptance of copyrightable contributions intended for the official project is subject to an applicable written Contributor License Agreement approved by the project, permitting continued maintenance, distribution, sublicensing, and separate licensing. This does not impose new terms retroactively on contributions previously accepted under other licenses. Ordinary bug reports, suggestions, and discussions do not require a CLA merely to participate.
+
+Nothing in this Section limits the Licensee's right to independently modify the Software for purposes permitted under this License.
+
+---
+
+## 11. Compliance and termination
+
+### 11.1. Duration
+
+Subject to compliance with its terms, the permissions granted under this License continue without a predetermined expiration date.
+
+The Licensor may not withdraw permissions for an existing version solely because a subsequent version of the Software is distributed under different licensing terms.
+
+### 11.2. Unauthorized use
+
+Use of the Software outside the permissions granted under this License, without applicable Written Authorization, is not licensed.
+
+The Licensor reserves the right to pursue remedies available under applicable law for unauthorized use or violation of this License.
+
+### 11.3. Remediable violations
+
+Where a violation concerns a reasonably remediable notice, attribution, redistribution, or similar administrative obligation, the Licensee shall have thirty calendar days following written notice from the Licensor to remedy the violation.
+
+If the violation is fully remedied within that period, the Licensee's rights shall continue or be reinstated, as applicable.
+
+If the Licensee fails to remedy the violation within that period, the applicable rights under this License shall terminate.
+
+### 11.4. Restricted-use violations
+
+The remediation period established in Section 11.3 does not independently authorize continued operation of an otherwise unauthorized Reserved Field of Use or Competitive Use.
+
+A Licensee engaged in unauthorized restricted use must cease that use or obtain applicable Written Authorization.
+
+The Licensor may expressly authorize remediation, continued operation, or reinstatement through a separate written agreement.
+
+### 11.5. Downstream recipients
+
+Termination of a Licensee's rights does not automatically terminate the independently granted rights of downstream recipients who remain compliant with this License.
+
+### 11.6. Effect of termination
+
+Upon termination, the Licensee must cease exercising rights no longer granted under this License.
+
+Termination does not affect independently held rights, rights granted under previous licenses, accrued obligations, or provisions intended to survive termination.
+
+---
+
+## 12. No warranty
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED ON AN “AS IS” AND “AS AVAILABLE” BASIS, WITHOUT WARRANTIES, REPRESENTATIONS, GUARANTEES, OR CONDITIONS OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE.
+
+THIS DISCLAIMER INCLUDES, WITHOUT LIMITATION, WARRANTIES OR CONDITIONS RELATING TO MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, ACCURACY, RELIABILITY, SECURITY, AVAILABILITY, COMPATIBILITY, AND REGULATORY COMPLIANCE.
+
+THE LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-FREE, UNINTERRUPTED, FREE FROM VULNERABILITIES, OR SUITABLE FOR ANY PARTICULAR OPERATIONAL OR REGULATORY ENVIRONMENT.
+
+THE LICENSEE IS RESPONSIBLE FOR EVALUATING, TESTING, CONFIGURING, AND DETERMINING THE SUITABILITY OF THE SOFTWARE FOR ITS INTENDED USE.
+
+---
+
+## 13. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR, COPYRIGHT HOLDERS, CONTRIBUTORS, MAINTAINERS, AND THEIR RESPECTIVE REPRESENTATIVES SHALL NOT BE LIABLE FOR ANY CLAIM, LOSS, DAMAGE, COST, OR OTHER LIABILITY ARISING FROM OR RELATING TO THE SOFTWARE, THIS LICENSE, OR THE USE, INABILITY TO USE, MODIFICATION, DISTRIBUTION, OR OPERATION OF THE SOFTWARE.
+
+THIS LIMITATION INCLUDES, WITHOUT LIMITATION, DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, AND PUNITIVE DAMAGES, LOSS OF DATA, LOSS OF REVENUE, LOSS OF PROFITS, BUSINESS INTERRUPTION, SECURITY INCIDENTS, AND REGULATORY CONSEQUENCES.
+
+THESE LIMITATIONS APPLY REGARDLESS OF THE LEGAL THEORY ASSERTED AND WHETHER THE POSSIBILITY OF SUCH DAMAGES WAS KNOWN OR REASONABLY FORESEEABLE.
+
+NOTHING IN THIS LICENSE EXCLUDES OR LIMITS LIABILITY TO THE EXTENT THAT SUCH EXCLUSION OR LIMITATION IS PROHIBITED BY APPLICABLE LAW.
+
+---
+
+## 14. Support, maintenance, and future development
+
+This License does not create an obligation for the Licensor, Sayou, or any contributor to provide technical support, maintenance, updates, security patches, compatibility improvements, documentation, or future releases.
+
+Public statements concerning project development, community commitments, or future plans do not establish contractual service-level obligations unless expressly incorporated into a separate written agreement.
+
+The Licensor may develop, maintain, discontinue, or distribute future versions under different licensing terms without modifying permissions already lawfully granted for existing versions.
+
+---
+
+## 15. Previous licenses and third-party materials
+
+### 15.1. Previous releases
+
+Versions and materials previously distributed under the MIT License or another applicable license remain governed by the permissions and conditions of those licenses. This includes source, pre-release materials, and other copies to the extent independently licensed under those terms, whether or not distributed as an official package. Repackaging or incorporating previously licensed materials into a new distribution does not extinguish independently granted rights in those materials.
+
+Nothing in this License withdraws or restricts rights previously and lawfully granted.
+
+### 15.2. Third-party materials
+
+Third-party components and materials remain subject to their respective licenses.
+
+Where separate third-party licensing terms apply to particular materials, this License does not supersede permissions independently granted by those terms.
+
+### 15.3. Identification of applicable license
+
+The license accompanying the relevant version or material determines the terms applicable to that version or material.
+
+The publication of a new license does not, by itself, change the license applicable to previously distributed copies.
+
+### 15.4. Wizard-hat icon
+
+The image `wizardHatIcon.png`, including the copy bundled in the Magic.IndexedDb NuGet package, is excluded from this License. The reserved-field and competitive-use restrictions in Sections 4 and 5 do not apply to the icon.
+
+The icon was generated using ChatGPT. Lance Wright II, the project maintainer, claims no exclusive copyright ownership in the icon. To the extent he holds applicable rights in the image, he grants everyone unrestricted permission to use, copy, modify, and redistribute it, including commercially.
+
+---
+
+## 16. General provisions
+
+### 16.1. Applicable law
+
+To the extent permitted by applicable law, this License shall be governed by the laws of the Commonwealth of Virginia and applicable federal laws of the United States, without regard to conflict-of-law principles.
+
+### 16.2. Severability
+
+If any provision of this License is determined to be invalid, unlawful, or unenforceable, that determination shall not affect the remaining provisions to the extent that they can lawfully operate independently.
+
+### 16.3. No implied waiver
+
+A failure or delay by the Licensor in exercising or enforcing a right under this License does not, by itself, constitute a waiver of that right.
+
+### 16.4. No implied authorization
+
+Except as expressly provided in this License or a separate written agreement, no additional rights, permissions, representations, or authorizations are granted by implication.
+
+### 16.5. Entire applicable license
+
+This License constitutes the applicable public licensing terms for materials expressly distributed under it, subject to any independent rights or separate written agreements.
+
+Explanatory documentation, summaries, frequently asked questions, and community statements are provided for informational purposes and do not supersede these operative terms.
+
+---
+
+## 17. Licensing contact
+
+Licensing inquiries, requests for Written Authorization, proposed partnerships, and questions concerning the applicability of this License may be directed to Sayou through the contact information available at:
+
+**https://sayou.io**
+
+---
+
+**End of License**
+
+Magic IndexedDB Community License — Version 1.0
