@@ -17,6 +17,9 @@ internal sealed class EncryptionConfiguration
     public MagicEncryptionKeyRequest Request { get; }
     public string PhysicalName { get; }
     public string Route { get; }
+    internal bool HasExplicitPhysicalBinding => _options.PhysicalDatabaseName is not null;
+    internal IReadOnlyDictionary<string, IReadOnlyCollection<string>> RecordPolicies =>
+        _recordPolicies.ToDictionary(pair => pair.Key, pair => (IReadOnlyCollection<string>)pair.Value, StringComparer.Ordinal);
 
     public EncryptionConfiguration(MagicEncryptionOptions options, MagicNumericStorageMode numericMode = MagicNumericStorageMode.Legacy)
     {
@@ -25,16 +28,20 @@ internal sealed class EncryptionConfiguration
         ArgumentException.ThrowIfNullOrWhiteSpace(options.KeyId);
         if (options.DatabaseName.StartsWith("__magic_protected__:", StringComparison.Ordinal))
             throw new ArgumentException("The logical database name uses a reserved prefix.", nameof(options));
+        if (options.PhysicalDatabaseName is { } physical &&
+            (string.IsNullOrWhiteSpace(physical) || physical.Any(char.IsControl)))
+            throw new ArgumentException("An explicit physical database name cannot be empty or contain control characters.", nameof(options));
         if (!Enum.IsDefined(numericMode)) throw new ArgumentOutOfRangeException(nameof(numericMode));
 
         Request = new(options.DatabaseName, options.AccountScope, options.KeyId);
         var identity = JsonSerializer.SerializeToUtf8Bytes(new[] { options.DatabaseName, options.AccountScope });
         _legacyPhysicalName = $"__magic_protected__:{Convert.ToHexString(SHA256.HashData(identity))}";
         _numericMode = numericMode;
-        PhysicalName = numericMode == MagicNumericStorageMode.Legacy ? _legacyPhysicalName :
+        var defaultPhysicalName = numericMode == MagicNumericStorageMode.Legacy ? _legacyPhysicalName :
             $"__magic_protected__:{Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
                 new[] { options.DatabaseName, options.AccountScope, "numeric:lossless-v1" })))}";
-        Route = $"{PhysicalName}:{Guid.NewGuid():N}";
+        PhysicalName = options.PhysicalDatabaseName ?? defaultPhysicalName;
+        Route = $"{defaultPhysicalName}:{Guid.NewGuid():N}";
         _recordPolicies = options.RecordPolicies?.ToDictionary(
             pair => pair.Key, pair => pair.Value.ToArray(), StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
         _options = options with { RecordPolicies = _recordPolicies.ToDictionary(
@@ -119,7 +126,8 @@ internal sealed class EncryptionConfiguration
             ["name"] = Route,
             ["version"] = 1,
             ["storeSchemas"] = rows,
-            ["encryption"] = new { Account = Request.AccountScope, PhysicalName }
+            ["encryption"] = new { Account = Request.AccountScope, PhysicalName,
+                ExplicitPhysicalBinding = HasExplicitPhysicalBinding }
         };
         if (_numericMode == MagicNumericStorageMode.Lossless)
         {

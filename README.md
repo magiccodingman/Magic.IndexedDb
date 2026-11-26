@@ -9,6 +9,31 @@ Instead of treating LINQ as an in-memory filter over an already-loaded collectio
 
 [Documentation](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/README.md) · [NuGet](https://www.nuget.org/packages/Magic.IndexedDb/) · [.NET 10 upgrade notes](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/upgrading/dotnet-10.md) · [Issues](https://github.com/magiccodingman/Magic.IndexedDb/issues)
 
+## Version 3 preview: managed migrations
+
+This branch develops **Magic IndexedDB 3.0**, currently `3.0.0-preview.1`.
+It adds a code-first migration workflow with a separate **Magic.IndexedDb.Cli**
+NuGet tool (`magicdb`) and a language-independent JavaScript migration engine.
+C# remains the first authoring experience; published migration assets are static
+JSON and optional JavaScript, suitable for a fully static Blazor site.
+
+- Resolve database/table membership once for runtime and the design-time exporter.
+- Scaffold automatic revisions and review changes the tool cannot safely infer.
+- Publish immutable manifests and assets; each browser upgrades from its own state.
+- Bootstrap new installations directly, explicitly adopt supported legacy layouts,
+  and resume committed batches after interrupted data migrations.
+- Inspect state and subscribe to progress/failure events without exposing record data.
+
+Start with the [migration guide](docs/guides/migrations.md), [CLI workflow](docs/guides/migration-cli.md),
+[schema declarations](docs/guides/migration-schema.md), and [v3 upgrade guide](docs/upgrading/v3.md).
+This is a breaking major-version preview: old all-tables deployment becomes explicit
+membership, and existing databases require a reviewed adoption path. The preview
+includes [authenticated migrations](docs/guides/encrypted-migrations.md), including
+adding and removing record protection while preserving database identity.
+Data-key rotation, numeric codec cutovers, and key-changing resumable migrations
+remain unsupported. See [test and release acceptance](docs/contributing/migration-testing.md)
+and the [implementation handoff](docs/engineering/v3-handoff.md).
+
 ## Why use Magic IndexedDB?
 
 - **Write browser database queries in C#.** Use strongly typed predicates instead of maintaining a separate JavaScript data-access layer.
@@ -16,7 +41,8 @@ Instead of treating LINQ as an in-memory filter over an already-loaded collectio
 - **Express real application logic.** Nested `&&` and `||` predicates are translated, partitioned, optimized, and de-duplicated by primary key.
 - **Use indexes without giving up flexible queries.** `Where(...)` lets the planner use indexes where it can, while `Cursor(...)` handles scan-oriented queries.
 - **Process large results progressively.** `AsAsyncEnumerable()` streams interop results so applications can begin processing before materializing the full returned collection.
-- **Define schemas in C#.** Attributes describe primary keys, indexes, compound indexes, stored names, and databases.
+- **Define schemas in C#.** Attributes describe primary keys, indexes, compound indexes, and stored names; repository declarations control database membership.
+- **Version browser data deliberately.** A separate CLI publishes static migration packages, and the shared engine validates and applies the needed upgrade path per client.
 - **Store practical object models.** Nested objects, collections, custom JSON converters, Unicode text, and constructor-based materialization are supported.
 - **Keep wide numbers exact.** Opt into [lossless numeric storage](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/lossless-numbers.md) for `long`, `ulong`, and `decimal` values while retaining compatible native indexed queries.
 
@@ -45,7 +71,7 @@ This feels familiar to LINQ users without pretending IndexedDB behaves like SQL 
 
 ## Requirements
 
-The current codebase targets .NET 10.
+The current codebase targets .NET 10. Managed migrations require IndexedDB, Web Crypto, and the Web Locks API in a secure browser context.
 
 The current package supports Blazor WebAssembly and Blazor applications using JavaScript interop over SignalR. Browser storage behavior and quota remain controlled by the user's browser.
 
@@ -150,13 +176,36 @@ Version 1 documentation remains available in the [legacy archive](https://github
 
 ## Schema evolution
 
-Magic IndexedDB does not currently migrate existing browser data when a C# model changes. Plan and test changes to stored names, indexes, primary keys, and required properties against data from the previous version of your application.
+Magic IndexedDB 3 applies reviewed static migration histories when an application opens its database. Model edits require a corresponding CLI-authored package; they do not silently rewrite deployed data. Authenticated migrations support field/whole-record protection changes in both directions, with explicit approval for protection loss. See [encrypted migrations](docs/guides/encrypted-migrations.md).
 
 See [schema evolution and migrations](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/guides/schema-evolution.md) before changing a deployed schema.
+
+## License
+
+**Source-available. Free for personal and most commercial use.**
+
+The official Magic IndexedDB 3.x distribution, including v3 previews, is offered under the [Magic IndexedDB Community License 1.0](./LICENSE.txt) (MICL), with continued investment from [Sayou](https://sayou.io). Later releases identify their applicable terms; our intention is to continue this licensing model.
+
+For permitted uses, you may inspect, modify, redistribute, and incorporate Magic IndexedDB into proprietary or commercial products without royalties, registration, revenue limits, or required disclosure of your independent source code. Ordinary generated migration assets and your application data remain yours to use subject to the applicable rights in them; embedded library implementation code retains its own license.
+
+Prior written authorization is required for the reserved fields and competitive uses defined in the license. These include specialized healthcare, case management, human services, public or grant-funded service-program administration, and related operational functionality. The restrictions also cover internal and nonprofit deployments in those fields; general-purpose products and unrelated business operations remain permitted as described in the license.
+
+**Restricted does not mean unwelcome.** Contact Sayou through [sayou.io](https://sayou.io) about your intended project. Authorization can be free, paid, or part of a partnership; there is no mandatory commercial fee for otherwise permitted uses.
+
+Previously MIT-licensed versions and materials retain their independently granted rights. See [historical MIT notices](./LICENSE-MIT.txt) and [third-party notices](./THIRD-PARTY-NOTICES.txt). MICL is source-available, not an OSI-approved open-source license.
+
+- [Licensing philosophy and founder's message](./docs/licensing/philosophy.md)
+- [Licensing FAQ](./docs/licensing/faq.md)
+- [Request authorization](./docs/licensing/request-authorization.md)
+- [Competitive scope and release records](./docs/licensing/competitive-scope.md)
+
+The full license governs; summaries do not alter it.
 
 ## Contributing
 
 Issues and pull requests are welcome. Changes to expression translation, serialization, schema handling, or the JavaScript query engine should include focused unit tests and browser end-to-end coverage where applicable.
+
+See [the contribution guidelines](./CONTRIBUTING.md) for the contribution-rights process.
 
 See [testing Magic IndexedDB](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/contributing/testing.md) for the local test commands and guidance on where to add tests.
 

@@ -1,0 +1,480 @@
+# Migration CLI
+
+`Magic.IndexedDb.Cli` is the independently packaged .NET tool for Magic IndexedDB
+3.0. Its command is `magicdb`. The CLI discovers a persisted model, keeps reviewed
+migration source in Git, validates the complete retained history, and publishes a
+static migration package. The browser engine consumes that package without loading
+C# or contacting a migration API.
+
+The package version starts at `3.0.0-preview.1`. The portable document protocol is
+version `1`; application schema revisions are separate positive integers. Updating
+a NuGet package does not increment a database revision.
+
+## Installation and the first schema
+
+The tool requires the .NET 10 runtime. Building a C# exporter also requires its
+selected SDK and target framework. After the package is published to your feed,
+pin the version in a repository tool manifest:
+
+```sh
+dotnet new tool-manifest
+dotnet tool install Magic.IndexedDb.Cli --version 3.0.0-preview.1
+dotnet tool run magicdb -- --help
+```
+
+For a local checkout, pack and install the actual tool without publishing it:
+
+```sh
+dotnet pack Magic.IndexedDb.Cli/Magic.IndexedDb.Cli.csproj -c Release -o artifacts/packages
+dotnet tool install Magic.IndexedDb.Cli --version 3.0.0-preview.1 --add-source artifacts/packages
+```
+
+The examples below use `magicdb` as shorthand. With a local tool manifest, use
+`dotnet tool run magicdb --` in its place. A global installation also exposes the
+`magicdb` executable directly.
+
+```sh
+magicdb databases list --project tools/App.Schema/App.Schema.csproj
+magicdb migrations add Initial --project tools/App.Schema/App.Schema.csproj --database clients
+magicdb migrations validate --project tools/App.Schema/App.Schema.csproj --database clients
+magicdb migrations publish --project tools/App.Schema/App.Schema.csproj --database clients --output wwwroot/db/releases/2026-11-25
+```
+
+The initial command creates revision 1 as a complete schema snapshot. A new browser
+database can bootstrap at the current target snapshot. There is no pretend
+revision-zero migration and no need to replay historical transformations against
+an empty database.
+
+Commands never prompt. `--non-interactive` is accepted for explicit CI intent.
+`--json` produces machine-readable results on stdout and diagnostics on stderr.
+
+## An explicit design-time exporter
+
+The CLI uses the same `MagicSchemaExporter` and schema resolver as the runtime.
+Table membership, persisted JSON names, keys, indexes, numeric encodings, nested
+field descriptors, serializer conditions, and explicit codec identities therefore
+have one C# definition.
+
+Create a small console companion that references your shared model project and the
+runtime package. It must be executable and opt in with this property:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <MagicIndexedDbDesignTime>true</MagicIndexedDbDesignTime>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/App.Models/App.Models.csproj" />
+    <PackageReference Include="Magic.IndexedDb" Version="3.0.0-preview.1" />
+  </ItemGroup>
+</Project>
+```
+
+Its `Program.cs` names the table and repository types belonging to this application:
+
+```csharp
+using Magic.IndexedDb.Migrations;
+using App.Models;
+
+return MagicSchemaExporter.Run(
+    args,
+    tableTypes: [typeof(Client), typeof(Order)],
+    repositoryTypes: [typeof(AppDatabases)]);
+```
+
+`Run` recognizes `--magic-schema-export`, writes the neutral JSON envelope to
+stdout, and writes failures to stderr with a nonzero exit. Use
+`MagicSchemaOptions` to provide the same numeric modes, protection declarations,
+and serializer options that the application uses. See the runnable
+[consumer fixture](../../tests/MigrationCliConsumer/Program.cs).
+
+The tool evaluates and builds this project through `dotnet` in the project's
+directory, honoring its `global.json`, project references, configuration, and
+selected framework. It then launches the compiled exporter in a separate process.
+It does not reflectively load an application's assemblies into the tool process,
+start Blazor, or evaluate arbitrary startup services. Model configuration used by
+the exporter must be available without a browser session. The exporter is code you
+own and run, so normal project build and executable behavior still applies.
+
+Use `--framework` when the exporter multi-targets, and `--configuration` when
+conditional compilation changes the model:
+
+```sh
+magicdb schema export --project tools/App.Schema/App.Schema.csproj --framework net10.0 --configuration Release --output artifacts/current-schema.json
+```
+
+A directory is accepted only when it contains exactly one `.csproj`. Solutions and
+ordinary application projects are rejected with actionable diagnostics. A
+separate exporter per application makes project-specific database membership
+explicit; shared model assemblies can still be reused.
+
+## Multiple databases and language independence
+
+An exporter returns an envelope such as:
+
+```json
+{"protocolVersion":1,"schemas":[{"protocolVersion":1,"schemaId":"clients","numericFormat":"legacy","requiredCapabilities":[],"stores":[]}]}
+```
+
+`databases list` lists every exported logical schema. A command that changes or
+validates history requires `--database ID` or `--all` when more than one schema is
+available. Each schema has its own source directory, revision counter, manifest,
+and release history. `--all` processes independent databases; it does not create a
+cross-database transaction.
+
+`schemaId` identifies a logical history. The runtime's physical database name can
+identify an individual account, tenant, or instance using that history. Keep
+deployment environment names and account identifiers out of an otherwise identical
+schema's history. Separate histories are appropriate when models actually differ.
+
+Every model-consuming command also accepts `--schema FILE` instead of `--project`.
+That file can contain one schema document or the envelope above. A TypeScript
+adapter, another language, or a manual workflow can emit the same contract. The CLI
+planner and browser migrations do not require a C# assembly in that mode.
+
+The schema ID and migration/baseline identifiers use 1–128 ASCII letters, digits,
+dots, underscores, and hyphens, starting with a letter or digit. Asset references
+must remain within that schema's directory. Path traversal, symbolic links in
+asset paths, duplicate JSON properties, duplicate identities, unsupported protocol
+versions, and unknown required capabilities fail validation.
+
+## Source history and automatic revisions
+
+The default source root is `MagicMigrations`; change it with `--directory PATH`.
+A history can contain these files:
+
+```text
+MagicMigrations/clients/history.json
+MagicMigrations/clients/schemas/0001.json
+MagicMigrations/clients/schemas/0002.json
+MagicMigrations/clients/migrations/0002_AddStatus.json
+MagicMigrations/clients/custom/add-status.js
+MagicMigrations/clients/baselines/legacy-v2.json
+MagicMigrations/clients/published.lock.json
+```
+
+Commit the source documents, custom modules, and `published.lock.json`. Ignore the
+temporary coordination file `.magicdb.write.lock`; it contains no migration
+history and is ignored by this repository.
+
+After changing your application model:
+
+```sh
+magicdb migrations add AddStatus --project tools/App.Schema/App.Schema.csproj --database clients
+```
+
+The tool compares the current persisted model with the latest source snapshot,
+assigns the next integer revision, and writes one adjacent transition. It validates
+the existing history first. An unchanged model returns `status: "unchanged"` and
+leaves the revision alone. The tool never manufactures different migrations for
+development, staging, and production when their persisted models are identical.
+
+The planner handles these decisions:
+
+| Change | Generated result |
+| --- | --- |
+| New store | `createStore` with its full definition |
+| Added, removed, or changed index | Explicit index operations |
+| Newly nullable field or relaxed nullability | New schema revision without an invented backfill |
+| New required field | `manual` decision requesting an explicit default or transform |
+| Changed codec, type, nested shape, or serializer condition | `manual` decision |
+| Removed field/store or ambiguous rename | `manual` decision requiring a reviewed operation |
+| Changed primary key | `manual` decision; key restructuring remains unsupported |
+| Changed field/whole-record protection policy | `reprotect`; resumable record rewrite |
+| Previously protected values become public | `reprotect` with unresolved `allowProtectionLoss: false` |
+
+A draft containing `manual` returns exit `3` **after writing the draft**. This is
+an intentional review stop, not a lost migration. Validation and publishing reject
+unresolved drafts. Review and replace the decision in the migration JSON, then run
+validation and browser tests. Destructive `deleteStore` and `deleteField`
+operations require `allowDataLoss: true` in that reviewed document.
+
+An explicit data-only change uses:
+
+```sh
+magicdb migrations add NormalizeNames --schema artifacts/current-schema.json --database clients --empty --mode resumable
+```
+
+This also begins with a `manual` operation. Replace it with the reviewed data
+operations. The default is `resumable` for authenticated data changes and `atomic`
+otherwise. An explicitly selected mode is retained and must pass validation.
+Protocol 1 resumable transitions support data
+operations with stable primary keys; put structural changes in separate adjacent
+atomic migrations. Numeric format transitions are not supported by this protocol
+implementation, even if a draft's `manual` marker is removed.
+
+### Authenticated protection changes
+
+The source and target snapshots declare persisted protection through
+`encryptedFields` and `exposedFields`. Authenticated schemas and migrations declare
+`authenticatedMigrationsV1`; the manifest retains that capability throughout the
+history, including after every field has deliberately become public. A C# exporter
+configured with `ProtectedDatabases` declares the authenticated capability even
+when its first model contains only public fields. Keep the same authenticated
+database/account identity across revisions; the CLI does not infer movement to
+another physical database.
+
+Changing protection attributes scaffolds a `reprotect` operation. The runtime
+opens each record under the source policy and writes it under the target policy.
+Applications supply authorization at runtime; keys never belong in these static
+documents. A policy-only change needs no custom cryptographic JavaScript.
+
+For example, removing field encryption generates an unresolved operation:
+
+```json
+{"op":"reprotect","store":"clients","allowProtectionLoss":false}
+```
+
+The command writes the draft and exits `3`. Validation fails with `MAGDB4212`
+until the developer reviews the exposure and explicitly records
+`allowProtectionLoss: true`. The decision becomes part of the immutable migration
+digest. This also applies when a whole-record public allowlist grows or
+whole-record protection becomes a finite encrypted-field list: unknown persisted
+properties were protected by the former policy. Protection loss and data loss
+are separate decisions.
+
+Authenticated data revisions are resumable, preserve primary keys, and support
+one logical data operation per store. Combine a rename/type change and a policy
+change into one reviewed `transform`, retaining `allowProtectionLoss: true` if
+required. Separate structural work into adjacent atomic revisions. Public index
+changes and new/deleted stores can be structural revisions; authenticated store
+renames, key restructuring, and numeric codec conversion remain unsupported.
+
+Protected primary keys and native indexes must remain public top-level fields.
+Protected stores require explicit inline keys. A custom record codec requires
+whole-record protection. Invalid policies fail with `MAGDB4208`, and unsupported
+authenticated operation combinations fail with `MAGDB4211` before publication.
+These static checks complement the runtime's key, policy, journal, and record
+authentication; they do not claim that an existing browser database was inspected.
+
+## Custom JavaScript transformations
+
+Built-in data operations are `renameField`, `setMissing`, `deleteField`, and
+`reprotect`. Field operations use safe top-level fields; `reprotect` applies the
+fingerprinted target policy without changing logical values. More involved historical record handling uses a
+custom JavaScript module that the tool preserves byte for byte.
+
+For example, create `MagicMigrations/clients/custom/normalize-name.js`:
+
+```js
+export function transform(record) {
+  return { ...record, displayName: String(record.displayName ?? "").trim() };
+}
+```
+
+Get the exact module digest:
+
+```sh
+magicdb hash MagicMigrations/clients/custom/normalize-name.js
+```
+
+Replace the draft operation with the following, substituting that digest:
+
+```json
+{
+  "op": "transform",
+  "store": "clients",
+  "module": "../custom/normalize-name.js",
+  "exportName": "transform",
+  "sha256": "sha256:REPLACE_WITH_EXACT_64_CHARACTER_DIGEST"
+}
+```
+
+`module` is relative to the migration JSON file. `exportName` defaults to
+`transform`. Only `.js` and `.mjs` module files are accepted by the CLI. A changed
+module without its matching digest fails validation. Once published, a changed
+digest also fails the immutable history check; create a new migration and new
+module path instead.
+
+The function receives the logical historical record; for authenticated storage,
+the adapter decrypts it in memory first. Atomic hooks must return synchronously.
+Resumable hooks may return a promise: the engine prepares a bounded batch before
+opening its write transaction. Keep primary keys stable and avoid external side
+effects, network requests, or imported modules. The engine owns writes and durable
+checkpoints and loads verified, self-contained module bytes. Authenticated output
+is encrypted under the target policy before the write transaction begins.
+Static validation checks references and hashes; the JavaScript engine and browser
+tests check executable behavior. The CLI does not claim to prove that arbitrary
+business logic preserves every record's meaning.
+
+## Author an explicit recovery
+
+Keep the original history and module bytes. Write a separate self-contained
+module with `repairProcessed`, `repairUnprocessed` and `verify`. The verifier
+must return exactly `true` for accepted records. The engine partitions records
+using its durable original checkpoint.
+
+```sh
+magicdb migrations recovery-add --database invoices --revision 20 --id repair-tax --module repair.mjs
+magicdb migrations validate --database invoices --project Exporter/Exporter.csproj
+magicdb migrations publish --database invoices --project Exporter/Exporter.csproj --output wwwroot/releases/repaired
+```
+
+The revision argument is the edge's starting revision, not its target. The
+CLI creates a canonical descriptor bound to that original adjacent edge and
+adds an approval to source history. Publishing preserves the v1 schema and
+migration bytes. The new v2 manifest holds the recovery ID and descriptor hash
+for the application to pin. Review the module and run browser acceptance before
+deployment. The CLI validates topology, model identity and exact module bytes.
+The browser checks the required exports and the application verifies its data.
+
+## Adopting an existing database
+
+Baseline planning declares which known legacy layout corresponds to a managed
+revision. It does not connect to a browser, inspect the user's live records,
+invent C# classes from samples, or adopt an unknown database automatically.
+
+First create a managed snapshot that describes the **complete existing schema**,
+including its persisted field names, types, nullability, codecs, nested contracts,
+physical layout, and old numeric storage format. Preserve extra stores if they
+already exist. Export or write a neutral legacy schema describing that complete
+contract and record the baseline. A single schema or the full schema export envelope is accepted.
+For an envelope, `--database` selects the legacy schema with that same ID.
+
+```sh
+magicdb migrations baseline --database clients --legacy-schema legacy-clients.json --revision 1 --id legacy-v2 --acknowledge-data-contract
+```
+
+The CLI requires full canonical schema equality with the selected managed revision,
+matching the browser's adoption rule. Equal physical stores and indexes are not
+enough when field names, types, nullability, codecs, or other declared contracts
+differ. A mismatch is rejected before writing baseline source; validation also
+checks manually edited baseline documents. The acknowledgement means you reviewed
+the historical data's compliance with that declared contract, which physical
+IndexedDB metadata cannot prove. It does not permit mapping different contracts.
+The browser still validates the actual database before adoption.
+
+Only one baseline may recognize a given physical layout. Different IDs or nominated
+revisions cannot distinguish those databases when the browser sees identical store
+and index metadata. The CLI rejects such ambiguous baselines both when creating
+them and when validating edited history. Keep one adoption revision for that layout
+and express subsequent changes as migrations.
+
+If the desired new model differs, add subsequent migrations from this complete
+legacy snapshot to the desired model. Do not remove extra stores from the baseline
+to make validation pass. The [v3 migration guide](migrations.md) explains runtime
+adoption, compatibility errors, events, and recovery behavior.
+
+## Validation and deterministic static publishing
+
+```sh
+magicdb migrations validate --project tools/App.Schema/App.Schema.csproj --all --json
+magicdb migrations publish --project tools/App.Schema/App.Schema.csproj --all --output wwwroot/db/releases/release-42 --json
+```
+
+Validation compares the current model with the target snapshot and verifies:
+
+- Complete adjacent history from revision 1 through the target, with no duplicate
+  IDs, gaps, forks, or conflicting asset references.
+- Schema fingerprints on both ends of each migration and exact hook digests.
+- Supported operations and explicit destructive decisions.
+- A simulated physical result equal to the declared target store/index layout.
+- Valid legacy mappings and all previously published reference/hash bindings.
+
+For an intentionally model-free artifact job, use `--history-only` instead of
+`--project` or `--schema`. Results explicitly set `modelCompared: false`. A normal
+deployment should include the model comparison; the tool never silently omits it.
+
+Publishing writes `OUTPUT/SCHEMA_ID/manifest.json`, canonical schema/migration JSON,
+and unchanged hook bytes. Digests are SHA-256 of the published UTF-8 bytes. The
+runtime and CLI link one canonical JSON implementation; the JavaScript contract
+is verified against the same Unicode/numeric test corpus.
+
+Publishing also updates the source `published.lock.json`. It records released
+asset hashes and manifest reference bindings. Later validation rejects editing,
+rebinding, or deleting those released assets. Commit this file along with the
+release change. Like source history, the lock is reviewed source, not a signature
+against an attacker who can rewrite your repository. Hashes provide artifact
+consistency; normal HTTPS and trusted deployment provide origin authenticity.
+
+Use a new output directory for each release. Existing different output bytes are
+never replaced, including a changed manifest. An identical rebuild is accepted.
+The manifest is written after its assets. Deploy the complete directory before
+activating an application build that points to its manifest; keep supported old
+release directories available for returning clients and cached older builds.
+
+Source history and supported old migration assets are retained in this first
+version. There is no history pruning or arbitrary squash command. Fresh databases
+use the target snapshot; returning databases use their retained transition path.
+
+## CI, browser tests, and release environments
+
+Pin the tool version, restore it, build the exporter, validate against the selected
+environment's model, run browser migration tests, and publish the same deterministic
+source package. The CLI performs no NuGet pushes and creates no releases or tags.
+Runtime/CLI package publication is a separate release workflow concern.
+
+The repository exercises a real package with:
+
+```sh
+bash .github/scripts/test-migration-cli.sh
+node --test tests/migrations/protocol.test.mjs
+```
+
+The first script packs the `.nupkg`, installs it into an isolated tool directory,
+executes the installed command, builds a real consumer exporter, verifies model
+drift and immutable deterministic output, and runs the CLI contract tests. It
+leaves `artifacts/migration-cli/published/cli-fixture/manifest.json` for independent
+browser tests. The migration workflow runs that fixture through Chromium, Firefox,
+Linux WebKit, and macOS WebKit. See
+[migration test coverage](../contributing/migration-testing.md) for invocation,
+evidence, and recovery scenarios.
+
+`migrations test` can integrate an application's own executable browser harness:
+
+```sh
+magicdb migrations test --schema artifacts/current-schema.json --database clients --runner ./tools/run-migration-tests
+```
+
+The tool validates and publishes temporary assets without sealing the source,
+then runs the executable with `--manifest ABSOLUTE_PATH`. No shell is involved.
+The runner writes logs to stderr and writes one JSON object to stdout:
+
+```json
+{"testsExecuted":12,"failed":0}
+```
+
+It must return exit 0, a positive `testsExecuted`, and zero failures. A missing
+runner, no discovered tests, malformed output, or failed tests cannot produce a
+success result. The runner is responsible for real browser execution and the
+application's historical data fixtures; this command does not bundle a browser.
+
+## Diagnostics
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Command completed successfully |
+| `2` | Usage error, missing input, or ambiguous database selection |
+| `3` | Validation error or a generated draft requiring review |
+| `4` | Exporter, build, or test-runner failure |
+| `5` | Filesystem/process-start access or IO failure |
+| `130` | Cancelled |
+
+Each failure includes a stable `MAGDB` code, message, exit code, and documentation
+link. Common diagnostic groups are:
+
+| Codes | Next action |
+| --- | --- |
+| `MAGDB4001`–`MAGDB4003` | Correct command arguments and select the intended schema |
+| `MAGDB4101`–`MAGDB4104` | Correct JSON/protocol, duplicate metadata, or asset paths |
+| `MAGDB4201`–`MAGDB4207` | Create/review history, resolve drift/manual operations, or repair an invalid plan |
+| `MAGDB4208` | Correct invalid protection members, protected keys/indexes, or unsupported field/custom-codec combinations |
+| `MAGDB4210` | Correct recovery topology, descriptor identity, or immutable recovery assets |
+| `MAGDB4211` | Declare authenticated capability, add a required rewrite, or split unsupported operation combinations |
+| `MAGDB4212` | Review the protection downgrade and explicitly record `allowProtectionLoss: true` |
+| `MAGDB4301` | Restore published immutable content; create a new migration for changes |
+| `MAGDB4302` | Use a new output directory or inspect pre-existing unreferenced files |
+| `MAGDB4303` | Wait for the other writer on this source history to finish |
+| `MAGDB4401`–`MAGDB4405` | Correct the exporter project, SDK/framework selection, build, or JSON output |
+| `MAGDB4501` | Correct/execute the browser test runner and inspect its stderr |
+| `MAGDB4901` | Correct filesystem permissions, paths, or executable availability |
+
+A cancellation or crash does not erase user-owned migration files. Inspect any
+unreferenced new revision files before retrying; the tool refuses to overwrite
+them. For interrupted browser migrations, use runtime inspection, diagnostic
+events, and supported retry/resume paths described in the migration guide. Never
+rewrite published history or delete a user's database to hide an error.

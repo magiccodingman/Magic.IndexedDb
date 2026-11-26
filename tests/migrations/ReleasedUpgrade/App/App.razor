@@ -1,0 +1,106 @@
+@namespace ReleasedUpgrade.App
+@using Magic.IndexedDb
+@inject IMagicIndexedDb Magic
+<output id="fixture-result" data-state="@state">@message</output>
+
+@code {
+    private string state = "running";
+    private string message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+#if FORWARD
+            await CheckDatabase(false);
+            await CheckDatabase(true);
+            foreach (var declaration in new[] { FixtureRepository.West, FixtureRepository.East })
+            {
+                var database = await Magic.Database(declaration);
+                var inspection = await database.InspectMigrationAsync();
+                Require(inspection?.GetProperty("state").GetProperty("revision").GetInt32() == 2,
+                    "Typed inspection could not read the forward migration journal.");
+                await database.CloseAsync();
+            }
+            await CheckDatabase(false);
+            await CheckDatabase(true);
+#elif MANAGED
+            var adoption = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using (await Magic.ObserveMigrationsAsync(notification =>
+            {
+                if (notification.Phase == "adopting" && notification.SchemaId == "west")
+                    adoption.TrySetResult();
+                return ValueTask.CompletedTask;
+            }))
+            {
+                await CheckDatabase(false);
+                await CheckDatabase(true);
+                await adoption.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            }
+
+            var west = await Magic.Database(FixtureRepository.West);
+            var inspection = await west.InspectMigrationAsync();
+            Require(inspection?.GetProperty("state").GetProperty("revision").GetInt32() == 1,
+                "Typed migration inspection could not read the adoption journal.");
+            var tenant = await Magic.Database(FixtureRepository.West, "fixture-west-tenant");
+            var tenantInvoices = await tenant.Query<Invoice>();
+            Require(await tenantInvoices.CountAsync() == 0, "A second physical instance inherited the first instance's rows.");
+            await tenantInvoices.AddAsync(new Invoice { Id = 701, Account = "independent" });
+            Require(await tenantInvoices.CountAsync() == 1, "The isolated instance could not persist its own row.");
+#else
+            await CheckDatabase(false);
+            await CheckDatabase(true);
+#endif
+            state = "passed";
+            message = "Both fixture databases passed typed assertions.";
+        }
+        catch (Exception error)
+        {
+            state = "failed";
+            message = error.ToString();
+        }
+    }
+
+    private async Task CheckDatabase(bool east)
+    {
+        var invoices = east ? await Magic.Query<Invoice>(x => x.Databases.East) : await Magic.Query<Invoice>();
+        var audit = east ? await Magic.Query<Audit>() : await Magic.Query<Audit>(x => x.Databases.West);
+        var offset = east ? 100 : 0;
+#if CODECS
+        var amount = east ? 9_007_199_254_740_993L : 12_450L;
+        var tax = east ? 7922816251426433759354395.0335m : 0.125m;
+#else
+        const long amount = 12_450L;
+        const decimal tax = 0.125m;
+#endif
+#if !MANAGED
+        await invoices.AddAsync(new Invoice { Id = offset + 1, Account = "AC-4", Sequence = 2, AmountMinor = amount,
+            Tax = tax, State = InvoiceState.Settled, Reference = 4821, Description = "Dépôt 東京 🧾" });
+        await invoices.AddAsync(new Invoice { Id = offset + 2, Account = "AC-4", Sequence = 1, State = InvoiceState.Voided });
+        await invoices.AddAsync(new Invoice { Id = offset + 3, Account = "AC-8", Sequence = 1, AmountMinor = 37 });
+        await audit.AddAsync(new Audit { InvoiceId = offset + 1, Action = "settled" });
+        await audit.AddAsync(new Audit { InvoiceId = offset + 2, Action = "voided" });
+#endif
+        var rows = (await invoices.Where(row => row.Account == "AC-4").ToListAsync()).OrderBy(row => row.Sequence).ToList();
+        Require(rows.Select(row => row.Id).SequenceEqual(new[] { offset + 2, offset + 1 }), "Incorrect indexed query or order.");
+        Require(await invoices.CountAsync() == 3, "Unexpected invoice count.");
+#if FORWARD
+        var migrated = await invoices.Where(row => row.MigrationCount == 1).ToListAsync();
+        Require(migrated.Select(row => row.Id).Order().SequenceEqual(new[] { offset + 1, offset + 2, offset + 3 }),
+            "The forward index did not return all transformed invoices exactly once.");
+#endif
+        var settled = rows[1];
+        Require(settled.AmountMinor == amount && settled.Tax == tax && settled.Description == "Dépôt 東京 🧾" &&
+            settled.Reference == 4821 && settled.State == InvoiceState.Settled, "Invoice contract changed.");
+        Require(rows[0].State == InvoiceState.Voided && rows[0].AmountMinor == 0, "Voided invoice carries a charge.");
+        var history = await audit.OrderBy(row => row.Id).ToListAsync();
+        Require(history.Select(row => row.Id).SequenceEqual(new[] { 1, 2 }) &&
+            history.Select(row => row.InvoiceId).SequenceEqual(new[] { offset + 1, offset + 2 }) &&
+            history.Select(row => row.Action).SequenceEqual(new[] { "settled", "voided" }), "Audit relationships changed.");
+    }
+
+    private static void Require(bool condition, string error)
+    {
+        if (!condition) throw new InvalidOperationException(error);
+    }
+}

@@ -1,0 +1,48 @@
+Magic IndexedDB third-party notices
+
+Historical Magic IndexedDB materials have independent MIT grants.
+See LICENSE-MIT.txt. The notices below identify separate licenses.
+
+Runtime NuGet package and source repository
+
+Dexie.js 4.0.10 by David Fahlander and contributors.
+Upstream: https://github.com/dexie/Dexie.js/tree/v4.0.10
+Apache License 2.0: licenses/Dexie-Apache-2.0.txt
+The vendored distribution in Magic.IndexedDb/wwwroot/dexie has been
+reformatted. The upstream dexie.mjs is named dexie.js in this repository.
+The JavaScript bundle retains the embedded Microsoft Corporation notice
+for TypeScript helper code, including its permission and disclaimer.
+
+The CLI NuGet package does not bundle Dexie. NuGet dependencies are
+referenced separately and retain their respective licenses.
+
+Package artwork
+
+The wizardHatIcon.png image was generated using ChatGPT. Section 15.4 of
+LICENSE.txt excludes the icon from MICL, including the reserved-field
+and competitive-use restrictions, and records the project maintainer's
+unrestricted permission to reuse the icon, including commercially, to
+the extent he holds applicable rights. The runtime NuGet package
+contains the icon. The CLI package contains this notice only.
+
+Source repository examples and tests
+
+Bootstrap 5.1.0 in IndexDb.Example and TestWasm, and Bootstrap 5.3.3 in
+TestServer, are distributed under MIT. See licenses/Bootstrap-5.1.0-MIT.txt
+and licenses/Bootstrap-5.3.3-MIT.txt.
+The Bootstrap bundles in TestServer include Popper 2.11.8 by Federico
+Zivolo and contributors. See licenses/Popper-2.11.8-MIT.txt.
+Open Iconic in IndexDb.Example includes separate MIT and SIL Open Font
+License 1.1 texts alongside the original assets. See
+IndexDb.Example/wwwroot/css/open-iconic/ICON-LICENSE and FONT-LICENSE.
+
+The example and test applications include ASP.NET Core Blazor template
+assets, including the favicon, PWA icons, manifest and service workers.
+Source: https://github.com/dotnet/aspnetcore/tree/v7.0.5
+MIT license: licenses/AspNetCore-7.0.5-MIT.txt
+
+The historical recovery-engine test fixture is an immutable copy of
+previously MIT-licensed Magic IndexedDB code. Its original notice and
+provenance are in tests/migrations/fixtures/recovery-v1/.
+The example, test and fixture assets above are outside the contents of
+both NuGet packages.

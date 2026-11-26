@@ -1,11 +1,22 @@
 # Encryption at rest
 
-This design covers application-level encryption of IndexedDB data. The draft implements the browser protection path and opt-in C# API. Automatic migration, key rotation, and protected LINQ evaluation are future integration phases.
+This design covers application-level encryption of IndexedDB data. The browser
+protection path and opt-in C# API are implemented. The v3 preview connects them to
+[authenticated managed migrations](adr-authenticated-migrations.md), including
+changes in both protection directions and explicit in-place enrollment. Actual
+data-key rotation and protected LINQ evaluation remain future integration phases.
+The prototype measurements below describe the earlier implementation; use the
+[encrypted migration guide](../guides/encrypted-migrations.md) for the current
+deployment lifecycle and its acceptance requirements.
 The browser prototype also includes an authenticated policy sentinel and codecs for field and record protection. The browser storage module routes configured protected stores through these codecs for ordinary CRUD and query calls. The C# API configures account-bound databases, maps annotated fields, and exposes unlock, public projection and public patch operations.
 
 ## Existing paths
 
-The factory creates Dexie stores from `StoreSchema`. The C# serializer maps properties to persisted names and sends typed requests to JavaScript. The JavaScript storage module has separate single add, put and update paths and separate bulk equivalents. Reads include direct key lookup, whole-table reads, and the shared LINQ planner with native index and cursor branches. The current migration module is a stub. The typed query interfaces return full entities and have no server-side projection operator.
+The C# serializer maps properties to persisted names and sends typed requests to
+JavaScript. The storage module implements single and bulk writes, direct key and
+whole-table reads, and shared LINQ index/cursor branches. The v3 shared migration
+engine owns managed schema deployment and readiness. Existing protected
+registration without a manifest retains its new-vault bootstrap behavior.
 
 Enforce encryption in the browser storage boundary using the effective persisted names. A C# converter alone would miss browser-side writes and would prevent the JavaScript planner from distinguishing a protected predicate from a predicate it can evaluate. Async Web Crypto calls should complete outside live IndexedDB write transactions. Prepare a batch before opening its transaction so an encryption failure cannot partially persist it.
 
@@ -68,6 +79,12 @@ requires its own policy authentication before public operations.
 
 ## Query and write behavior
 
+The table below describes the existing protected session without a managed
+manifest. A managed authenticated context additionally requires completed
+migration readiness and active authorization; locking invalidates its readiness.
+Reauthorize before using the managed context again, including an all-public
+target model.
+
 | Operation | Fresh connection without policy authentication | Locked after authenticating this connection | Unlocked with matching policy |
 | --- | --- | --- | --- |
 | Full entity read | Reject | `MagicEncryptionLockedException`, including for empty results | Decrypt automatically |
@@ -92,7 +109,12 @@ The intent is to protect stored contents when an attacker can inspect or alter b
 
 1. Establish the cryptographic format and real-browser tests. Measure encryption and decryption separately from storage and interop.
 2. Add scoped key acquisition, versioned policy metadata and locked-state enforcement. Add field and record policy wiring for new databases, and cover every write and read entry point. Expose public projections and narrow patches before allowing locked workflows. Reject unsupported migration, schema and query combinations explicitly.
-3. Add explicit migrations and rotation. Prefer copy to a new protected namespace with a verified cutover when converting plaintext. Use resumable checkpoints, idempotent writes and staged key activation. Keep old keys readable while data is rewritten, and retire them only after verification. Define coordinated tab fencing before allowing concurrent migrations. Old browser copies, backups and storage remnants need application handling.
+3. The v3 preview implements explicit same-key migrations, authenticated
+   checkpoints, tab fencing and approved protection loss. An explicit physical
+   binding permits reviewed in-place enrollment; cross-namespace copies remain
+   application-owned. Actual key rotation still requires source/target key roles,
+   mixed-key recovery and a retirement contract. Old browser copies, backups and
+   storage remnants remain application concerns.
 4. Add the hybrid planner path. Verify semantics against a plaintext reference dataset with compound keys, mixed AND and OR predicates, residual filtering, sorting ties, pagination, count, cancellation and streaming.
 
 The integration must preserve existing unencrypted models and database names. Before enabling PHI workloads, exercise a migration and recovery drill and review the application's plaintext surfaces and key custody.
@@ -156,9 +178,10 @@ that encryption speeds up those operations. User interaction, authentication,
 remote key access, and browser page load are outside these measurements.
 
 This earlier 1,000-row run used interpreted Release WASM. The [larger hardening measurements](#larger-published-wasm-and-aot-measurements) include both interpreted WASM and AOT. Protected data is isolated in a new physical
-namespace. The current version leaves plaintext sources in place and requires
-application-managed export, protected import through typed writes, verification,
-and cleanup as separate steps.
+namespace. That benchmark predates authenticated migrations. Without an explicit
+managed physical binding, adding encryption still selects a separate protected
+namespace and leaves plaintext sources in place. The manual copy below remains
+an application-owned alternative for cross-namespace transfers.
 
 ### Manual cutover for existing data
 
@@ -177,7 +200,9 @@ and cleanup as separate steps.
    committed batches.
 5. Switch clients after verification. Enforce the application's rules for the
    original database, exports, backups, and recovery keys. No automatic cleanup,
-   downgrade, cross-tab migration lock, or live key rotation is provided.
+   downgrade, cross-tab copy lock, or live key rotation is provided by this manual
+   copy procedure. The managed same-database path has its own authenticated
+   ownership, checkpoint and recovery contract.
 
 ## Hardening review
 

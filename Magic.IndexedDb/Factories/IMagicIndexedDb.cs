@@ -1,6 +1,7 @@
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.LinqTranslation.Interfaces;
 using Magic.IndexedDb.Models;
+using Magic.IndexedDb.Migrations;
 
 namespace Magic.IndexedDb;
 
@@ -52,4 +53,12 @@ public interface IMagicIndexedDb
     Task<QuotaUsage> GetStorageEstimateAsync(CancellationToken cancellationToken = default);
 
     ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet);
+
+    /// <summary>Uses a registered schema with a separately named physical database instance.</summary>
+    /// <remarks>Protected databases use account-bound encryption contexts instead.</remarks>
+    ValueTask<IMagicDatabaseScoped> Database(IndexedDbSet indexedDbSet, string instanceName);
+
+    /// <summary>Observes metadata-only migration events. Observers never decide transaction outcomes.</summary>
+    Task<IAsyncDisposable> ObserveMigrationsAsync(Func<MagicMigrationEvent, ValueTask> observer,
+        CancellationToken cancellationToken = default);
 }

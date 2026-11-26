@@ -27,12 +27,19 @@ jobs:
     permissions:
       contents: read
 
+  # Includes the packaged 2.x adoption/forward/cutover matrix on all CI platforms.
+  migration-validation:
+    uses: ./.github/workflows/validate-migrations.yml
+    permissions:
+      contents: read
+
   publish:
     name: Build and publish package
     environment: release
     needs:
       - core-validation
       - browser-validation
+      - migration-validation
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -55,6 +62,11 @@ jobs:
         shell: bash
         run: |
           current_version="$(sed -nE 's:.*<Version>([^<]+)</Version>.*:\1:p' Magic.IndexedDb/Magic.IndexedDb.csproj)"
+          cli_version="$(dotnet msbuild Magic.IndexedDb.Cli/Magic.IndexedDb.Cli.csproj -nologo -getProperty:Version)"
+          if [[ "$current_version" != "$cli_version" ]]; then
+            echo "Runtime and CLI source versions must match." >&2
+            exit 1
+          fi
           published_versions="${RUNNER_TEMP}/magic-indexeddb-versions.json"
           curl \
             --fail \
@@ -75,20 +87,40 @@ jobs:
           echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
           echo "Publishing Magic.IndexedDb ${package_version} from ${GITHUB_SHA}."
 
-      - name: Restore package project
-        run: dotnet restore Magic.IndexedDb/Magic.IndexedDb.csproj
+      - name: Restore package projects
+        run: |
+          dotnet restore Magic.IndexedDb/Magic.IndexedDb.csproj
+          dotnet restore Magic.IndexedDb.Cli/Magic.IndexedDb.Cli.csproj
 
-      - name: Pack
+      - name: Pack runtime
         run: >-
           bash .github/scripts/pack-nuget.sh
           artifacts
           ${{ steps.version.outputs.package_version }}
 
-      - name: Upload package artifact
+      - name: Pack CLI
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: >-
+          dotnet pack Magic.IndexedDb.Cli/Magic.IndexedDb.Cli.csproj
+          --configuration Release --no-restore --output artifacts
+          -p:Version="$PACKAGE_VERSION" -p:PackageVersion="$PACKAGE_VERSION"
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Verify licensing in the exact packages selected for publication
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: |
+          python3 .github/scripts/validate_package_licenses.py --version "$PACKAGE_VERSION" --report artifacts/licensing.json \
+            "artifacts/Magic.IndexedDb.$PACKAGE_VERSION.nupkg" "artifacts/Magic.IndexedDb.Cli.$PACKAGE_VERSION.nupkg"
+
+      - name: Upload package artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: Magic.IndexedDb-${{ steps.version.outputs.package_version }}
-          path: artifacts/*.nupkg
+          path: |
+            artifacts/*.nupkg
+            artifacts/licensing.json
           if-no-files-found: error
           overwrite: true
 
@@ -98,14 +130,19 @@ jobs:
         with:
           user: ${{ secrets.NUGET_USER }}
 
-      - name: Publish to NuGet.org
-        run: >-
-          dotnet nuget push artifacts/*.nupkg
-          --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
-          --source https://api.nuget.org/v3/index.json
-          --skip-duplicate
+      - name: Publish CLI and runtime to NuGet.org
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          for package in Magic.IndexedDb.Cli Magic.IndexedDb; do
+            dotnet nuget push "artifacts/$package.$PACKAGE_VERSION.nupkg" \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
 
       - name: Write release summary
         run: |
-          echo "## Published Magic.IndexedDb ${{ steps.version.outputs.package_version }}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "## Published Magic.IndexedDb and Magic.IndexedDb.Cli ${{ steps.version.outputs.package_version }}" >> "${GITHUB_STEP_SUMMARY}"
           echo "Source commit: \`${GITHUB_SHA}\`" >> "${GITHUB_STEP_SUMMARY}"
