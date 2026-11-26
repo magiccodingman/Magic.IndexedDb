@@ -9,9 +9,9 @@ Instead of treating LINQ as an in-memory filter over an already-loaded collectio
 
 [Documentation](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/README.md) · [NuGet](https://www.nuget.org/packages/Magic.IndexedDb/) · [.NET 10 upgrade notes](https://github.com/magiccodingman/Magic.IndexedDb/blob/master/docs/upgrading/dotnet-10.md) · [Issues](https://github.com/magiccodingman/Magic.IndexedDb/issues)
 
-## Version 3 preview: managed migrations
+## Version 3: managed migrations
 
-This branch develops **Magic IndexedDB 3.0**, currently `3.0.0-preview.1`.
+**Magic IndexedDB 3.0.0** introduces managed migrations.
 It adds a code-first migration workflow with a separate **Magic.IndexedDb.Cli**
 NuGet tool (`magicdb`) and a language-independent JavaScript migration engine.
 C# remains the first authoring experience; published migration assets are static
@@ -26,8 +26,8 @@ JSON and optional JavaScript, suitable for a fully static Blazor site.
 
 Start with the [migration guide](docs/guides/migrations.md), [CLI workflow](docs/guides/migration-cli.md),
 [schema declarations](docs/guides/migration-schema.md), and [v3 upgrade guide](docs/upgrading/v3.md).
-This is a breaking major-version preview: old all-tables deployment becomes explicit
-membership, and existing databases require a reviewed adoption path. The preview
+This is a breaking major release: old all-tables deployment becomes explicit
+membership, and existing databases require a reviewed adoption path. Version 3
 includes [authenticated migrations](docs/guides/encrypted-migrations.md), including
 adding and removing record protection while preserving database identity.
 Data-key rotation, numeric codec cutovers, and key-changing resumable migrations
