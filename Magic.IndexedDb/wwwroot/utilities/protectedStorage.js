@@ -107,7 +107,7 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
     };
 
     return {
-        async setRotationAccess(document, fence, keys, assertCurrent) {
+        async setRotationAccess(document, fence, keys, assertCurrent, signal) {
             if (!options.managedSchema || !readiness) {
                 throw new Error("MAGIC_ROTATION_AUTHORIZATION_REQUIRED: An authorized managed connection is required.");
             }
@@ -126,7 +126,7 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
                 return { key: keys.get(state.sourceKeyId), keyId: state.sourceKeyId };
             });
             assertCurrent();
-            rotation = { state, fence: structuredClone(fence), keys: new Map(keys), assertCurrent };
+            rotation = { state, fence: structuredClone(fence), keys: new Map(keys), assertCurrent, signal };
         },
         assertRotationReadiness: () => assertPolicy(false, false),
         setManagedReadiness: result => {
@@ -286,12 +286,26 @@ class ProtectedTable {
             const numeric = this.db.tables.find(table => table.name === numericMetadataStore);
             if (numeric) stores.push(numeric);
         }
-        return this.db.transaction("rw", stores, async () => {
-            await this.assertPolicy(true);
-            this.assertLive();
-            assertCurrent();
-            return operation(this.table);
-        });
+        const rotation = this.getRotation();
+        let abort;
+        try {
+            return await this.db.transaction("rw", stores, async () => {
+                if (rotation?.signal) {
+                    const transaction = this.db.constructor.currentTransaction;
+                    abort = () => transaction.abort();
+                    rotation.signal.addEventListener("abort", abort, { once: true });
+                    rotation.signal.throwIfAborted();
+                }
+                await this.assertPolicy(true);
+                this.assertLive();
+                assertCurrent();
+                const result = await operation(this.table);
+                assertCurrent();
+                return result;
+            });
+        } finally {
+            if (abort) rotation.signal.removeEventListener("abort", abort);
+        }
     }
 
     mutate(operation) {

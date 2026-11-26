@@ -305,7 +305,7 @@ function rotationContext(registration, keys, signal) {
     const authorization = requireMigrationAuthorization(registration);
     return { db: registration.db.backendDB(), vault: { database: registration.db.name, account: registration.account },
         schema: registration.schema, ready: registration.result, authorization: authorization.adapter,
-        keys, assertCurrent: authorization.assertCurrent, signal };
+        keys, assertCurrent: authorization.assertCurrent, authorizationSignal: authorization.controller.signal, signal };
 }
 
 const rotationListeners = new Set();
@@ -337,7 +337,7 @@ async function attachRotation(registration, active, context, ready) {
     if (ready) {
         registration.protection.setManagedReadiness(ready);
     }
-    await registration.protection.setRotationAccess(active.document, active.fence, context.keys, context.assertCurrent);
+    await registration.protection.setRotationAccess(active.document, active.fence, context.keys, context.assertCurrent, context.authorizationSignal);
     context.assertCurrent();
     if (ready) registration.result = ready;
     registration.rotation = { active, keys: context.keys };
