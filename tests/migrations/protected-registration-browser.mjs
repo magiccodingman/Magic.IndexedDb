@@ -106,16 +106,25 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
             await api.unlockProtectedDatabase(config.name, 'next', next);
             await api.ensureProtectedMigration(config.name);
             const row = await api.findItem(config.name, 'clients', 1);
-            const second = await api.rotateManagedEncryptionKey(config.name, {
-                targetKeyId: 'third', mode: 'read-only', recoverable: true, batchSize: 1
-            }, new Uint8Array(32).fill(94));
+            const close = IDBDatabase.prototype.close;
+            let connectionCloses = 0;
+            IDBDatabase.prototype.close = function () {
+                if (this.name === config.encryption.physicalName) connectionCloses++;
+                return close.call(this);
+            };
+            let second;
+            try {
+                second = await api.rotateManagedEncryptionKey(config.name, {
+                    targetKeyId: 'third', mode: 'read-only', recoverable: true, batchSize: 1
+                }, new Uint8Array(32).fill(94));
+            } finally { IDBDatabase.prototype.close = close; }
             let reused = false;
             try {
                 await api.rotateManagedEncryptionKey(config.name, { targetKeyId: 'first', recoverable: true }, old);
             } catch (error) { reused = error.message.startsWith('MAGIC_ROTATION_KEY_REUSED:'); }
             const retained = await api.findItem(config.name, 'clients', 1);
             api.releaseProtectedDatabase(config.name);
-            return { cancelled, partial, during, hints, completed, active, row, events, second, retained, reused };
+            return { cancelled, partial, during, hints, completed, active, row, events, second, retained, reused, connectionCloses };
         }, config);
         assert.equal(value.cancelled, true);
         assert.equal(value.partial.converted, 1);
@@ -130,6 +139,7 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
         assert.deepEqual(value.events, [['converting', 0], ['converting', 1]]);
         assert.equal(value.second.retirementReady, true);
         assert.equal(value.second.targetKeyId, 'third');
+        assert.equal(value.connectionCloses, 0);
         assert.deepEqual(value.retained, value.row);
         assert.equal(value.reused, true);
     });

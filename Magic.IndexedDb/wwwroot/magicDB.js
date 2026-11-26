@@ -98,6 +98,14 @@ async function authorizeProtectedMigration(registration, keyId, input, initializ
     }
 }
 
+async function publishProtectedReadiness(registration, result, authorization) {
+    await assertDatabaseReady(registration.db.backendDB(), result, authorization.adapter);
+    registration.protection.setManagedReadiness(result);
+    await registration.protection.unlock(authorization.keyId, authorization.key, false);
+    authorization.assertCurrent();
+    registration.result = result;
+}
+
 export async function ensureProtectedMigration(name) {
     const registration = managedDatabases.get(name);
     if (!registration?.protected) return;
@@ -147,11 +155,7 @@ async function runProtectedMigration(registration, recovery) {
             const result = await ensureDatabase(options);
             authorization.assertCurrent();
             await registration.db.open();
-            await assertDatabaseReady(registration.db.backendDB(), result, authorization.adapter);
-            registration.protection.setManagedReadiness(result);
-            await registration.protection.unlock(authorization.keyId, authorization.key, false);
-            authorization.assertCurrent();
-            registration.result = result;
+            await publishProtectedReadiness(registration, result, authorization);
             return result;
         } catch (error) {
             registration.result = null;
@@ -473,7 +477,11 @@ async function runRotationAttempt(registration, options, start) {
         // A concurrent application lock must never be undone here.
         authorization.assertCurrent();
         await authorizeProtectedMigration(registration, result.targetKeyId, result.target, false);
-        await runProtectedMigration(registration);
+        const targetAuthorization = requireMigrationAuthorization(registration);
+        // Rotation reseals the same ready revision. Authenticate that exact
+        // state on the existing connection without disrupting foreground reads.
+        await targetAuthorization.adapter.verifyPolicy(result.finalized.ready.policySeal, registration.schema);
+        await publishProtectedReadiness(registration, result.finalized.ready, targetAuthorization);
         return notifyRotation(registration, await getManagedKeyRotationStatus(registration.name));
     } finally {
         authorization.controller.signal.removeEventListener("abort", revoke);
