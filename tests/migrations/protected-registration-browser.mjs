@@ -307,6 +307,7 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
                     let observe;
                     let sampleError;
                     let verifyStart;
+                    let verificationReadinessFences = 0;
                     let maxTimerLag = 0;
                     let peakHeap = performance.memory?.usedJSHeapSize ?? null;
                     let previous = performance.now();
@@ -315,6 +316,10 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
                         const start = performance.now();
                         try { await fn(); values.push(performance.now() - start); }
                         catch (error) {
+                            if (verifyStart !== undefined && error.message.startsWith('MAGDB_PROTECTION_STATE_INVALID:')) {
+                                verificationReadinessFences++;
+                                return;
+                            }
                             if (!/^(MAGIC_ROTATION_ACCESS_FENCED|MAGIC_ROTATION_CONCURRENT_CHANGE|MAGIC_ENCRYPTION_POLICY_MISMATCH|MAGDB_AUTHORIZATION_REQUIRED):/.test(error.message)) throw error;
                         }
                     };
@@ -357,7 +362,7 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
                         retirementReady: status.retirementReady, baselineReadP95: percentile(baseline),
                         foregroundReadP95: percentile(readSamples), foregroundWriteP95: percentile(writeSamples),
                         foregroundReads: readSamples.length, foregroundWrites: writeSamples.length,
-                        maxTimerLag, peakHeap, startUsage, endUsage };
+                        verificationReadinessFences, maxTimerLag, peakHeap, startUsage, endUsage };
                 }, { config, records, mode });
                 assert.equal(result.retirementReady, true);
                 assert.equal(result.verified, records);

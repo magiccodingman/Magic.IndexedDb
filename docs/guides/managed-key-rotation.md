@@ -38,7 +38,8 @@ are written to rotation metadata or progress diagnostics.
   writes use the target key. A short final verification barrier rejects writes in
   all modes. Retry an interrupted write after the vault is available.
 
-Application code that receives a rotation fence error can reauthorize and retry.
+Application code that receives a rotation fence or authenticated readiness
+change can reauthorize and retry.
 A stream invalidated by authorization or a phase change should restart. Unrelated
 vaults continue operating. Retire raw or otherwise uncooperative IndexedDB writers
 before starting. Use the [legacy writer cutover](legacy-writer-cutover.md) when
