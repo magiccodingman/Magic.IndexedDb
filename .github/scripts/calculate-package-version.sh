@@ -42,14 +42,18 @@ published_patch="$(
     "${published_versions_file}"
 )"
 
-base_patch="${source_patch}"
-# Start the stable v3.0 line at 3.0.0. Once a stable v3.0 package exists,
-# use the same patch allocation rule as the existing release lines.
-if [[ "${current_version}" == "3.0.0" ]] && (( published_patch == -1 )); then
-  printf '%s\n' "${current_version}"
+# From v3 onward the source version is the minimum intended release.
+# Preserve the existing pre-v3 convention of starting after the source patch.
+if (( major >= 3 )); then
+  next_patch="$((published_patch + 1))"
+  if (( source_patch > next_patch )); then
+    next_patch="${source_patch}"
+  fi
+  printf '%s.%s.%s\n' "${major}" "${minor}" "${next_patch}"
   exit 0
 fi
 
+base_patch="${source_patch}"
 if (( published_patch > base_patch )); then
   base_patch="${published_patch}"
 fi
