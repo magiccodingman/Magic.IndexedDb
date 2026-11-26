@@ -50,6 +50,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Migration protocol and capabilities](architecture/migration-protocol.md)
 - [Partial migration recovery](architecture/adr-partial-migration-recovery.md)
 - [Authenticated migration contract](architecture/adr-authenticated-migrations.md)
+- [Managed key rotation contract](architecture/adr-managed-key-rotation.md)
 - [Version 3 implementation contract](architecture/v3-implementation-contract.md)
 
 ## Contributing

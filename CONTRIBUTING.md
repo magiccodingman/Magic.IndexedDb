@@ -18,6 +18,10 @@ You can contribute by:
 
 Contributions of all sizes are appreciated.
 
+## Domain neutrality
+
+Keep implementation, APIs, tests, fixtures, benchmarks, and developer documentation domain-neutral. Use fictional data in examples and avoid application-specific workflows, private infrastructure, and internal endpoints. Preserve authentic compatibility fixtures, applicable notices, and intentional project licensing, funding, and attribution references.
+
 ## Development philosophy
 
 Magic IndexedDB aims to provide a reliable, intuitive, strongly typed, and production-oriented experience for developers working with browser-based databases.
@@ -70,7 +74,7 @@ If you discover a potential security vulnerability, please use the project's pri
 
 Avoid publicly disclosing sensitive vulnerability details before the maintainers have had an opportunity to investigate and respond.
 
-Do not include confidential information, production credentials, patient records, or other sensitive data in public issues or pull requests.
+Do not include confidential information, production credentials, or other sensitive data in public issues or pull requests.
 
 ## Community conduct
 

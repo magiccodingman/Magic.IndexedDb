@@ -44,13 +44,13 @@ Changing only protection does not require handwritten crypto or a custom
 JavaScript transform. The built-in operation is:
 
 ```json
-{"op":"reprotect","store":"supportLogs"}
+{"op":"reprotect","store":"documents"}
 ```
 
 A declassification decision belongs to the affected store operation:
 
 ```json
-{"op":"reprotect","store":"supportLogs","allowProtectionLoss":true}
+{"op":"reprotect","store":"documents","allowProtectionLoss":true}
 ```
 
 The same decision can accompany a custom `transform` or another supported data

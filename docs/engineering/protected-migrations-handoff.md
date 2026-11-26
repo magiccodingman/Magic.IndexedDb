@@ -57,11 +57,9 @@ exact-candidate JSON/JUnit and published probe reports to distinguish executed
 browser and trimmed/AOT coverage from compilation alone. For local setups, see
 the [testing guide](../contributing/migration-testing.md).
 
-## Required work for the validating agent
+## Validation procedures
 
-Use the existing source checkout. Fetch the branch, preserve unrelated work, and
-record its exact SHA before testing. Review the implementation, tests, and docs
-against the invariants below. Record any failure and its focused regression.
+Record the checkout SHA and verify the tests and implementation against the invariants below.
 
 ### 1. Execute the mandatory gates on the same final commit
 
@@ -162,22 +160,3 @@ cross-database moves, numeric-format changes and repair of a failed recovery
 remain unsupported. A whole internally consistent storage-snapshot replay cannot
 be detected without an external monotonic authority. Preserve these boundaries
 and call out any proposed API/protocol expansion for independent review.
-
-## Required response to bring back for peer review
-
-1. PR/branch and exact tested SHA; list any changes made after the last full run.
-2. A matrix of actual pass/fail/skip/executed counts, commands, SDK/browser/OS
-   versions and links to CI/evidence artifacts. Separate local, CI and unexecuted
-   scenarios.
-3. Every defect: reproducible failure, root cause, fix, focused regression and
-   commit. Include security/integrity findings even if all current tests passed.
-4. Data-preservation evidence for every protection direction, adoption path,
-   interruption/recovery stage and published trimmed/AOT lifecycle exercised.
-5. Any changes to public API, protocol, error/event semantics or compatibility.
-6. Remaining blockers, known unsupported features and optional improvements in
-   separate categories. Identify the application-owned release decisions.
-7. A clear recommendation: ready for another independent review, ready for stable
-   release, or not ready, with the specific evidence supporting it.
-
-Do not merge the PR or publish either package. The maintainer will return your
-report to the original reviewer and decide the next step.
