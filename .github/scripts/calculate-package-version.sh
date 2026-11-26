@@ -43,6 +43,13 @@ published_patch="$(
 )"
 
 base_patch="${source_patch}"
+# Start the stable v3.0 line at 3.0.0. Once a stable v3.0 package exists,
+# use the same patch allocation rule as the existing release lines.
+if [[ "${current_version}" == "3.0.0" ]] && (( published_patch == -1 )); then
+  printf '%s\n' "${current_version}"
+  exit 0
+fi
+
 if (( published_patch > base_patch )); then
   base_patch="${published_patch}"
 fi

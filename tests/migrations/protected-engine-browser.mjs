@@ -1,0 +1,476 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+
+export function registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage,
+    recoveryPackage, appendRevision, jsonAsset, assets, cliFixture, getOrigin }) {
+    const capability = 'authenticatedMigrationsV1';
+    const rows = [1, 2, 3].map(id => ({ id, name: `Private ${id}`, visits: 0 }));
+    const model = policy => { const result = schema(); result.requiredCapabilities = [capability]; Object.assign(result.stores[0], policy); return result; };
+    const planFor = (before, after, operations, options = {}) => bundle(before, after, operations, { ...options,
+        mode: options.mode ?? 'resumable', changeMigration: doc => { doc.requiredCapabilities = [capability]; },
+        changeManifest: manifest => { manifest.requiredCapabilities = [capability]; } });
+    async function authorize(page, keyByte = 73, account = 'protected-test') {
+        await page.evaluate(async ({ keyByte, account }) => {
+            const { createProtectedMigrationAdapter } = await import('/engine/migrations/protectedMigrationAdapter.js');
+            window.authorization = new AbortController();
+            window.protectionAdapter = await createProtectedMigrationAdapter({ name: 'test', account, keyId: 'test-key',
+                key: new Uint8Array(32).fill(keyByte), signal: authorization.signal });
+        }, { keyByte, account });
+    }
+    async function seed(page, source, values = rows) {
+        await authorize(page);
+        await page.evaluate(async ({ source, values }) => {
+            await engine.ensureDatabase({ name: 'test', schema: source, protection: protectionAdapter, initialize: true });
+            const encoded = [];
+            for (const row of values) encoded.push(await protectionAdapter.sealRecord(row, source, 'clients', row.id));
+            await writeRows('test', encoded);
+        }, { source, values });
+    }
+    const run = (page, plan, extra = {}) => page.evaluate(options => tryEnsure({ ...options, protection: protectionAdapter }),
+        { name: 'test', schema: plan.after, manifestUrl: plan.url, batchSize: 1, ...extra });
+    const logical = (page, target) => page.evaluate(async target => {
+        const result = [];
+        for (const row of await readRows('test')) result.push(await protectionAdapter.openRecord(row, target, 'clients', row.id));
+        return result;
+    }, target);
+    const representations = page => page.evaluate(async () => (await readRows('test')).map(row =>
+        row.__magic_record?.ciphertext instanceof ArrayBuffer ? 'record' :
+            row.name?.ciphertext instanceof ArrayBuffer ? 'field' : 'public'));
+
+    for (const [label, before, after, loss] of [
+        ['plaintext to field encryption', {}, { encryptedFields: ['name'] }, false],
+        ['field encryption to plaintext', { encryptedFields: ['name'] }, {}, true],
+        ['field to whole-record encryption', { encryptedFields: ['name'] }, { exposedFields: ['id'] }, false],
+        ['whole-record to field encryption', { exposedFields: ['id'] }, { encryptedFields: ['name'] }, true],
+        ['whole-record public allowlist grows', { exposedFields: ['id'] }, { exposedFields: ['id', 'name'] }, true],
+        ['whole-record public allowlist shrinks', { exposedFields: ['id', 'name'] }, { exposedFields: ['id'] }, false]
+    ]) test(`authenticated migration: ${label}`, async ({ page }) => {
+        const source = model(before), target = model(after);
+        await seed(page, source);
+        const plan = planFor(source, target, [{ op: 'reprotect', store: 'clients', ...(loss ? { allowProtectionLoss: true } : {}) }]);
+        const result = await run(page, plan);
+        assert.equal(result.ok, true, JSON.stringify(result));
+        assert.deepEqual(await logical(page, target), rows);
+        const stored = await read(page);
+        const namePublic = after.exposedFields ? after.exposedFields.includes('name') : !after.encryptedFields?.includes('name');
+        assert.equal(JSON.stringify(stored).includes('Private 1'), namePublic);
+        if (after.exposedFields) assert.ok(stored.every(row => !Object.hasOwn(row, 'visits') && Object.hasOwn(row, '__magic_record')));
+        const ready = await inspect(page);
+        assert.equal(ready.state.protocolVersion, 3);
+        assert.equal(ready.state.status, 'ready');
+        assert.equal(ready.state.revision, 2);
+        assert.equal((await run(page, plan)).ok, true);
+    });
+
+    test('authenticated downgrade requires an explicit decision before any journal or record changes', async ({ page }) => {
+        const source = model({ encryptedFields: ['name'] }), target = model({});
+        await seed(page, source);
+        const before = await inspect(page), stored = await read(page);
+        const plan = planFor(source, target, [{ op: 'reprotect', store: 'clients' }]);
+        assert.equal((await run(page, plan)).error?.code, 'MAGDB_PROTECTION_LOSS_REQUIRES_APPROVAL');
+        assert.deepEqual(await inspect(page), before);
+        assert.deepEqual(await read(page), stored);
+    });
+
+    for (const [label, keyByte, account] of [['wrong key', 74, 'protected-test'], ['wrong account', 73, 'another-account']])
+        test(`authenticated migration rejects ${label} without mutation`, async ({ page }) => {
+            const source = model({ encryptedFields: ['name'] }); await seed(page, source);
+            const before = await inspect(page), stored = await read(page);
+            const plan = planFor(source, copy(source), [{ op: 'setMissing', store: 'clients', path: 'changed', value: true }]);
+            await authorize(page, keyByte, account);
+            assert.equal((await run(page, plan)).error?.code, 'MAGDB_AUTHORIZATION_REJECTED');
+            assert.deepEqual(await inspect(page), before);
+            assert.deepEqual(await read(page), stored);
+        });
+
+    test('a v3 journal rejects a restored legacy policy even when the policy shape matches', async ({ page }) => {
+        const source = model({ encryptedFields: ['name'] });
+        await seed(page, source);
+        const plan = planFor(source, copy(source), [{ op: 'setMissing', store: 'clients', path: 'changed', value: true }]);
+        await page.evaluate(async () => {
+            const { importEncryptionKey, encryptValue } = await import('/engine/utilities/encryptionEnvelope.js');
+            const { createProtectionPolicy } = await import('/engine/utilities/protectionPolicy.js');
+            const policy = createProtectionPolicy([{ tableName: 'clients', columnNamesInCompoundKey: ['id'],
+                primaryKeyAuto: false, indexes: [], uniqueIndexes: [], columnNamesInCompoundIndex: [], encryptedFields: ['name'] }]);
+            const key = await importEncryptionKey(new Uint8Array(32).fill(73));
+            const envelope = await encryptValue(JSON.stringify(['Magic.IndexedDb/policy', 1, policy.policyFingerprint]),
+                key, 'test-key', { database: 'test', account: 'protected-test', store: '__magic_encryption', primaryKey: 'policy', member: null });
+            const db = await openRaw('test');
+            try {
+                const tx = db.transaction('__magic_encryption', 'readwrite'), done = complete(tx);
+                tx.objectStore('__magic_encryption').put(envelope, 'policy');
+                await done;
+            } finally { db.close(); }
+        });
+        const before = await inspect(page), stored = await read(page);
+        const result = await run(page, plan);
+        assert.equal(result.error?.code, 'MAGDB_PROTECTION_STATE_INVALID', JSON.stringify(result));
+        assert.deepEqual(await inspect(page), before);
+        assert.deepEqual(await read(page), stored);
+    });
+
+    test('an authenticated structural migration rejects numeric-policy damage during preflight', async ({ page }) => {
+        const source = model({ encryptedFields: ['name'] });
+        source.numericFormat = 'lossless-v1';
+        await seed(page, source);
+        const target = copy(source);
+        const added = { name: 'byId', keyPath: 'id', unique: false, multiEntry: false };
+        target.stores[0].indexes.push(added);
+        const plan = planFor(source, target, [{ op: 'createIndex', store: 'clients', index: added }], { mode: 'atomic' });
+        const before = await inspect(page), stored = await read(page);
+        await page.route(plan.url.replace('manifest.json', plan.manifest.migrations[0].path), async route => {
+            await page.evaluate(async () => {
+                const db = await openRaw('test');
+                try {
+                    const tx = db.transaction('__magic_numeric_policy', 'readwrite'), done = complete(tx);
+                    tx.objectStore('__magic_numeric_policy').delete('policy');
+                    await done;
+                } finally { db.close(); }
+            });
+            await route.continue();
+        });
+        const result = await run(page, plan);
+        assert.equal(result.error?.code, 'MAGDB_CODEC_POLICY_MISMATCH', JSON.stringify(result));
+        assert.deepEqual(await inspect(page), { ...before, numericPolicy: null });
+        assert.deepEqual(await read(page), stored);
+    });
+
+    test('authenticated preflight rejects a replaced journal for a different committed edge', async ({ page }) => {
+        const source = model({ encryptedFields: ['name'] });
+        await seed(page, source);
+        await page.evaluate(async () => {
+            const db = await openRaw('test');
+            try {
+                const tx = db.transaction(['__magic_migrations__', '__magic_encryption']);
+                window.priorAuthenticatedEdge = await Promise.all([
+                    request(tx.objectStore('__magic_migrations__').get('state')),
+                    request(tx.objectStore('__magic_encryption').get('migration-state'))]);
+            } finally { db.close(); }
+        });
+        let plan = planFor(source, copy(source), [{ op: 'setMissing', store: 'clients', path: 'afterFirst', value: true }]);
+        assert.equal((await run(page, plan)).value?.revision, 2);
+        plan = appendRevision(plan, source, [{ op: 'setMissing', store: 'clients', path: 'afterSecond', value: true }], 'resumable');
+        const later = JSON.parse(assets.get(plan.lastMigrationPath).body);
+        later.requiredCapabilities = [capability];
+        plan.manifest.migrations.at(-1).sha256 = jsonAsset(plan.lastMigrationPath, later).sha256;
+        jsonAsset(plan.base + '/manifest.json', plan.manifest);
+        const before = await inspect(page), stored = await read(page);
+        await page.route(getOrigin() + plan.lastMigrationPath, async route => {
+            await page.evaluate(async () => {
+                const db = await openRaw('test');
+                try {
+                    const tx = db.transaction(['__magic_migrations__', '__magic_encryption'], 'readwrite'), done = complete(tx);
+                    tx.objectStore('__magic_migrations__').put(priorAuthenticatedEdge[0], 'state');
+                    tx.objectStore('__magic_encryption').put(priorAuthenticatedEdge[1], 'migration-state');
+                    await done;
+                } finally { db.close(); }
+            });
+            await route.continue();
+        });
+        assert.equal((await run(page, plan)).error?.code, 'MAGDB_CONCURRENT_CHANGE');
+        const after = await inspect(page);
+        assert.equal(after.nativeVersion, before.nativeVersion);
+        assert.equal(after.state.revision, 1);
+        assert.deepEqual(await read(page), stored);
+    });
+
+    test('authenticated preflight rejects replacement with an older checkpoint of the same edge', async ({ page }) => {
+        const source = model({ encryptedFields: ['name'] });
+        await seed(page, source);
+        const plan = planFor(source, source, [{ op: 'transform', store: 'clients' }], {
+            module: 'export function transform(row) { return { ...row, visits: row.visits + 1 }; }' });
+        for (const count of [1, 2]) {
+            const result = await page.evaluate(async ({ source, url, count }) => {
+                const controller = new AbortController();
+                try {
+                    await engine.ensureDatabase({ name: 'test', schema: source, manifestUrl: url, protection: protectionAdapter,
+                        batchSize: 1, signal: controller.signal, onEvent: event => {
+                            if (event.phase === 'checkpoint' && event.processedRecords === count) controller.abort();
+                        } });
+                } catch (error) { return error.code; }
+                return null;
+            }, { source, url: plan.url, count });
+            assert.equal(result, 'MAGDB_CANCELLED');
+            if (count === 1) await page.evaluate(async () => {
+                const db = await openRaw('test');
+                try {
+                    const tx = db.transaction(['__magic_migrations__', '__magic_encryption']);
+                    window.earlierProgress = await Promise.all([
+                        request(tx.objectStore('__magic_migrations__').get('state')),
+                        request(tx.objectStore('__magic_encryption').get('migration-state'))]);
+                } finally { db.close(); }
+            });
+        }
+        assert.equal((await inspect(page)).state.active.processedRecords, 2);
+        const stored = await read(page);
+        await page.route(plan.url.replace('manifest.json', plan.manifest.migrations[0].path), async route => {
+            await page.evaluate(async () => {
+                const db = await openRaw('test');
+                try {
+                    const tx = db.transaction(['__magic_migrations__', '__magic_encryption'], 'readwrite'), done = complete(tx);
+                    tx.objectStore('__magic_migrations__').put(earlierProgress[0], 'state');
+                    tx.objectStore('__magic_encryption').put(earlierProgress[1], 'migration-state');
+                    await done;
+                } finally { db.close(); }
+            });
+            await route.continue();
+        });
+        assert.equal((await run(page, plan)).error?.code, 'MAGDB_CONCURRENT_CHANGE');
+        assert.deepEqual(await read(page), stored);
+    });
+
+    test('authenticated migration checkpoints retain ciphertext and reject journal tampering', async ({ page }) => {
+        const source = model({ encryptedFields: ['name'] }); await seed(page, source);
+        const plan = planFor(source, copy(source), [{ op: 'transform', store: 'clients' }], {
+            module: 'export function transform(row) { return { ...row, visits: row.visits + 1 }; }' });
+        const cancelled = await page.evaluate(async options => {
+            const controller = new AbortController();
+            try { await engine.ensureDatabase({ ...options, protection: protectionAdapter, signal: controller.signal,
+                onEvent: event => { if (event.phase === 'checkpoint' && event.processedRecords === 1) controller.abort(); } }); }
+            catch (error) { return error.code; }
+        }, { name: 'test', schema: source, manifestUrl: plan.url, batchSize: 1 });
+        assert.equal(cancelled, 'MAGDB_CANCELLED');
+        assert.equal((await inspect(page)).state.active.processedRecords, 1);
+        assert.ok(!(JSON.stringify(await read(page))).includes('Private'));
+        const before = await read(page);
+        await page.evaluate(async () => {
+            const db = await openRaw('test'); const tx = db.transaction('__magic_migrations__', 'readwrite'); const done = complete(tx);
+            const table = tx.objectStore('__magic_migrations__'); const get = table.get('state');
+            get.onsuccess = () => { const state = get.result; state.active.processedRecords = 2; table.put(state, 'state'); };
+            await done; db.close();
+        });
+        assert.equal((await run(page, plan)).error?.code, 'MAGDB_PROTECTION_STATE_INVALID');
+        assert.deepEqual(await read(page), before);
+    });
+
+    test('authenticated metadata cannot be bypassed by deleting its policy and requesting plaintext adoption', async ({ page }) => {
+        const source = model({}); await seed(page, source);
+        await page.evaluate(async () => {
+            const db = await openRaw('test'); const tx = db.transaction(['__magic_migrations__', '__magic_encryption'], 'readwrite'); const done = complete(tx);
+            const table = tx.objectStore('__magic_migrations__'); const get = table.get('state');
+            get.onsuccess = () => { const state = get.result; state.protocolVersion = 1; table.put(state, 'state'); };
+            tx.objectStore('__magic_encryption').clear(); await done; db.close();
+        });
+        const before = await read(page);
+        const plain = schema();
+        const result = await page.evaluate(schema => tryEnsure({ name: 'test', schema }), plain);
+        assert.equal(result.ok, false);
+        const retry = await page.evaluate(schema => tryEnsure({ name: 'test', schema, protection: protectionAdapter, initialize: true }), source);
+        assert.equal(retry.error?.code, 'MAGDB_PROTECTION_STATE_INVALID');
+        assert.deepEqual(await read(page), before);
+    });
+
+    for (const removeJournal of [false, true]) for (const removeProof of [false, true])
+        test(`authenticated identity rejects ${removeJournal ? 'deleted' : 'downgraded'} journal with ${removeProof ? 'deleted' : 'retained'} proof`, async ({ page }) => {
+            const source = model({ encryptedFields: ['name'] });
+            await seed(page, source);
+            const plan = planFor(source, copy(source), [{ op: 'setMissing', store: 'clients', path: 'replayed', value: true }],
+                { baseline: source });
+            await page.evaluate(async ({ removeJournal, removeProof }) => {
+                const db = await openRaw('test');
+                try {
+                    const tx = db.transaction(['__magic_migrations__', '__magic_encryption'], 'readwrite');
+                    const done = complete(tx), journal = tx.objectStore('__magic_migrations__');
+                    if (removeJournal) journal.delete('state');
+                    else {
+                        const get = journal.get('state');
+                        get.onsuccess = () => journal.put({ ...get.result, protocolVersion: 1 }, 'state');
+                    }
+                    if (removeProof) tx.objectStore('__magic_encryption').delete('migration-state');
+                    await done;
+                } finally { db.close(); }
+            }, { removeJournal, removeProof });
+            const before = await inspect(page), stored = await read(page);
+            assert.equal((await run(page, plan, { initialize: true })).error?.code, 'MAGDB_PROTECTION_STATE_INVALID');
+            assert.deepEqual(await inspect(page), before);
+            assert.deepEqual(await read(page), stored);
+        });
+
+    test('abrupt authenticated migration termination resumes encrypted batches exactly once', async ({ page, context }) => {
+        const source = model({ encryptedFields: ['name'] }); await seed(page, source);
+        const plan = planFor(source, copy(source), [{ op: 'transform', store: 'clients' }], { module: `
+            export async function transform(row) {
+                if (row.id === 2 && globalThis.holdAuthenticated) { globalThis.authHookPending = true; await new Promise(() => {}); }
+                return { ...row, visits: row.visits + 1 };
+            }` });
+        await page.evaluate(options => { window.holdAuthenticated = true; window.pendingAuthenticated = tryEnsure({ ...options, protection: protectionAdapter }); },
+            { name: 'test', schema: source, manifestUrl: plan.url, batchSize: 1 });
+        await page.waitForFunction(() => window.authHookPending === true);
+        const reader = await loadPage(context);
+        assert.equal((await inspect(reader)).state.active.processedRecords, 1);
+        assert.ok(!JSON.stringify(await read(reader)).includes('Private'));
+        await page.close();
+        await authorize(reader);
+        assert.equal((await run(reader, plan)).ok, true);
+        assert.deepEqual(await logical(reader, source), rows.map(row => ({ ...row, visits: 1 })));
+        assert.equal((await inspect(reader)).state.status, 'ready');
+    });
+
+    test('authenticated static deployment checks CSP and cached historical assets before writing', async ({ page, context }) => {
+        const source = model({ encryptedFields: ['name'] });
+        await seed(page, source);
+        const plan = planFor(source, copy(source), [{ op: 'transform', store: 'clients' }], {
+            module: 'export function transform(row) { return { ...row, visits: row.visits + 1 }; }' });
+        const before = await inspect(page), stored = await read(page);
+        let allowBlob = false;
+        await context.route(getOrigin() + '/', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html>',
+            headers: { 'Content-Security-Policy': "default-src 'none'; connect-src 'self'; worker-src 'self'; script-src 'self'" +
+                (allowBlob ? ' blob:' : '') } }));
+        const strict = await loadPage(context);
+        await authorize(strict);
+        const blocked = await run(strict, plan);
+        assert.equal(blocked.error?.code, 'MAGDB_MIGRATION_FAILED');
+        assert.deepEqual(await inspect(strict), before);
+        assert.deepEqual(await read(strict), stored);
+
+        allowBlob = true;
+        const cached = await loadPage(context);
+        await authorize(cached);
+        const workerPath = '/protected-offline-fixture.js';
+        assets.set(workerPath, { type: 'text/javascript', body: `
+            self.addEventListener('install', () => self.skipWaiting());
+            self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+            self.addEventListener('fetch', event => {
+                if (new URL(event.request.url).pathname.startsWith('/fixtures/'))
+                    event.respondWith(caches.match(event.request).then(hit => hit ?? new Response(null, { status: 504 })));
+            });` });
+        const hookPath = plan.base + '/migrations/transform.js';
+        await cached.evaluate(async ({ workerPath, paths }) => {
+            const cache = await caches.open('authenticated-assets');
+            await cache.addAll(paths);
+            await navigator.serviceWorker.register(workerPath);
+            if (!navigator.serviceWorker.controller) await new Promise(resolve =>
+                navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
+        }, { workerPath, paths: [new URL(plan.url).pathname, ...plan.manifest.schemas.map(asset => plan.base + '/' + asset.path),
+            plan.base + '/' + plan.manifest.migrations[0].path] });
+        assert.equal((await run(cached, plan)).error?.code, 'MAGDB_ASSET_UNAVAILABLE');
+        assert.deepEqual(await inspect(cached), before);
+        assert.deepEqual(await read(cached), stored);
+        await cached.evaluate(({ hookPath, body }) => caches.open('authenticated-assets').then(cache =>
+            cache.put(hookPath, new Response(body))), { hookPath, body: assets.get(hookPath).body });
+        assert.equal((await run(cached, plan)).value?.revision, 2);
+        assert.deepEqual(await logical(cached, source), rows.map(row => ({ ...row, visits: 1 })));
+        assert.deepEqual(await representations(cached), ['field', 'field', 'field']);
+    });
+
+    test('two tabs and a worker converge on one authenticated migration of 1024 records', async ({ page, context }) => {
+        const source = model({ encryptedFields: ['name'] });
+        const records = Array.from({ length: 1024 }, (_, index) => ({ id: index + 1, name: 'Private ' + index, visits: 0 }));
+        await seed(page, source, records);
+        const plan = planFor(source, copy(source), [{ op: 'transform', store: 'clients' }], {
+            module: 'export function transform(row) { return { ...row, visits: row.visits + 1 }; }' });
+        const tab = await loadPage(context);
+        await authorize(tab);
+        const workerPath = plan.base + '/protected-worker.mjs';
+        assets.set(workerPath, { type: 'text/javascript', body: `
+            import { ensureDatabase } from '/engine/migrations/migrationEngine.js';
+            import { createProtectedMigrationAdapter } from '/engine/migrations/protectedMigrationAdapter.js';
+            self.onmessage = async ({ data }) => {
+                try {
+                    const protection = await createProtectedMigrationAdapter({ name: 'test', account: 'protected-test',
+                        keyId: 'test-key', key: new Uint8Array(32).fill(73) });
+                    const result = await ensureDatabase({ ...data, protection });
+                    self.postMessage({ revision: result.revision });
+                } catch (error) { self.postMessage({ code: error.code }); }
+            };` });
+        const worker = page.evaluate(({ workerPath, options }) => new Promise((resolve, reject) => {
+            const worker = new Worker(workerPath, { type: 'module' });
+            worker.onmessage = event => { worker.terminate(); resolve(event.data); };
+            worker.onerror = error => { worker.terminate(); reject(new Error(error.message)); };
+            worker.postMessage(options);
+        }), { workerPath, options: { name: 'test', schema: source, manifestUrl: plan.url, batchSize: 32 } });
+        const [one, two, three] = await Promise.all([run(page, plan, { batchSize: 32 }), run(tab, plan, { batchSize: 32 }), worker]);
+        assert.deepEqual([one.value?.revision, two.value?.revision, three.revision], [2, 2, 2], JSON.stringify([one, two, three]));
+        assert.deepEqual(await logical(tab, source), records.map(row => ({ ...row, visits: 1 })));
+        assert.ok((await representations(tab)).every(kind => kind === 'field'));
+        assert.equal((await inspect(tab)).state.history.length, 1);
+    });
+
+    test('authenticated recovery resumes both checkpoints across policy partitions and advances a later revision', async ({ page, context }) => {
+        const source = model({ encryptedFields: ['name'] }), target = model({ exposedFields: ['id'] });
+        await seed(page, source, rows.map(row => ({ ...row, value: 1 })));
+        let plan = planFor(source, target, [{ op: 'transform', store: 'clients' }], { module: `
+            export function transform(row) { if (row.id === 2) throw new Error(row.name); return { ...row, value: 11 }; }` });
+        const approved = recoveryPackage(plan);
+        const interrupted = await run(page, plan);
+        assert.equal(interrupted.error?.code, 'MAGDB_HOOK_FAILED');
+        assert.ok(!JSON.stringify(interrupted).includes('Private'));
+        assert.equal((await inspect(page)).state.active.processedRecords, 1);
+        assert.deepEqual(await representations(page), ['record', 'field', 'field']);
+
+        plan = appendRevision(plan, target, [{ op: 'setMissing', store: 'clients', path: 'normalized', value: true }], 'resumable');
+        const later = JSON.parse(assets.get(plan.lastMigrationPath).body);
+        later.requiredCapabilities = [capability];
+        plan.manifest.migrations.at(-1).sha256 = jsonAsset(plan.lastMigrationPath, later).sha256;
+        jsonAsset(plan.base + '/manifest.json', plan.manifest);
+        const options = { name: 'test', schema: target, manifestUrl: plan.url, batchSize: 1, recovery: approved };
+        const pauseAt = (tab, phase) => tab.evaluate(async ({ options, phase }) => {
+            const observable = [];
+            try {
+                await engine.recoverDatabase({ ...options, protection: protectionAdapter, onEvent: event => {
+                    observable.push(event);
+                    if (event.phase === 'recoveryCheckpoint' && (phase === 'repair'
+                        ? event.processedRecords === 1 : event.verifiedRecords === 1)) authorization.abort();
+                } });
+            } catch (error) { return { code: error.code, observable }; }
+        }, { options, phase });
+
+        const repairPause = await pauseAt(page, 'repair');
+        assert.equal(repairPause.code, 'MAGDB_AUTHORIZATION_LOST');
+        assert.equal((await inspect(page)).state.recovery.repaired, 1);
+        const checkpoint = await inspect(page);
+        assert.deepEqual(await representations(page), ['record', 'field', 'field']);
+        await page.close();
+        const reopened = await loadPage(context);
+        await authorize(reopened);
+        assert.deepEqual(await inspect(reopened), checkpoint);
+        assert.equal((await run(reopened, plan)).error?.code, 'MAGDB_RECOVERY_REQUIRED');
+
+        const verifyPause = await pauseAt(reopened, 'verify');
+        assert.equal(verifyPause.code, 'MAGDB_AUTHORIZATION_LOST');
+        await authorize(reopened);
+        assert.equal((await inspect(reopened)).state.recovery.verified, 1);
+        assert.equal((await run(reopened, plan)).error?.code, 'MAGDB_RECOVERY_REQUIRED');
+        assert.ok(!(JSON.stringify([repairPause, verifyPause, await inspect(reopened)])).includes('Private'));
+        const result = await reopened.evaluate(options => tryEnsure({ ...options, protection: protectionAdapter }, true), options);
+        assert.equal(result.value?.outcome, 'recovered', JSON.stringify(result));
+        assert.equal(result.value.applicationTargetRevision, 3);
+        const expected = rows.map(row => ({ ...row, value: 10, repairs: 1 }));
+        assert.deepEqual(await logical(reopened, target), expected);
+        assert.ok(!JSON.stringify(await read(reopened)).includes('Private'));
+        const completed = (await inspect(reopened)).state;
+        assert.equal(completed.protocolVersion, 3);
+        assert.equal(completed.history[0].outcome, 'recovered');
+        assert.ok(await reopened.evaluate(async id => {
+            const db = await openRaw('test');
+            try {
+                const audit = await request(db.transaction('__magic_migrations__').objectStore('__magic_migrations__').get('recovery:' + id));
+                return audit?.ciphertext instanceof ArrayBuffer && audit.ciphertext.byteLength > 0 &&
+                    !Object.hasOwn(audit, 'original') && !Object.hasOwn(audit, 'recovery');
+            } finally { db.close(); }
+        }, approved.id));
+        assert.equal((await run(reopened, plan)).value?.revision, 3);
+        const advanced = (await inspect(reopened)).state;
+        assert.equal(advanced.protocolVersion, 3);
+        assert.deepEqual(advanced.history[0], completed.history[0]);
+        assert.deepEqual(await logical(reopened, target), expected.map(row => ({ ...row, normalized: true })));
+    });
+
+    if (cliFixture) test('installed CLI protected history executes all encryption directions and later structural revision', async ({ page }) => {
+        const directory = path.join(path.dirname(cliFixture), 'protected-transition');
+        const manifest = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
+        const models = await Promise.all(manifest.schemas.map(async entry => JSON.parse(await readFile(path.join(directory, entry.path), 'utf8'))));
+        const values = rows.map(row => ({ id: row.id, name: row.name, notes: 'Secret note ' + row.id }));
+        await seed(page, models[0], values);
+        const plan = { after: models.at(-1), url: getOrigin() + '/cli/protected-transition/manifest.json' };
+        const result = await run(page, plan);
+        assert.equal(result.ok, true, JSON.stringify(result));
+        assert.equal(result.value.revision, 6);
+        assert.deepEqual(await logical(page, models.at(-1)), values);
+        const saved = await inspect(page);
+        assert.equal(saved.state.protocolVersion, 3);
+        assert.equal(saved.state.history.length, 5);
+        assert.equal(saved.stores[0].indexes[0].name, 'byName');
+    });
+}

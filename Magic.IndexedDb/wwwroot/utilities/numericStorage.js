@@ -1,3 +1,5 @@
+import { metadataStore as migrationMetadataStore } from "../migrations/protocol.js";
+
 export const numericDatabasePrefix = "__magic_numeric_v1__:";
 export const numericMetadataStore = "__magic_numeric_policy";
 const numericMetadataKey = "policy";
@@ -134,7 +136,7 @@ export async function assertNumericPolicy(db, expected) {
     if (!saved || numericPolicyIdentity(saved) !== numericPolicyIdentity(expected)) {
         throw new Error("MAGIC_NUMERIC_POLICY_MISMATCH: The persisted numeric storage policy does not match this configuration.");
     }
-    const actualSchema = db.tables.filter(table => table.name !== numericMetadataStore).map(table => ({
+    const actualSchema = db.tables.filter(table => table.name !== numericMetadataStore && table.name !== migrationMetadataStore).map(table => ({
         name: table.name,
         keyPath: table.schema.primKey.keyPath,
         autoIncrement: Boolean(table.schema.primKey.auto),

@@ -11,7 +11,8 @@ using Magic.IndexedDb.Interfaces;
 public sealed class IndexedDbContext : IMagicRepository
 {
     public static readonly IndexedDbSet Client = new("Client");
-    public static readonly IndexedDbSet Employee = new("Employee");
+    public static readonly IndexedDbSet Employee = new IndexedDbSet("Employee")
+        .Include<Person>();
 }
 ```
 
@@ -92,7 +93,9 @@ IMagicQuery<Person> employeeQuery =
 
 `Query<T>()` uses `GetDefaultDatabase()`. The selector overload should point to one of the table's declared `Databases` fields. The selector is a strongly typed database choice, not an authorization boundary; Magic does not use it to enforce which callers may access a database.
 
-Magic currently creates every discovered table in every discovered `IndexedDbSet`. The table's `Databases` property gives you strongly typed choices when querying, but it does not remove that table from the other Magic databases. See [browser storage and multiple tabs](../reference/browser-support-and-storage.md#which-tables-are-created).
+Version 3 resolves membership per database. A discovered table belongs to its `GetDefaultDatabase()` declaration; `Include<T>()` adds it elsewhere. In this example, `Person` belongs to `Client` by default and `Employee` through its explicit include. The typed `Databases` selector chooses among declarations; it does not add membership. Queries for a table outside a database's resolved membership fail before database creation.
+
+Use `Exclude<T>()` to remove an inferred default table, or `ExplicitTablesOnly()` followed by `Include<T>()` to list every member explicitly. Fluent methods return new declarations, so retain their result. See [migration schema declarations and export](../guides/migration-schema.md) for stable identities, instance names, and design-time configuration.
 
 ## Register schema types explicitly
 
@@ -108,7 +111,7 @@ builder.Services.AddMagicBlazorDB(
 
 Each list must contain at least one distinct, concrete type. Tables implement `IMagicTable<>` and have a public parameterless constructor. Repositories implement `IMagicRepository` and expose at least one `IndexedDbSet` field. Static fields work without a repository constructor. Instance fields require a public parameterless constructor.
 
-Magic reads schema metadata from the listed types and creates every listed table in every database declared by the listed repositories. When switching an existing app to explicit registration, include all the tables and repositories the app uses.
+Magic reads schema metadata from the listed types and resolves each database's default, included, and excluded tables. Only databases actually requested by the application are opened. When switching an existing app to explicit registration, include all the tables and repositories the app uses; add `Include<T>()` where a table must be present outside its default database. Existing databases require the reviewed baseline/adoption process described in the [version 3 upgrade guide](../upgrading/v3.md).
 
 ## Primary keys
 
@@ -126,7 +129,7 @@ public IMagicCompoundKey GetKeys() =>
     CreateCompoundKey(x => x.TenantId, x => x.PersonId);
 ```
 
-A single primary-key property cannot be nullable. If it auto-increments, it must also be numeric. Development-time schema validation rejects nullable single keys, non-numeric auto-increment keys, duplicate compound-key column names, and duplicate compound-index definitions.
+A single primary-key property cannot be nullable. If it auto-increments, it must also be numeric. Schema validation rejects nullable single keys, non-numeric auto-increment keys, duplicate compound-key column names, and duplicate compound-index definitions in development, design-time export, and production.
 
 ## Compound indexes
 
@@ -168,7 +171,7 @@ public string Email { get; set; } = string.Empty;
 public Guid ExternalId { get; set; }
 ```
 
-Keep development validation enabled so conflicting attributes and invalid key definitions fail during startup rather than surfacing later as browser schema errors.
+Schema validation always runs when the resolved model is constructed. The debug setting controls diagnostics and does not disable these checks.
 
 ## Schema changes
 

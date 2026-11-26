@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Magic.IndexedDb;
+using Magic.IndexedDb.Migrations;
 using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.SchemaAnnotations;
 
@@ -352,7 +353,7 @@ public static class NumericFixture
 public sealed class NumericRepository : IMagicRepository
 {
     public static readonly IndexedDbSet Lossless = new("Numeric.Lossless");
-    public static readonly IndexedDbSet Legacy = new("Numeric.Legacy");
+    public static readonly IndexedDbSet Legacy = new IndexedDbSet("Numeric.Legacy").Include<NumericValueRecord>();
 }
 
 public sealed class NumericProtectedRepository : IMagicRepository
@@ -402,7 +403,9 @@ public sealed class NumericValueRecord : MagicTableTool<NumericValueRecord>, IMa
     [MagicIndex] public NumericLongStatus SignedStatus { get; set; }
     [MagicIndex] public NumericUnsignedStatus UnsignedStatus { get; set; }
     public NumericPayload Nested { get; set; } = new();
-    [JsonConverter(typeof(ProjectionIntConverter))] public int Converted { get; set; }
+    [JsonConverter(typeof(ProjectionIntConverter))]
+    [MagicStorageCodec("projection-int-prefix", 1)]
+    public int Converted { get; set; }
     public NumericRepository Databases { get; } = new();
     public IndexedDbSet GetDefaultDatabase() => NumericRepository.Lossless;
     public string GetTableName() => nameof(NumericValueRecord);
