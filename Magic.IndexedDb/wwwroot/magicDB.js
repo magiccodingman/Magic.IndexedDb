@@ -14,7 +14,7 @@ import {
 import { debugLog } from "./utilities/utilityHelpers.js";
 import { recoverDatabase, ensureDatabase, assertDatabaseReady, inspectDatabase, subscribeMigrationEvents, MigrationError } from "./migrations/migrationEngine.js";
 import { canonicalJson, metadataStore } from "./migrations/protocol.js";
-import { inspectOpen, notifyManagedLifecycle, verifyRotationDeployment } from "./migrations/migrationEngine.js";
+import { inspectKeyRoutingHints, notifyManagedLifecycle, verifyRotationDeployment } from "./migrations/migrationEngine.js";
 import { portableProtectionPolicy } from "./utilities/protectionPolicy.js";
 import { advanceRotationPass } from "./utilities/rotationPass.js";
 import { rotationJournalKey } from "./utilities/rotationJournal.js";
@@ -348,14 +348,9 @@ async function attachRotation(registration, active, context, ready) {
 export async function getManagedEncryptionKeyHints(name) {
     const managed = managedDatabases.get(name);
     if (!managed?.protected) return null;
-    try { await managed.db.open(); } catch (error) {
-        if (error.name === "NoSuchDatabaseError") return null;
-        throw error;
-    }
-    const snapshot = await inspectOpen(managed.db.backendDB(), rotationJournalKey);
-    return snapshot.rotation ? { active: true, keyId: snapshot.rotation.state?.sourceKeyId,
-        targetKeyId: snapshot.rotation.state?.targetKeyId }
-        : snapshot.protectionPolicy?.keyId ? { active: false, keyId: snapshot.protectionPolicy.keyId } : null;
+    if (managed.pending && managed.authorization?.adapter)
+        return { active: false, keyId: managed.authorization.keyId };
+    return inspectKeyRoutingHints(managed.db.name, rotationJournalKey);
 }
 
 export async function authorizeManagedKeyRotation(name, sourceKeyId, sourceInput, targetKeyId, targetInput) {
@@ -383,7 +378,9 @@ export async function getManagedKeyRotationStatus(name) {
     const managed = managedRotationRegistration(name);
     const rotation = managed.rotation;
     if (rotation) {
+        const previous = rotation.active.document.state;
         const current = await openRotation(rotationContext(managed, rotation.keys));
+        if (current) assertRotationProgress(previous, current.document.state);
         if (!current) throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Reauthorize the finalized vault.");
         return rotationStatus(current.document);
     }
@@ -394,6 +391,11 @@ export async function getManagedKeyRotationStatus(name) {
         sourceKeyId: lineage.generations.at(-2), targetKeyId: lineage.generations.at(-1),
         converted: lineage.completed.converted, verified: lineage.completed.verified, retirementReady: true,
         readsAllowed: true, writesAllowed: true } : { phase: "not-started", retirementReady: false };
+}
+
+function assertRotationProgress(previous, current) {
+    if (previous.rotationId !== current.rotationId || current.sequence < previous.sequence)
+        throw new Error("MAGIC_ROTATION_STATE_INVALID: Authenticated progress was replaced by an earlier state.");
 }
 
 async function runRotation(registration, options, start) {
@@ -499,9 +501,12 @@ export async function resumeManagedEncryptionKeyRotation(name, options = {}) {
     const managed = managedRotationRegistration(name);
     if (!managed.rotation) throw new Error("MAGIC_ROTATION_AUTHORIZATION_REQUIRED: Authorize both rotation keys before resuming.");
     return runRotation(managed, options, async signal => {
-        const context = rotationContext(managed, managed.rotation.keys, signal);
+        const rotation = managed.rotation;
+        const previous = rotation.active.document.state;
+        const context = rotationContext(managed, rotation.keys, signal);
         const active = await openRotation(context);
         if (!active) throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Reauthorize the finalized vault.");
+        assertRotationProgress(previous, active.document.state);
         return { active, context };
     });
 }

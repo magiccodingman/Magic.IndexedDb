@@ -127,10 +127,17 @@ export async function inspectOpen(db, rotationKey = null) {
         ...(rotationKey ? { rotation } : {}) };
 }
 
-async function inspectDatabaseInternal(name, signal) {
+async function inspectDatabaseInternal(name, signal, rotationKey = null) {
     const db = await openExisting(name, signal);
     if (!db) return null;
-    try { return await inspectOpen(db); } finally { db.close(); }
+    try { return await inspectOpen(db, rotationKey); } finally { db.close(); }
+}
+
+export async function inspectKeyRoutingHints(name, rotationKey) {
+    const snapshot = await inspectDatabaseInternal(name, undefined, rotationKey);
+    return snapshot?.rotation ? { active: true, keyId: snapshot.rotation.state?.sourceKeyId,
+        targetKeyId: snapshot.rotation.state?.targetKeyId }
+        : snapshot?.protectionPolicy?.keyId ? { active: false, keyId: snapshot.protectionPolicy.keyId } : null;
 }
 
 /** Inspect metadata only. Durable record keys are never exposed in diagnostics. */
