@@ -99,6 +99,11 @@ It applies to the active vault. Retain old keys required by backups and exports.
 The browser cannot prove physical erasure or detect replay of a complete consistent
 storage snapshot without an external trusted freshness anchor.
 
+Rotation compares portable stored records, including native dates and byte arrays.
+Unsupported values written by external IndexedDB clients, such as cyclic
+structures or maps, stop conversion without committing the affected batch. Keep
+both keys and address the incompatible data with the application’s recovery policy.
+
 Start with 128 records per batch. Reduce the batch size for large records or
 foreground contention, and enable yielding if the application needs more
 responsiveness. Larger batches can reduce transaction overhead but increase

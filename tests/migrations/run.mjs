@@ -1660,11 +1660,23 @@ test('rotation batch preserves a concurrent write and commits conversion with it
         const final = await request(db.transaction('metadata').objectStore('metadata').get('progress'));
         const [row] = await readRotationBatch(db, 'documents', null, 1);
         const remainder = await readRotationBatch(db, 'documents', key, 1);
+        const unsupported = { ...row.record, foreign: new Map([['example', 'content']]) };
+        await put('documents', unsupported);
+        const [foreign] = await readRotationBatch(db, 'documents', null, 1);
+        let unsupportedCode = null;
+        try {
+            await commitRotationBatch(db, [{ store: 'documents', key, value: foreign.record },
+                { ...progress, value: { phase: 1 } }], [write, { ...next, value: { phase: 2 } }], () => {});
+        } catch (error) { unsupportedCode = error.message.split(':')[0]; }
+        const protectedProgress = await request(db.transaction('metadata').objectStore('metadata').get('progress'));
+        const [retained] = await readRotationBatch(db, 'documents', null, 1);
         db.close();
-        return { stale, fresh, afterStale, final, label: row.record.label, bytes: [...row.record.ciphertext], remainder };
+        return { stale, fresh, afterStale, final, label: row.record.label, bytes: [...row.record.ciphertext], remainder,
+            unsupportedCode, protectedProgress, retained: [...retained.record.foreign] };
     });
     assert.deepEqual(result, { stale: false, fresh: true, afterStale: { phase: 0 }, final: { phase: 1 },
-        label: 'concurrent', bytes: [2], remainder: [] });
+        label: 'concurrent', bytes: [2], remainder: [], unsupportedCode: 'MAGIC_ROTATION_RECORD_UNSUPPORTED',
+        protectedProgress: { phase: 1 }, retained: [['example', 'content']] });
 });
 
 test('rotation checkpoints preserve compound keys across protected and public stores', async ({ page }) => {

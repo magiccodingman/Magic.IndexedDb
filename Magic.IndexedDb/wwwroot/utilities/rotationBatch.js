@@ -16,7 +16,7 @@ function bytes(value) {
     return null;
 }
 
-function sameStoredValue(left, right) {
+function sameStoredValue(left, right, ancestors = new WeakSet()) {
     if (Object.is(left, right)) return true;
     if (!left || !right || typeof left !== "object" || typeof right !== "object" ||
         Object.getPrototypeOf(left) !== Object.getPrototypeOf(right)) return false;
@@ -28,10 +28,16 @@ function sameStoredValue(left, right) {
     }
     if (left instanceof Date) return left.getTime() === right.getTime();
     if (Array.isArray(left) && left.length !== right.length) return false;
-    if (!Array.isArray(left) && Object.getPrototypeOf(left) !== Object.prototype) return false;
-    const keys = Object.keys(left);
-    return keys.length === Object.keys(right).length &&
-        keys.every(key => Object.hasOwn(right, key) && sameStoredValue(left[key], right[key]));
+    if (ancestors.has(left) || (!Array.isArray(left) && Object.getPrototypeOf(left) !== Object.prototype))
+        throw new Error("MAGIC_ROTATION_RECORD_UNSUPPORTED: A stored representation cannot be compared safely.");
+    ancestors.add(left);
+    try {
+        const keys = Object.keys(left);
+        return keys.length === Object.keys(right).length &&
+            keys.every(key => Object.hasOwn(right, key) && sameStoredValue(left[key], right[key], ancestors));
+    } finally {
+        ancestors.delete(left);
+    }
 }
 
 export async function readRotationBatch(db, storeName, afterKey, batchSize) {
