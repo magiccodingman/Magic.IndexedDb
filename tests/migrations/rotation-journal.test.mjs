@@ -10,7 +10,7 @@ const vault = { database: 'catalog', account: 'account' };
 const lease = () => {};
 const state = {
     version: 1, rotationId: 'operation-1', sourceKeyId: 'old', targetKeyId: 'new',
-    mode: 'online', modelHash: 'model', policyFingerprint: 'policy', writeKeyId: 'new',
+    mode: 'online', modelHash: 'model', policyFingerprint: 'policy', writeKeyId: 'new', priorKeyIds: ['old'],
     sequence: 1, phase: 'converting', storeIndex: 0, afterKey: ['documents', 42],
     converted: 2, verified: 0, paused: false
 };

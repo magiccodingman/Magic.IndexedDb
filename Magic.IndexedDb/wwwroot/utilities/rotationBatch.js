@@ -84,6 +84,7 @@ export async function commitRotationBatch(db, expectations, writes, assertCurren
         // Native record stores have inline keys. Metadata uses out-of-line keys.
         await Promise.all(writes.map(item => {
             const store = tx.objectStore(item.store);
+            if (item.delete === true) return requestResult(store.delete(item.key));
             return requestResult(store.keyPath === null ? store.put(item.value, item.key) : store.put(item.value));
         }));
         signal?.throwIfAborted();

@@ -38,6 +38,120 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
         row.__magic_record?.ciphertext instanceof ArrayBuffer ? 'record' :
             row.name?.ciphertext instanceof ArrayBuffer ? 'field' : 'public'));
 
+    test('managed rotation admits only recoverable distinct keys and fences the older migration path', async ({ page }) => {
+        const source = model({ encryptedFields: ['name'] });
+        await seed(page, source);
+        const result = await page.evaluate(async schema => {
+            const { admitRotation, rotationCoordinator, enterRotationVerification } = await import('/engine/utilities/rotationLifecycle.js');
+            const { importEncryptionKey } = await import('/engine/utilities/encryptionEnvelope.js');
+            const ready = await engine.ensureDatabase({ name: 'test', schema, protection: protectionAdapter });
+            const db = await openRaw('test');
+            const vault = { database: db.name, account: 'protected-test' };
+            const key = byte => importEncryptionKey(new Uint8Array(32).fill(byte));
+            const keys = new Map([['test-key', await key(73)], ['target', await key(76)]]);
+            const make = patch => ({ db, vault, ready, schema, authorization: protectionAdapter, keys,
+                targetKeyId: 'target', mode: 'online', recoverable: true, priorKeyIds: new Set(), ...patch });
+            const rejected = async options => {
+                try { await admitRotation(options); return false; } catch { return true; }
+            };
+            const ephemeral = await rejected(make({ recoverable: false }));
+            const sameKey = await rejected(make({ keys: new Map(keys).set('target', await key(73)) }));
+            const wrongSource = await rejected(make({ keys: new Map(keys).set('test-key', await key(75)) }));
+            await engine.assertDatabaseReady(db, ready, protectionAdapter);
+            const admitted = await rotationCoordinator(db, undefined, () => admitRotation(make()));
+            let oldOpenFenced = false;
+            try { await engine.assertDatabaseReady(db, ready, protectionAdapter); }
+            catch { oldOpenFenced = true; }
+            let prematureVerification = false;
+            try {
+                await enterRotationVerification({ ...admitted, db, vault, keys, storeCount: 1,
+                    assertCurrent: protectionAdapter.assertCurrent });
+            } catch { prematureVerification = true; }
+            db.close();
+            return { ephemeral, sameKey, wrongSource, oldOpenFenced, prematureVerification,
+                writeGeneration: admitted.document.state.writeKeyId };
+        }, source);
+        assert.deepEqual(result, { ephemeral: true, sameKey: true, wrongSource: true, oldOpenFenced: true,
+            prematureVerification: true, writeGeneration: 'target' });
+    });
+
+    for (const mode of ['exclusive', 'read-only', 'online']) {
+        test(`rotation storage enforces ${mode} access and restores a target-only managed vault`, async ({ page }) => {
+            const source = model({ encryptedFields: ['name'] });
+            await seed(page, source);
+            const observed = await page.evaluate(async ({ schema, mode }) => {
+                const { Dexie } = await import('/engine/dexie/dexie.js');
+                const { createProtectedStorage } = await import('/engine/utilities/protectedStorage.js');
+                const { admitRotation, enterRotationVerification, finishRotation } = await import('/engine/utilities/rotationLifecycle.js');
+                const { advanceRotationPass } = await import('/engine/utilities/rotationPass.js');
+                const { importEncryptionKey } = await import('/engine/utilities/encryptionEnvelope.js');
+                const { createProtectedMigrationAdapter } = await import('/engine/migrations/protectedMigrationAdapter.js');
+                const { portableProtectionPolicy } = await import('/engine/utilities/protectionPolicy.js');
+                const ready = await engine.ensureDatabase({ name: 'test', schema, protection: protectionAdapter });
+                const dexie = new Dexie('test');
+                await dexie.open();
+                const db = dexie.backendDB();
+                const vault = { database: db.name, account: 'protected-test' };
+                const storage = createProtectedStorage(dexie, vault.account, [{ tableName: 'clients',
+                    columnNamesInCompoundKey: ['id'], primaryKeyAuto: false, indexes: [], uniqueIndexes: [],
+                    columnNamesInCompoundIndex: [], encryptedFields: ['name'] }], null, { managedSchema: schema });
+                const keys = new Map([['test-key', await importEncryptionKey(new Uint8Array(32).fill(73))],
+                    ['target', await importEncryptionKey(new Uint8Array(32).fill(76))]]);
+                storage.setManagedReadiness(ready);
+                await storage.unlock('test-key', keys.get('test-key'), false);
+                const table = storage.forTable('clients');
+                const common = { db, vault, ready, schema, keys, assertCurrent: protectionAdapter.assertCurrent };
+                let active = await admitRotation({ ...common, authorization: protectionAdapter, targetKeyId: 'target',
+                    mode, recoverable: true });
+                const attach = () => storage.setRotationAccess(active.document, active.fence, keys, common.assertCurrent);
+                await attach();
+                const attempt = async action => {
+                    try { return { allowed: true, value: await action() }; }
+                    catch (err) { return { allowed: false, fenced: err.message.startsWith('MAGIC_ROTATION_ACCESS_FENCED:') }; }
+                };
+                const read = await attempt(() => table.read(1));
+                const write = await attempt(() => table.write([{ id: 4, name: 'New generation', visits: 0 }],
+                    (store, sealed) => store.put(sealed[0])));
+                const policies = portableProtectionPolicy(schema).policies;
+                const run = async () => {
+                    for (let index = 0; index < 12; index++) {
+                        const step = await advanceRotationPass({ ...common, document: active.document, policies, batchSize: 1,
+                            expectations: [...active.checks, { store: '__magic_encryption', key: 'policy', value: active.fence }] });
+                        if (step.outcome === 'pass-complete') return;
+                        if (step.outcome !== 'advanced') throw Error('The rotation step did not advance.');
+                        active.document = step.document;
+                    }
+                    throw Error('The bounded pass did not complete.');
+                };
+                await run();
+                active = await enterRotationVerification({ ...common, ...active, storeCount: 1 });
+                await attach();
+                const verificationWrite = await attempt(() => table.patch(1, { visits: 10 }));
+                await run();
+                const finalized = await finishRotation({ ...common, ...active });
+                dexie.close();
+                const target = await createProtectedMigrationAdapter({ name: 'test', account: vault.account, keyId: 'target', key: keys.get('target') });
+                const reopened = await engine.ensureDatabase({ name: 'test', schema, protection: target });
+                const raw = await readRows('test');
+                const logical = [];
+                for (const row of raw) logical.push(await target.openRecord(row, schema, 'clients', row.id));
+                return { read, write, verificationWrite, lineage: target.keyLineage.generations,
+                    retirement: finalized.lineage.completed, revision: reopened.revision, logical, deployed: raw.map(row => row.name.keyId) };
+            }, { schema: source, mode });
+            assert.equal(observed.read.allowed, mode !== 'exclusive');
+            if (!observed.read.allowed) assert.equal(observed.read.fenced, true);
+            assert.equal(observed.write.allowed, mode === 'online');
+            if (!observed.write.allowed) assert.equal(observed.write.fenced, true);
+            assert.deepEqual(observed.verificationWrite, { allowed: false, fenced: true });
+            assert.deepEqual(observed.lineage, ['test-key', 'target']);
+            assert.equal(observed.retirement.converted, 3);
+            assert.equal(observed.retirement.verified, mode === 'online' ? 4 : 3);
+            assert.equal(observed.revision, 1);
+            assert.deepEqual(observed.logical, mode === 'online' ? [...rows, { id: 4, name: 'New generation', visits: 0 }] : rows);
+            assert.ok(observed.deployed.every(generation => generation === 'target'));
+        });
+    }
+
     for (const [label, before, after, loss] of [
         ['plaintext to field encryption', {}, { encryptedFields: ['name'] }, false],
         ['field encryption to plaintext', { encryptedFields: ['name'] }, {}, true],

@@ -3,6 +3,7 @@ import { openRecord, sealRecord } from "../utilities/encryptionRecord.js";
 import { encryptionMetadataStore, encryptionMetadataKey } from "../utilities/encryptionPolicy.js";
 import { portableProtectionPolicy, matchesProtectionFingerprint } from "../utilities/protectionPolicy.js";
 import { canonicalJson, MigrationError } from "./protocol.js";
+import { parsePolicyDocument, serializePolicyDocument, validLineage } from "../utilities/encryptionPolicyDocument.js";
 
 export const protectedStateKey = "migration-state";
 const adapters = new WeakSet();
@@ -87,37 +88,50 @@ export async function createProtectedMigrationAdapter(options) {
         assertCurrent();
         return envelope;
     };
-    const fenceValue = binding => canonicalJson(["Magic.IndexedDb/migration-fence", 1, binding]);
+    let lineage = null;
+    const fenceValue = (binding, history = lineage) => canonicalJson(history === null
+        ? ["Magic.IndexedDb/migration-fence", 1, binding]
+        : ["Magic.IndexedDb/migration-fence", 2, binding, history]);
     const stateValue = state => JSON.stringify(["Magic.IndexedDb/migration-state", 1, authenticatedValue(state)]);
     const adapter = Object.freeze({
         name, account, keyId, signal, assertCurrent,
         fingerprint: schema => portableProtectionPolicy(schema).policyFingerprint,
         async verifyPolicy(envelope, schema, { legacyOnly = false } = {}) {
             const value = await decrypt(envelope, context(encryptionMetadataKey), "MAGDB_AUTHORIZATION_REJECTED");
-            let parsed;
-            try { parsed = JSON.parse(value); } catch { /* redacted below */ }
-            if (!Array.isArray(parsed) || parsed.length !== 3 || parsed[0] !== "Magic.IndexedDb/policy" || parsed[1] !== 1 ||
-                !matchesProtectionFingerprint(parsed[2], schema))
+            const parsed = parsePolicyDocument(value, keyId);
+            if (!parsed || !matchesProtectionFingerprint(parsed.fingerprint, schema))
                 throw error("MAGDB_PROTECTION_POLICY_MISMATCH", "The authenticated protection policy differs from the installed model.");
             // A valid managed sentinel is evidence that authenticated history
             // already existed. Removing its journal/proof must never turn it
             // back into an adoptable legacy vault and replay old transforms.
-            const managed = parsed[2] === portableProtectionPolicy(schema).policyFingerprint;
+            const managed = parsed.fingerprint === portableProtectionPolicy(schema).policyFingerprint;
             if (legacyOnly && managed)
                 throw error("MAGDB_PROTECTION_STATE_INVALID", "A managed protection policy requires its authenticated migration journal.");
             if (!legacyOnly && !managed)
                 throw error("MAGDB_PROTECTION_STATE_INVALID", "An authenticated migration journal requires a managed protection policy.");
+            if (parsed.lineage !== null && !managed)
+                throw error("MAGDB_PROTECTION_STATE_INVALID", "Rotated protection requires authenticated history.");
+            lineage = parsed.lineage;
             return structuredClone(envelope);
         },
+        get keyLineage() { return structuredClone(lineage); },
         createPolicy(schema) {
             const fingerprint = portableProtectionPolicy(schema).policyFingerprint;
-            return encrypt(JSON.stringify(["Magic.IndexedDb/policy", 1, fingerprint]), context(encryptionMetadataKey));
+            return encrypt(serializePolicyDocument(fingerprint, lineage), context(encryptionMetadataKey));
         },
         createFence: binding => encrypt(fenceValue(binding), context(encryptionMetadataKey)),
         async authenticateFence(envelope, binding) {
             const actual = await decrypt(envelope, context(encryptionMetadataKey), "MAGDB_AUTHORIZATION_REJECTED");
-            if (actual !== fenceValue(binding))
+            if (actual === fenceValue(binding, null)) {
+                lineage = null;
+                return;
+            }
+            let parsed;
+            try { parsed = JSON.parse(actual); } catch { /* redacted below */ }
+            const history = Array.isArray(parsed) && parsed.length === 4 && validLineage(parsed[3], keyId) ? parsed[3] : null;
+            if (!history || actual !== fenceValue(binding, history))
                 throw error("MAGDB_PROTECTION_STATE_INVALID", "The authenticated migration fence does not match the interrupted edge.");
+            lineage = history;
         },
         sealState: state => encrypt(stateValue(state), context(protectedStateKey)),
         async verifyState(envelope, state) {

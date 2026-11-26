@@ -5,7 +5,7 @@ import { encryptionMetadataStore } from "./encryptionPolicy.js";
 export const rotationJournalKey = "key-rotation";
 const stateFields = new Set([
     "version", "rotationId", "sourceKeyId", "targetKeyId", "mode", "modelHash", "policyFingerprint",
-    "writeKeyId", "sequence", "phase", "storeIndex", "afterKey", "converted", "verified", "paused"
+    "writeKeyId", "priorKeyIds", "sequence", "phase", "storeIndex", "afterKey", "converted", "verified", "paused"
 ]);
 const modes = new Set(["exclusive", "read-only", "online"]);
 const phases = new Set(["converting", "verifying"]);
@@ -25,6 +25,9 @@ function validateState(state) {
         state.version !== 1 || !nonempty(state.rotationId) || !nonempty(state.sourceKeyId) ||
         !nonempty(state.targetKeyId) || state.sourceKeyId === state.targetKeyId ||
         !modes.has(state.mode) || !phases.has(state.phase) || state.writeKeyId !== state.targetKeyId ||
+        !Array.isArray(state.priorKeyIds) || !state.priorKeyIds.every(nonempty) ||
+        new Set(state.priorKeyIds).size !== state.priorKeyIds.length ||
+        state.priorKeyIds.at(-1) !== state.sourceKeyId || state.priorKeyIds.includes(state.targetKeyId) ||
         !nonempty(state.modelHash) || !nonempty(state.policyFingerprint) ||
         ![state.sequence, state.storeIndex, state.converted, state.verified].every(natural) ||
         !checkpoint(state.afterKey) || typeof state.paused !== "boolean" ||

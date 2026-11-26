@@ -11,7 +11,7 @@ function fenceValue(state) {
     // entry to the verification barrier do.
     return canonicalJson(["Magic.IndexedDb/rotation-fence", state.version, state.rotationId,
         state.sourceKeyId, state.targetKeyId, state.mode, state.modelHash, state.policyFingerprint,
-        state.writeKeyId, state.phase]);
+        state.writeKeyId, state.priorKeyIds, state.phase]);
 }
 
 export async function assertDistinctRotationKeys(source, target, sourceKeyId, vault, assertCurrent) {

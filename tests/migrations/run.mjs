@@ -1699,7 +1699,7 @@ test('rotation checkpoints resume a bounded conversion and authenticate a target
         const assertCurrent = () => {};
         const document = await sealRotationJournal({
             version: 1, rotationId: 'rotation', sourceKeyId: 'old', targetKeyId: 'new', mode: 'exclusive',
-            modelHash: 'model', policyFingerprint: 'policy', writeKeyId: 'new', sequence: 0,
+            modelHash: 'model', policyFingerprint: 'policy', writeKeyId: 'new', priorKeyIds: ['old'], sequence: 0,
             phase: 'converting', storeIndex: 0, afterKey: null, converted: 0, verified: 0, paused: false
         }, keys, vault, assertCurrent);
         await put(encryptionMetadataStore, document, rotationJournalKey);
@@ -1727,7 +1727,7 @@ test('rotation checkpoints resume a bounded conversion and authenticate a target
 registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage, recoveryPackage,
     appendRevision, jsonAsset, assets, cliFixture, getOrigin: () => origin });
 registerProtectedRegistrationTests({ test, schema, bundle, jsonAsset, copy, registrationStore, inspect, appendRevision, assets });
-const expectedScenarioCount = cliFixture ? 128 : 124;
+const expectedScenarioCount = cliFixture ? 132 : 128;
 assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
 
 if (listOnly) {

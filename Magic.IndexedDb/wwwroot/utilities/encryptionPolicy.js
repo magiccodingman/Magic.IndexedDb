@@ -1,8 +1,8 @@
 import { decryptValue, encryptValue } from "./encryptionEnvelope.js";
+import { parsePolicyDocument, serializePolicyDocument } from "./encryptionPolicyDocument.js";
 
 export const encryptionMetadataStore = "__magic_encryption";
 export const encryptionMetadataKey = "policy";
-const policyVersion = 1;
 
 function checkContext(db, account) {
     return {
@@ -14,14 +14,10 @@ function checkContext(db, account) {
     };
 }
 
-function checkValue(policyFingerprint) {
-    return JSON.stringify(["Magic.IndexedDb/policy", policyVersion, policyFingerprint]);
-}
-
 // Creating the sentinel is an explicit operation for empty databases. Ordinary
 // unlock never reinitializes missing metadata, even when all stores are empty.
 export async function verifyEncryptionPolicy(db, {
-    account, policyFingerprint, keyId, key, initialize = false, signal
+    account, policyFingerprint, keyId, key, initialize = false, allowRotated = false, signal
 }) {
     if (typeof policyFingerprint !== "string" || !policyFingerprint) {
         throw new TypeError("Magic encryption requires a storage policy fingerprint.");
@@ -32,7 +28,7 @@ export async function verifyEncryptionPolicy(db, {
     }
     const metadata = db.table(encryptionMetadataStore);
     const context = checkContext(db, account);
-    const expected = checkValue(policyFingerprint);
+    const expected = serializePolicyDocument(policyFingerprint);
     signal?.throwIfAborted();
     let saved = await metadata.get(encryptionMetadataKey);
 
@@ -71,7 +67,8 @@ export async function verifyEncryptionPolicy(db, {
         throw new Error("MAGIC_ENCRYPTION_INVALID_KEY: The key or stored policy envelope could not be authenticated.", { cause });
     }
     signal?.throwIfAborted();
-    if (actual !== expected) {
+    const policy = parsePolicyDocument(actual, keyId);
+    if (!policy || policy.fingerprint !== policyFingerprint || policy.lineage !== null && !allowRotated) {
         throw new Error("MAGIC_ENCRYPTION_POLICY_MISMATCH: Magic encryption storage policy does not match the persisted policy.");
     }
     return saved;

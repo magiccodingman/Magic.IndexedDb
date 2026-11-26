@@ -7,6 +7,9 @@ import { canonicalJson, metadataStore as migrationMetadataStore, MigrationError 
 import { equalEnvelope, protectedStateKey } from "../migrations/protectedMigrationAdapter.js";
 import { numericMetadataStore } from "./numericStorage.js";
 import { magicQueryYield } from "../magicLinqToIndexedDb.js";
+import { openRotatingRecord } from "./rotationRecord.js";
+import { verifyRotationJournal } from "./rotationJournal.js";
+import { verifyRotationFence } from "./rotationFence.js";
 
 export const protectedDatabasePrefix = "__magic_protected__:";
 const locked = "MAGIC_ENCRYPTION_LOCKED";
@@ -68,14 +71,21 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
     const session = new EncryptionSession();
     let verified;
     let readiness;
+    let rotation;
     let mismatch = false;
     let disposed = false;
     const assertLive = () => {
         if (disposed) throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: This protected connection was released.");
     };
-    const assertPolicy = async () => {
+    const assertPolicy = async (write = false) => {
         assertLive();
-        const snapshot = verified;
+        const access = rotation;
+        if (access && (access.state.mode === "exclusive" ||
+            write && (access.state.mode !== "online" || access.state.phase === "verifying"))) {
+            throw new Error("MAGIC_ROTATION_ACCESS_FENCED: This operation is unavailable during key rotation.");
+        }
+        access?.assertCurrent();
+        const snapshot = access?.fence ?? verified;
         if (!snapshot) {
             throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: Unlock this connection to authenticate its storage policy.");
         }
@@ -84,17 +94,35 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
             const numeric = db.tables.find(table => table.name === numericMetadataStore);
             const journal = await db.table(migrationMetadataStore).get("state");
             const seal = await db.table(encryptionMetadataStore).get(protectedStateKey);
-            if (!readiness || !equalEnvelope(snapshot, readiness.policySeal) ||
+            if (!readiness || !access && !equalEnvelope(snapshot, readiness.policySeal) ||
                 canonicalJson(journal ?? null) !== readiness.journal || !equalEnvelope(seal, readiness.seal))
                 throw new MigrationError("MAGDB_PROTECTION_STATE_INVALID", "The authenticated ready state changed. Reinitialize before accessing records.");
             const numericPolicy = await numeric?.get("policy");
             if (canonicalJson(numericPolicy ?? null) !== readiness.numericPolicy)
                 throw new MigrationError("MAGDB_CODEC_POLICY_MISMATCH", "The authenticated connection's numeric policy changed.");
         }
+        if (rotation !== access) throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Rotation access changed during the operation.");
+        access?.assertCurrent();
         assertLive();
     };
 
     return {
+        async setRotationAccess(document, fence, keys, assertCurrent) {
+            if (!options.managedSchema || !readiness || !session.isUnlocked) {
+                throw new Error("MAGIC_ROTATION_AUTHORIZATION_REQUIRED: An authorized managed connection is required.");
+            }
+            const vault = { database: db.name, account };
+            const state = await verifyRotationJournal(document, keys, vault, assertCurrent);
+            if (state.policyFingerprint !== policyFingerprint || state.modelHash !== JSON.parse(readiness.journal).schemaHash) {
+                throw new Error("MAGIC_ROTATION_STATE_INVALID: Rotation belongs to a different managed model.");
+            }
+            await verifyRotationFence(fence, state, keys.get(state.targetKeyId), vault, assertCurrent);
+            await assertPersistedEncryptionPolicy(db.table(encryptionMetadataStore), fence);
+            assertCurrent();
+            assertLive();
+            if (!session.isUnlocked) throw new Error("MAGIC_ROTATION_AUTHORIZATION_REQUIRED: The managed connection was locked.");
+            rotation = { state, fence: structuredClone(fence), keys: new Map(keys), assertCurrent };
+        },
         setManagedReadiness: result => {
             if (!options.managedSchema || result?.journal?.protocolVersion !== 3 || result.journal.status !== "ready" ||
                 !equalEnvelope(result.journalSeal, result.journalSeal) || !equalEnvelope(result.policySeal, result.policySeal))
@@ -105,7 +133,7 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
         forTable: name => {
             const policy = policies.get(name);
             if (!policy) throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: The store is outside the configured storage policy.");
-            return new ProtectedTable(db, account, name, policy, session, assertPolicy, assertLive, Boolean(options.managedSchema));
+            return new ProtectedTable(db, account, name, policy, session, assertPolicy, assertLive, Boolean(options.managedSchema), () => rotation);
         },
         unlock: (keyId, input, initialize) => session.ensureUnlocked(async signal => {
             await db.open();
@@ -119,7 +147,7 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
             }
             try {
                 if (verified) await assertPolicy();
-                const snapshot = await verifyEncryptionPolicy(db, { account, policyFingerprint, keyId, key, initialize, signal });
+                const snapshot = await verifyEncryptionPolicy(db, { account, policyFingerprint, keyId, key, initialize, allowRotated: Boolean(options.managedSchema), signal });
                 signal.throwIfAborted();
                 verified = snapshot;
                 if (options.managedSchema) await assertPolicy();
@@ -152,18 +180,22 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
                 return "PolicyMismatch";
             }
         },
-        lock: () => session.lock(),
+        lock: () => {
+            rotation = undefined;
+            session.lock();
+        },
         dispose: () => {
             disposed = true;
             verified = undefined;
             readiness = undefined;
+            rotation = undefined;
             session.dispose();
         }
     };
 }
 
 class ProtectedTable {
-    constructor(db, account, name, policy, session, assertPolicy, assertLive, managed = false) {
+    constructor(db, account, name, policy, session, assertPolicy, assertLive, managed, getRotation) {
         this.db = db;
         this.table = db.table(name);
         this.account = account;
@@ -172,6 +204,7 @@ class ProtectedTable {
         this.assertPolicy = assertPolicy;
         this.assertLive = assertLive;
         this.managed = managed;
+        this.getRotation = getRotation;
     }
 
     context(primaryKey) {
@@ -213,7 +246,17 @@ class ProtectedTable {
 
     async access(operation) {
         try {
-            return await this.session.useKey(operation);
+            const rotation = this.getRotation();
+            return await this.session.useKey((ordinary, assertSession) => {
+                const assertCurrent = () => {
+                    assertSession();
+                    if (this.getRotation() !== rotation)
+                        throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Rotation access changed during the operation.");
+                    rotation?.assertCurrent();
+                };
+                const keyId = rotation?.state.writeKeyId ?? ordinary.keyId;
+                return operation(rotation ? { key: rotation.keys.get(keyId), keyId, rotation } : ordinary, assertCurrent);
+            });
         } catch (error) {
             if (error.message.startsWith("Magic encryption session is locked") ||
                 error.message.startsWith("Magic encryption session was locked")) {
@@ -232,7 +275,7 @@ class ProtectedTable {
             if (numeric) stores.push(numeric);
         }
         return this.db.transaction("rw", stores, async () => {
-            await this.assertPolicy();
+            await this.assertPolicy(true);
             this.assertLive();
             assertCurrent();
             return operation(this.table);
@@ -267,6 +310,12 @@ class ProtectedTable {
         return this.managed ? this.mutate(update) : this.fencedWrite(update);
     }
 
+    async openStoredRecord(row, primaryKey, { key, keyId, rotation }) {
+        const context = this.context(primaryKey);
+        return rotation ? (await openRotatingRecord(row, this.policy, rotation.keys, context)).record
+            : openRecord(row, this.policy, key, keyId, context);
+    }
+
     async *query(predicate, additions, forceCursor, projection = null) {
         if (projection !== null) this.requirePublic(projection);
         // Even an empty full query requires an unlocked session.
@@ -281,8 +330,7 @@ class ProtectedTable {
                 continue;
             }
             this.assertLease(lease);
-            const opened = await this.access(({ key, keyId }) =>
-                openRecord(row, this.policy, key, keyId, this.context(this.key(row))));
+            const opened = await this.access(keys => this.openStoredRecord(row, this.key(row), keys));
             this.assertLease(lease);
             yield opened;
         }
@@ -297,10 +345,13 @@ class ProtectedTable {
     }
 
     read(primaryKey) {
-        return this.access(async ({ key, keyId }) => {
+        return this.access(async (keys, assertCurrent) => {
             await this.assertPolicy();
             const row = await this.table.get(primaryKey);
-            return row === undefined ? undefined : openRecord(row, this.policy, key, keyId, this.context(primaryKey));
+            const opened = row === undefined ? undefined : await this.openStoredRecord(row, primaryKey, keys);
+            if (keys.rotation) await this.assertPolicy();
+            assertCurrent();
+            return opened;
         });
     }
 }

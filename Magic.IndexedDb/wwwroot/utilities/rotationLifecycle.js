@@ -1,6 +1,8 @@
 import { assertDatabaseReady } from "../migrations/migrationEngine.js";
 import { metadataStore } from "../migrations/protocol.js";
 import { createProtectedMigrationAdapter, protectedStateKey } from "../migrations/protectedMigrationAdapter.js";
+import { encryptValue } from "./encryptionEnvelope.js";
+import { serializePolicyDocument } from "./encryptionPolicyDocument.js";
 import { encryptionMetadataKey, encryptionMetadataStore } from "./encryptionPolicy.js";
 import { numericMetadataStore } from "./numericStorage.js";
 import { portableProtectionPolicy } from "./protectionPolicy.js";
@@ -30,7 +32,7 @@ export function rotationCoordinator(db, signal, operation) {
 }
 
 export async function admitRotation({
-    db, vault, ready, schema, authorization, keys, targetKeyId, mode, recoverable, priorKeyIds, signal
+    db, vault, ready, schema, authorization, keys, targetKeyId, mode, recoverable, signal
 }) {
     const { assertCurrent, keyId: sourceKeyId } = authorization;
     signal?.throwIfAborted();
@@ -41,7 +43,7 @@ export async function admitRotation({
     if (recoverable !== true) {
         throw new Error("MAGIC_ROTATION_KEYS_NOT_RECOVERABLE: The provider must attest recovery of both keys.");
     }
-    if (sourceKeyId === targetKeyId || priorKeyIds.has(targetKeyId)) {
+    if (sourceKeyId === targetKeyId) {
         throw new Error("MAGIC_ROTATION_KEY_REUSED: The target key identifier was previously used.");
     }
     const source = keys.get(sourceKeyId);
@@ -53,11 +55,14 @@ export async function admitRotation({
         name: vault.database, account: vault.account, keyId: sourceKeyId, key: source, assertCurrent, signal
     });
     await sourceProof.verifyPolicy(ready.policySeal, schema);
+    const priorKeyIds = sourceProof.keyLineage?.generations ?? [sourceKeyId];
+    if (priorKeyIds.includes(targetKeyId))
+        throw new Error("MAGIC_ROTATION_KEY_REUSED: The target key identifier was previously used.");
     await assertDistinctRotationKeys(source, target, sourceKeyId, vault, assertCurrent);
     const { policyFingerprint } = portableProtectionPolicy(schema);
     const state = {
         version: 1, rotationId: crypto.randomUUID(), sourceKeyId, targetKeyId, mode, writeKeyId: targetKeyId,
-        modelHash: ready.schemaHash, policyFingerprint, sequence: 0, phase: "converting",
+        modelHash: ready.schemaHash, policyFingerprint, priorKeyIds, sequence: 0, phase: "converting",
         storeIndex: 0, afterKey: null, converted: 0, verified: 0, paused: false
     };
     const [document, fence] = await Promise.all([
@@ -90,4 +95,36 @@ export async function enterRotationVerification({ db, vault, document, fence, ch
         throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: The vault changed before verification.");
     }
     return { document: prepared, fence: barrier, checks };
+}
+
+export async function finishRotation({
+    db, vault, ready, schema, document, fence, checks, keys, assertCurrent, signal
+}) {
+    const state = await verifyRotationJournal(document, keys, vault, assertCurrent);
+    const target = keys.get(state.targetKeyId);
+    await verifyRotationFence(fence, state, target, vault, assertCurrent);
+    const { policies, policyFingerprint } = portableProtectionPolicy(schema);
+    const protectedStores = [...policies.values()].filter(policy => policy.exposed !== null || policy.fields.size > 0);
+    if (state.phase !== "verifying" || state.storeIndex !== protectedStores.length || state.afterKey !== null ||
+        state.paused || state.policyFingerprint !== policyFingerprint || state.modelHash !== ready.schemaHash) {
+        throw new Error("MAGIC_ROTATION_STATE_INVALID: Target-only verification is incomplete.");
+    }
+    const lineage = {
+        generations: [...state.priorKeyIds, state.targetKeyId],
+        completed: { rotationId: state.rotationId, converted: state.converted, verified: state.verified }
+    };
+    const adapter = await createProtectedMigrationAdapter({
+        name: vault.database, account: vault.account, keyId: state.targetKeyId, key: target, assertCurrent, signal
+    });
+    const [policySeal, journalSeal] = await Promise.all([
+        encryptValue(serializePolicyDocument(policyFingerprint, lineage), target, state.targetKeyId,
+            { ...vault, store: encryptionMetadataStore, primaryKey: encryptionMetadataKey, member: null }),
+        adapter.sealState(ready.journal)
+    ]);
+    if (!await commitRotationBatch(db, [...checks, policyEntry(fence), rotationEntry(document)],
+        [policyEntry(policySeal), { store: encryptionMetadataStore, key: protectedStateKey, value: journalSeal },
+            { store: encryptionMetadataStore, key: rotationJournalKey, delete: true }], assertCurrent, signal)) {
+        throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: The vault changed before finalization.");
+    }
+    return { ready: { ...ready, policySeal, journalSeal }, lineage };
 }
