@@ -67,7 +67,7 @@ Run the ordinary unit/browser gates, portable protocol/crypto suite, actual
 packed-and-installed CLI tests, the configured native migration browser suite,
 and the published trimmed/AOT Blazor fixtures. Use all four CI browser
 configurations. The runner intentionally fails on missing cases and skipped
-required fixture modes. The configured native suite currently requires 126 cases
+required fixture modes. The configured native suite currently requires 127 cases
 per browser; the published matrix requires 13 per browser and build mode (104
 total). Verify these counts from code and reports, not from earlier approvals.
 

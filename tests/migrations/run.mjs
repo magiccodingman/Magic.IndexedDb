@@ -1625,10 +1625,52 @@ if (cliFixture) for (const [codecCase, sourceHasCodec] of [['absent-to-null', fa
     });
 }
 
+test('rotation batch preserves a concurrent write and commits conversion with its checkpoint', async ({ page }) => {
+    await page.goto(origin + '/');
+    const result = await page.evaluate(async () => {
+        const { readRotationBatch, commitRotationBatch } = await import('/engine/utilities/rotationBatch.js');
+        const open = indexedDB.open('rotation-transaction-fixture');
+        const request = operation => new Promise((resolve, reject) => {
+            operation.onsuccess = () => resolve(operation.result);
+            operation.onerror = () => reject(operation.error);
+        });
+        open.onupgradeneeded = () => {
+            open.result.createObjectStore('documents', { keyPath: ['group', 'id'] });
+            open.result.createObjectStore('metadata');
+        };
+        const db = await request(open);
+        const put = async (store, value, key) => {
+            const tx = db.transaction(store, 'readwrite');
+            return await request(key === undefined ? tx.objectStore(store).put(value) : tx.objectStore(store).put(value, key));
+        };
+        const key = ['catalog', 1];
+        const original = { group: 'catalog', id: 1, label: 'original', ciphertext: Uint8Array.of(1) };
+        const patch = { ...original, label: 'concurrent' };
+        await put('documents', original);
+        await put('metadata', { phase: 0 }, 'progress');
+        const [snapshot] = await readRotationBatch(db, 'documents', null, 1);
+        await put('documents', patch);
+        const progress = { store: 'metadata', key: 'progress', value: { phase: 0 } };
+        const next = { ...progress, value: { phase: 1 } };
+        const expect = { store: 'documents', key, value: snapshot.record };
+        const write = { store: 'documents', key, value: { ...patch, ciphertext: Uint8Array.of(2) } };
+        const stale = await commitRotationBatch(db, [expect, progress], [write, next], () => {});
+        const afterStale = await request(db.transaction('metadata').objectStore('metadata').get('progress'));
+        const fresh = await commitRotationBatch(db, [{ ...expect, value: patch }, progress], [write, next], () => {});
+        const final = await request(db.transaction('metadata').objectStore('metadata').get('progress'));
+        const [row] = await readRotationBatch(db, 'documents', null, 1);
+        const remainder = await readRotationBatch(db, 'documents', key, 1);
+        db.close();
+        return { stale, fresh, afterStale, final, label: row.record.label, bytes: [...row.record.ciphertext], remainder };
+    });
+    assert.deepEqual(result, { stale: false, fresh: true, afterStale: { phase: 0 }, final: { phase: 1 },
+        label: 'concurrent', bytes: [2], remainder: [] });
+});
+
 registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage, recoveryPackage,
     appendRevision, jsonAsset, assets, cliFixture, getOrigin: () => origin });
 registerProtectedRegistrationTests({ test, schema, bundle, jsonAsset, copy, registrationStore, inspect, appendRevision, assets });
-const expectedScenarioCount = cliFixture ? 126 : 122;
+const expectedScenarioCount = cliFixture ? 127 : 123;
 assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
 
 if (listOnly) {
