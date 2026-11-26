@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-MICL_SHA256 = "6d30b1fcbc05dd440e4ca69e1e400483d1450dd37fb278880e5a9bc46446cf96"
+MICL_SHA256 = "06832b8b9ced33acf71f27f23d6f3071ee201e641d1e6a5c089ab2c7a404d5d9"
 NUGET_GENERATED_LICENSE_URL = "https://aka.ms/deprecateLicenseUrl"
 SHARED_NOTICES = ("LICENSE.txt", "LICENSE-MIT.txt", "THIRD-PARTY-NOTICES.txt")
 DEXIE_NOTICE = "licenses/Dexie-Apache-2.0.txt"

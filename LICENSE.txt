@@ -28,7 +28,7 @@ The term includes copies, modifications, adaptations, and derivative works to th
 
 **1.2. Licensor**
 
-“Licensor” means the copyright holder or other party lawfully authorized to grant licenses to the Software under these terms.
+“Licensor” means Lance Wright II. He grants this License only to the extent he holds the necessary copyright or licensing rights. Sayou is the designated licensing and authorization contact under Section 17.
 
 **1.3. Sayou**
 
@@ -536,6 +536,8 @@ Nothing in this License withdraws or restricts rights previously and lawfully gr
 ### 15.2. Third-party materials
 
 Third-party components and materials remain subject to their respective licenses.
+
+Historical third-party contributions are included under their original MIT terms, including their permissions to modify, distribute, and sublicense. Applicable copyright notices, permission notices, attribution, and third-party licenses are preserved. The Licensor claims no exclusive ownership of these contributions.
 
 Where separate third-party licensing terms apply to particular materials, this License does not supersede permissions independently granted by those terms.
 
