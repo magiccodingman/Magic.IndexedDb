@@ -712,23 +712,44 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
         const recovered = await page.evaluate(options => tryEnsure(options, true), { ...options, recovery });
         assert.equal(recovered.value?.outcome, 'recovered', JSON.stringify(recovered));
         assert.equal((await inspect(page)).state.protocolVersion, 2);
+        const plaintextAudit = await page.evaluate(async id => {
+            const db = await openRaw('test');
+            try { return await request(db.transaction('__magic_migrations__').objectStore('__magic_migrations__').get('recovery:' + id)); }
+            finally { db.close(); }
+        }, recovery.id);
         plan.manifest.requiredCapabilities.push(capability);
         jsonAsset(plan.base + '/manifest.json', plan.manifest);
 
         await authorize(page);
-        const enrolled = await page.evaluate(async options => {
+        const enrolled = await page.evaluate(async ({ options, plaintextAudit }) => {
             const ready = await engine.ensureDatabase({ ...options, initialize: true, protection: protectionAdapter });
             const entry = ready.history[0];
             const db = await openRaw('test');
             try {
-                const audit = await request(db.transaction('__magic_migrations__').objectStore('__magic_migrations__')
-                    .get('recovery:' + entry.recovery.id));
+                const key = 'recovery:' + entry.recovery.id;
+                const meta = mode => db.transaction('__magic_migrations__', mode).objectStore('__magic_migrations__');
+                const audit = await request(meta('readonly').get(key));
                 const plaintext = await protectionAdapter.verifyRecoveryEvidence(audit, entry);
+                // Older v3 enrollment could have left the v2 audit unsealed.
+                await request(meta('readwrite').put(plaintextAudit, key));
+                const { admitRotation } = await import('/engine/utilities/rotationLifecycle.js');
+                const { importEncryptionKey } = await import('/engine/utilities/encryptionEnvelope.js');
+                const from = await importEncryptionKey(new Uint8Array(32).fill(73));
+                const to = await importEncryptionKey(new Uint8Array(32).fill(76));
+                let rejectedBeforeAdmission = false;
+                try {
+                    await admitRotation({ db, ready, schema: options.schema, authorization: protectionAdapter,
+                        vault: { database: db.name, account: 'protected-test' }, keys: new Map([['test-key', from], ['next', to]]),
+                        targetKeyId: 'next', mode: 'exclusive', recoverable: true });
+                } catch (failure) { rejectedBeforeAdmission = failure.code === 'MAGDB_PROTECTION_STATE_INVALID'; }
+                await engine.assertDatabaseReady(db, ready, protectionAdapter);
+                await request(meta('readwrite').put(audit, key));
                 return { protocol: ready.protocolVersion, sealed: audit.ciphertext instanceof ArrayBuffer &&
-                    audit.keyId === 'test-key' && !Object.hasOwn(audit, 'original'), payloadPreserved: plaintext.includes('processedRecords') };
+                    audit.keyId === 'test-key' && !Object.hasOwn(audit, 'original'), payloadPreserved: plaintext.includes('processedRecords'),
+                    rejectedBeforeAdmission };
             } finally { db.close(); }
-        }, options);
-        assert.deepEqual(enrolled, { protocol: 3, sealed: true, payloadPreserved: true });
+        }, { options, plaintextAudit });
+        assert.deepEqual(enrolled, { protocol: 3, sealed: true, payloadPreserved: true, rejectedBeforeAdmission: true });
         assert.deepEqual(await read(page), rows.map(row => ({ ...row, value: 10, repairs: 1 })));
     });
 

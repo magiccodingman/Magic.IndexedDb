@@ -25,6 +25,20 @@ function unchangedReadyMetadata(db, ready) {
     return checks;
 }
 
+async function recoveryEvidenceChecks(db, ready, verify, signal) {
+    const recoveries = retainedRecoveries(ready);
+    if (!recoveries.length) return [];
+    const keys = recoveries.map(entry => recoveryEvidenceKey(entry.recovery.id));
+    const audits = await readRotationEntries(db, metadataStore, keys);
+    const checks = [];
+    for (const [index, entry] of recoveries.entries()) {
+        signal?.throwIfAborted();
+        await verify(audits[index], entry);
+        checks.push({ store: metadataStore, key: keys[index], value: audits[index] });
+    }
+    return checks;
+}
+
 export function rotationCoordinator(db, signal, operation) {
     if (!navigator.locks?.request) throw new Error("MAGIC_ROTATION_LOCK_UNAVAILABLE: Web Locks are required for managed rotation.");
     // Schema migration and rotation serialize on the physical database, while
@@ -56,6 +70,8 @@ export async function admitRotation({
         name: vault.database, account: vault.account, keyId: sourceKeyId, key: source, assertCurrent, signal
     });
     await sourceProof.verifyPolicy(ready.policySeal, schema);
+    // Detect damaged or historically unsealed evidence before fencing CRUD.
+    const auditChecks = await recoveryEvidenceChecks(db, ready, sourceProof.openRetainedRecoveryEvidence, signal);
     const priorKeyIds = sourceProof.keyLineage?.generations ?? [sourceKeyId];
     if (priorKeyIds.includes(targetKeyId))
         throw new Error("MAGIC_ROTATION_KEY_REUSED: The target key identifier was previously used.");
@@ -71,7 +87,7 @@ export async function admitRotation({
         sealRotationFence(state, target, vault, assertCurrent)
     ]);
     const checks = unchangedReadyMetadata(db, ready);
-    if (!await commitRotationBatch(db, [...checks, policyEntry(ready.policySeal), rotationEntry(undefined)],
+    if (!await commitRotationBatch(db, [...checks, ...auditChecks, policyEntry(ready.policySeal), rotationEntry(undefined)],
         [policyEntry(fence), rotationEntry(document)], assertCurrent, signal)) {
         throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: The vault changed before rotation admission.");
     }
@@ -120,15 +136,7 @@ export async function finishRotation({
     });
     // Compare target-authenticated audit envelopes in the final transaction
     // too, so removing or replacing a verified audit cannot retire its key.
-    const recoveries = retainedRecoveries(ready);
-    const auditKeys = recoveries.map(entry => recoveryEvidenceKey(entry.recovery.id));
-    const audits = auditKeys.length ? await readRotationEntries(db, metadataStore, auditKeys) : [];
-    const auditChecks = [];
-    for (const [index, entry] of recoveries.entries()) {
-        signal?.throwIfAborted();
-        await adapter.verifyRecoveryEvidence(audits[index], entry);
-        auditChecks.push({ store: metadataStore, key: auditKeys[index], value: audits[index] });
-    }
+    const auditChecks = await recoveryEvidenceChecks(db, ready, adapter.verifyRecoveryEvidence, signal);
 
     const [policySeal, journalSeal] = await Promise.all([
         encryptValue(serializePolicyDocument(policyFingerprint, lineage), target, state.targetKeyId,

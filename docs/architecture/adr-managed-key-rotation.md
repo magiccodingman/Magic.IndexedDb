@@ -84,7 +84,8 @@ A finalization fence blocks writes long enough to establish a complete,
 resumable authentication pass with the target key. Cursor completion alone
 never permits retirement. Finalization commits the target-only active policy,
 reseals managed authentication metadata and commits retirement evidence
-atomically. Retained encrypted recovery evidence is part of conversion and target-only
+atomically. Admission authenticates retained recovery evidence before fencing access.
+Retained encrypted recovery evidence is part of conversion and target-only
 verification. The pass follows the authenticated history's recovery bindings and
 commits each audit rewrite with its checkpoint. Finalization compares the
 target-authenticated evidence in the metadata transaction. Historical v3.0

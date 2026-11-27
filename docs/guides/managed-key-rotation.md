@@ -104,8 +104,9 @@ Rotation includes retained encrypted audit evidence from authenticated migration
 recovery. Missing or invalid audit evidence blocks retirement. If an older
 runtime enrolled a previously recovered plaintext managed database and left its
 audit evidence unsealed, rotation cannot establish that evidence's authenticity
-and stops. Keep both keys and use the application's recovery policy. New
-authenticated enrollments seal retained plaintext evidence during enrollment.
+and rejects admission. Existing access remains available under the original
+policy. New authenticated enrollments seal retained plaintext evidence during
+enrollment.
 
 Rotation compares portable stored records, including native dates and byte arrays.
 Unsupported values written by external IndexedDB clients, such as cyclic
