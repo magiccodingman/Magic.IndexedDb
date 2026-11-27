@@ -1,12 +1,13 @@
 import { assertDatabaseReady, assertNumericPolicy, inspectOpen } from "../migrations/migrationEngine.js";
 import { canonicalJson, metadataStore, samePhysical, sha256 } from "../migrations/protocol.js";
-import { createProtectedMigrationAdapter, protectedStateKey } from "../migrations/protectedMigrationAdapter.js";
+import { createProtectedMigrationAdapter, protectedStateKey, recoveryEvidenceKey, retainedRecoveries } from "../migrations/protectedMigrationAdapter.js";
 import { encryptValue } from "./encryptionEnvelope.js";
 import { serializePolicyDocument } from "./encryptionPolicyDocument.js";
 import { encryptionMetadataKey, encryptionMetadataStore } from "./encryptionPolicy.js";
 import { numericMetadataStore } from "./numericStorage.js";
 import { portableProtectionPolicy } from "./protectionPolicy.js";
-import { commitRotationBatch } from "./rotationBatch.js";
+import { commitRotationBatch, readRotationEntries } from "./rotationBatch.js";
+import { rotationPassCount } from "./rotationPass.js";
 import { assertDistinctRotationKeys, sealRotationFence, verifyRotationFence } from "./rotationFence.js";
 import { rotationJournalKey, sealRotationJournal, verifyRotationJournal } from "./rotationJournal.js";
 
@@ -77,12 +78,12 @@ export async function admitRotation({
     return { document, fence, checks };
 }
 
-export async function enterRotationVerification({ db, vault, schema, document, fence, checks, keys, assertCurrent, signal }) {
+export async function enterRotationVerification({ db, vault, ready, schema, document, fence, checks, keys, assertCurrent, signal }) {
     const state = await verifyRotationJournal(document, keys, vault, assertCurrent);
     const target = keys.get(state.targetKeyId);
     await verifyRotationFence(fence, state, target, vault, assertCurrent);
     const { policies } = portableProtectionPolicy(schema);
-    const storeCount = [...policies.values()].filter(policy => policy.exposed !== null || policy.fields.size > 0).length;
+    const storeCount = rotationPassCount(policies, ready);
     if (state.phase !== "converting" || state.storeIndex !== storeCount || state.afterKey !== null || state.paused) {
         throw new Error("MAGIC_ROTATION_STATE_INVALID: Conversion has not completed.");
     }
@@ -106,8 +107,7 @@ export async function finishRotation({
     const target = keys.get(state.targetKeyId);
     await verifyRotationFence(fence, state, target, vault, assertCurrent);
     const { policies, policyFingerprint } = portableProtectionPolicy(schema);
-    const protectedStores = [...policies.values()].filter(policy => policy.exposed !== null || policy.fields.size > 0);
-    if (state.phase !== "verifying" || state.storeIndex !== protectedStores.length || state.afterKey !== null ||
+    if (state.phase !== "verifying" || state.storeIndex !== rotationPassCount(policies, ready) || state.afterKey !== null ||
         state.paused || state.policyFingerprint !== policyFingerprint || state.modelHash !== ready.schemaHash) {
         throw new Error("MAGIC_ROTATION_STATE_INVALID: Target-only verification is incomplete.");
     }
@@ -118,12 +118,24 @@ export async function finishRotation({
     const adapter = await createProtectedMigrationAdapter({
         name: vault.database, account: vault.account, keyId: state.targetKeyId, key: target, assertCurrent, signal
     });
+    // Compare target-authenticated audit envelopes in the final transaction
+    // too, so removing or replacing a verified audit cannot retire its key.
+    const recoveries = retainedRecoveries(ready);
+    const auditKeys = recoveries.map(entry => recoveryEvidenceKey(entry.recovery.id));
+    const audits = auditKeys.length ? await readRotationEntries(db, metadataStore, auditKeys) : [];
+    const auditChecks = [];
+    for (const [index, entry] of recoveries.entries()) {
+        signal?.throwIfAborted();
+        await adapter.verifyRecoveryEvidence(audits[index], entry);
+        auditChecks.push({ store: metadataStore, key: auditKeys[index], value: audits[index] });
+    }
+
     const [policySeal, journalSeal] = await Promise.all([
         encryptValue(serializePolicyDocument(policyFingerprint, lineage), target, state.targetKeyId,
             { ...vault, store: encryptionMetadataStore, primaryKey: encryptionMetadataKey, member: null }),
         adapter.sealState(ready.journal)
     ]);
-    if (!await commitRotationBatch(db, [...checks, policyEntry(fence), rotationEntry(document)],
+    if (!await commitRotationBatch(db, [...checks, ...auditChecks, policyEntry(fence), rotationEntry(document)],
         [policyEntry(policySeal), { store: encryptionMetadataStore, key: protectedStateKey, value: journalSeal },
             { store: encryptionMetadataStore, key: rotationJournalKey, delete: true }], assertCurrent, signal)) {
         throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: The vault changed before finalization.");

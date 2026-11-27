@@ -76,12 +76,6 @@
                 final.GetProperty("history").GetArrayLength() == 2, "Authenticated lineage was not retained.");
             await encryption.LockAsync(records);
             Require(await encryption.EnsureUnlockedAsync(records), "The public final policy could not be reopened.");
-            var rotation = await context.KeyRotation.RotateEncryptionKeyAsync(records,
-                new("rotated-fixture-key", MagicKeyRotationMode.Online, BatchSize: 1));
-            Require(rotation.Phase == MagicKeyRotationPhase.Completed && rotation.RetirementReady &&
-                rotation.TargetKeyId == "rotated-fixture-key", "Managed rotation did not finalize through published Blazor.");
-            await encryption.LockAsync(records);
-            Require(await encryption.EnsureUnlockedAsync(records), "The provider could not resolve the finalized generation.");
             var other = await Activate("another-account");
             Require(await encryption.GetStateAsync(records) == MagicEncryptionState.Inactive, "The previous account context survived switching.");
             Require(await other.Encryption.UnlockDetailedAsync(records) == MagicUnlockResult.InvalidKey,
@@ -91,8 +85,9 @@
             await Contexts.DeactivateAsync();
             Require(await resumed.Encryption.GetStateAsync(records) == MagicEncryptionState.Inactive, "Sign-out did not release the account context.");
             Require(FixtureKeys.Requests >= 3, "Explicit locking did not require fresh authorization.");
+            await ExerciseEncryptedRotation(fixture);
             state = "passed";
-            message = "Authenticated legacy adoption, lock/resume, field-to-record encryption approved declassification, and managed key rotation passed.";
+            message = "Authenticated legacy adoption, lock/resume, field-to-record encryption, approved declassification, and interrupted encrypted key rotation passed.";
         }
         catch (Exception error)
         {
@@ -101,9 +96,73 @@
         }
     }
 
+    private async Task ExerciseEncryptedRotation(IJSObjectReference fixture)
+    {
+        var records = ProtectedRepository.RotationRecords;
+        var context = await Activate("published-account");
+        Require(await context.Encryption.InitializeAsync(records), "The encrypted rotation fixture could not initialize.");
+        var database = await context.Database.Database(records);
+        var table = await database.Query<RotationRow>();
+        foreach (var id in new[] { 1, 2, 3 })
+            await table.AddAsync(new RotationRow { Id = id, Secret = "Document " + id });
+        var ready = await context.KeyRotation.GetKeyRotationStatusAsync(records);
+        Require(ready.Phase == MagicKeyRotationPhase.NotStarted && ready.ReadsAllowed && ready.WritesAllowed &&
+            !ready.RetirementReady, "A ready vault reported incorrect availability before its first rotation.");
+        await fixture.InvokeVoidAsync("assertRotationCiphertext", ProtectedRepository.RotationPhysicalName,
+            new[] { "rotation-source", "rotation-source", "rotation-source" });
+
+        await fixture.InvokeVoidAsync("holdRotationAfterFirstRecord");
+        var running = context.KeyRotation.RotateEncryptionKeyAsync(records,
+            new("rotation-target", MagicKeyRotationMode.Online, BatchSize: 1));
+        try
+        {
+            await fixture.InvokeVoidAsync("waitForRotationCrypto");
+            await context.KeyRotation.CancelKeyRotationAsync(records);
+        }
+        finally { await fixture.InvokeVoidAsync("releaseRotationCrypto"); }
+        try
+        {
+            await running;
+            throw new InvalidOperationException("The rotation unexpectedly completed after cancellation.");
+        }
+        catch (JSException error) when (error.Message.Contains("abort", StringComparison.OrdinalIgnoreCase)) { }
+
+        var interrupted = await context.KeyRotation.GetKeyRotationStatusAsync(records);
+        Require(interrupted.Phase == MagicKeyRotationPhase.Converting && interrupted.Converted == 1 &&
+            !interrupted.RetirementReady, "Cancellation did not preserve the expected conversion checkpoint.");
+        await fixture.InvokeVoidAsync("assertRotationCiphertext", ProtectedRepository.RotationPhysicalName,
+            new[] { "rotation-target", "rotation-source", "rotation-source" });
+        await Contexts.DeactivateAsync();
+
+        FixtureKeys.RotationRequests.Clear();
+        context = await Activate("published-account");
+        var completed = await context.KeyRotation.ResumeKeyRotationAsync(records, batchSize: 1);
+        Require(FixtureKeys.RotationRequests.SequenceEqual(new[] { "rotation-source", "rotation-target" }),
+            "Resuming did not reacquire both generations through the provider.");
+        Require(completed.Phase == MagicKeyRotationPhase.Completed && completed.RetirementReady &&
+            completed.Converted == 3 && completed.Verified == 3 && completed.TargetKeyId == "rotation-target",
+            "Resuming did not complete the verified encrypted rotation.");
+        await fixture.InvokeVoidAsync("assertRotationCiphertext", ProtectedRepository.RotationPhysicalName,
+            new[] { "rotation-target", "rotation-target", "rotation-target" });
+
+        await Contexts.DeactivateAsync();
+        FixtureKeys.RotationSourceAvailable = false;
+        FixtureKeys.RotationRequests.Clear();
+        context = await Activate("published-account");
+        Require(await context.Encryption.EnsureUnlockedAsync(records), "The completed vault did not reopen with only the target key.");
+        Require(FixtureKeys.RotationRequests.SequenceEqual(new[] { "rotation-target" }), "Reopening requested the retired key.");
+        database = await context.Database.Database(records);
+        table = await database.Query<RotationRow>();
+        var rows = await table.ToListAsync();
+        Require(rows.Count == 3 && rows.All(row => row.Secret == "Document " + row.Id), "Rotation changed typed data.");
+        await Contexts.DeactivateAsync();
+    }
+
     private Task<MagicEncryptionContext> Activate(string account) => Contexts.ActivateAsync(
         [new MagicEncryptionOptions("protected-wasm", account, "fixture-key")
-            { PhysicalDatabaseName = ProtectedRepository.PhysicalName }]);
+            { PhysicalDatabaseName = ProtectedRepository.PhysicalName },
+         new MagicEncryptionOptions("rotation-wasm", account, "rotation-source")
+            { PhysicalDatabaseName = ProtectedRepository.RotationPhysicalName }]);
 
     private static void Require(bool condition, string message)
     {

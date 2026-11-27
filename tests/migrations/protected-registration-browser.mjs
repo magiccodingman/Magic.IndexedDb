@@ -48,6 +48,7 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
                 record: { id: 1, name: 'Public', secret: 'Never persist this plaintext' } });
             const raw = (await readRows(physical))[0];
             const initial = await engine.inspectDatabase(physical);
+            const firstRotation = await api.getManagedKeyRotationStatus(config.name);
             api.lockProtectedDatabase(config.name);
             let lockedCode;
             try { await api.findItem(config.name, 'clients', 1); }
@@ -58,12 +59,14 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
             const reopened = await engine.inspectDatabase(physical);
             api.releaseProtectedDatabase(config.name);
             return { beforeAuthorization, afterAuthorization, rawSecretType: typeof raw.secret,
-                ciphertextBytes: raw.secret.ciphertext.byteLength, initial, reopened, lockedCode, row };
+                ciphertextBytes: raw.secret.ciphertext.byteLength, initial, firstRotation, reopened, lockedCode, row };
         }, { config, physical });
         assert.equal(result.beforeAuthorization, null);
         assert.equal(result.afterAuthorization, null);
         assert.equal(result.rawSecretType, 'object');
         assert.ok(result.ciphertextBytes > 0);
+        assert.deepEqual(result.firstRotation,
+            { phase: 'not-started', retirementReady: false, readsAllowed: true, writesAllowed: true });
         assert.equal(result.initial.state.protocolVersion, 3);
         assert.equal(result.initial.state.status, 'ready');
         assert.equal(result.lockedCode, 'MAGDB_AUTHORIZATION_REQUIRED');
@@ -203,6 +206,150 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
         }, config);
         assert.equal(rejected, true);
         await peer.close();
+    });
+
+    test('lock and release revoke pending rotation authorization while a manifest response is withheld', async ({ page, context }) => {
+        const source = model();
+        const deployment = initial(source);
+        const config = configuration('__magic_protected__:rotation-auth-lock', 'route', source, deployment.url);
+        await page.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'first', new Uint8Array(32).fill(41), true);
+            await api.ensureProtectedMigration(config.name);
+            await api.addItem({ dbName: config.name, storeName: 'clients', record: { id: 1, name: 'Document', secret: 'Content' } });
+            const stop = api.subscribeKeyRotationEvents(event => {
+                if (event.converted === 0) api.cancelManagedEncryptionKeyRotation(config.name);
+            });
+            try {
+                await api.rotateManagedEncryptionKey(config.name, { targetKeyId: 'next', mode: 'online',
+                    batchSize: 1, recoverable: true }, new Uint8Array(32).fill(83));
+                throw new Error('Rotation should have been interrupted.');
+            } catch (error) { if (error.name !== 'AbortError') throw error; }
+            finally { stop(); api.releaseProtectedDatabase(config.name); }
+        }, config);
+        const before = await page.evaluate(async physical => {
+            const db = await openRaw(physical);
+            try { return (await readRows(physical))[0].secret.keyId; } finally { db.close(); }
+        }, config.encryption.physicalName);
+        assert.equal(before, 'first');
+
+        for (const action of ['lockProtectedDatabase', 'releaseProtectedDatabase']) {
+            const peer = await context.newPage();
+            await peer.goto(page.url());
+            let releaseResponse;
+            const responseGate = new Promise(resolve => { releaseResponse = resolve; });
+            let reached;
+            const intercepted = new Promise(resolve => { reached = resolve; });
+            await peer.route(deployment.url, async route => {
+                reached();
+                await responseGate;
+                await route.continue().catch(() => {}); // Aborting fetch may cancel the intercepted request.
+            });
+            try {
+                await peer.evaluate(async config => {
+                    const api = await import('/engine/magicDB.js');
+                    await api.createDb(config);
+                    const fetchResource = globalThis.fetch.bind(globalThis);
+                    globalThis.fetch = (url, init) => {
+                        if (String(url) === config.migrationManifestUrl)
+                            init.signal.addEventListener('abort', () => { globalThis.resumeFetchAborted = true; }, { once: true });
+                        return fetchResource(url, init);
+                    };
+                    globalThis.pendingAuthorization = api.authorizeManagedKeyRotation(config.name, 'first', new Uint8Array(32).fill(41),
+                        'next', new Uint8Array(32).fill(83)).then(() => ({ attached: true }), error => ({
+                            attached: false, name: error.name, code: error.code
+                        }));
+                }, config);
+                await intercepted;
+                const revoked = await peer.evaluate(async ({ config, action }) => {
+                    const api = await import('/engine/magicDB.js');
+                    api[action](config.name);
+                    return { aborted: globalThis.resumeFetchAborted === true,
+                        unlocked: await api.isProtectedDatabaseUnlocked(config.name),
+                        state: await api.getProtectedDatabaseState(config.name) };
+                }, { config, action });
+                assert.deepEqual(revoked, { aborted: true, unlocked: false,
+                    state: action === 'lockProtectedDatabase' ? 'Locked' : 'Inactive' });
+                releaseResponse();
+                const after = await peer.evaluate(async config => {
+                    const api = await import('/engine/magicDB.js');
+                    const outcome = await globalThis.pendingAuthorization;
+                    if (outcome.attached) api.scheduleManagedKeyRotationResume(config.name);
+                    return { outcome, unlocked: await api.isProtectedDatabaseUnlocked(config.name) };
+                }, config);
+                assert.equal(after.outcome.attached, false);
+                assert.equal(after.unlocked, false);
+            } finally {
+                releaseResponse();
+                await peer.close();
+            }
+        }
+        const resumed = await page.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            await api.createDb(config);
+            const status = await api.authorizeManagedKeyRotation(config.name, 'first', new Uint8Array(32).fill(41),
+                'next', new Uint8Array(32).fill(83));
+            return { before: status.converted,
+                after: (await api.resumeManagedEncryptionKeyRotation(config.name, { batchSize: 1 })).converted };
+        }, config);
+        assert.deepEqual(resumed, { before: 0, after: 1 });
+    });
+
+    test('existing managed streams and a decrypting point read are fenced by exclusive admission in another tab', async ({ page, context }) => {
+        const source = model();
+        const config = configuration('__magic_protected__:rotation-stream-fence', 'route', source, initial(source).url);
+        const initialReads = await page.evaluate(async config => {
+            const api = await import('/engine/magicDB.js');
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'first', new Uint8Array(32).fill(41), true);
+            await api.ensureProtectedMigration(config.name);
+            for (const id of [1, 2, 3]) await api.addItem({ dbName: config.name, storeName: 'clients',
+                record: { id, name: 'Document ' + id, secret: 'Content ' + id } });
+            globalThis.fullStream = api.wrapperMagicQueryYield(config.name, 'clients', null);
+            globalThis.projectionStream = api.projectRecordStream(config.name, 'clients', null, [], false, ['id', 'name']);
+            const first = [await fullStream.next(), await projectionStream.next()];
+            const originalDecrypt = crypto.subtle.decrypt.bind(crypto.subtle);
+            crypto.subtle.decrypt = async (...args) => {
+                const result = await originalDecrypt(...args);
+                await new Promise(resolve => { globalThis.releasePointRead = resolve; });
+                return result;
+            };
+            globalThis.pointRead = api.findItem(config.name, 'clients', 2)
+                .then(value => ({ value }), error => ({ error: error.message }));
+            return first;
+        }, config);
+        assert.deepEqual(initialReads.map(item => item.value), [
+            { id: 1, name: 'Document 1', secret: 'Content 1' }, { id: 1, name: 'Document 1' }
+        ]);
+        await page.waitForFunction(() => typeof globalThis.releasePointRead === 'function');
+        const peer = await context.newPage();
+        await peer.goto(page.url());
+        try {
+            await peer.evaluate(async config => {
+                const api = await import('/engine/magicDB.js');
+                await api.createDb(config);
+                await api.unlockProtectedDatabase(config.name, 'first', new Uint8Array(32).fill(41));
+                await api.ensureProtectedMigration(config.name);
+                const stop = api.subscribeKeyRotationEvents(() => api.cancelManagedEncryptionKeyRotation(config.name));
+                try {
+                    await api.rotateManagedEncryptionKey(config.name, { targetKeyId: 'next', mode: 'exclusive',
+                        batchSize: 1, recoverable: true }, new Uint8Array(32).fill(83));
+                    throw new Error('Rotation should have been interrupted after admission.');
+                } catch (error) { if (error.name !== 'AbortError') throw error; }
+                finally { stop(); }
+            }, config);
+            const outcomes = await page.evaluate(async () => {
+                delete crypto.subtle.decrypt;
+                globalThis.releasePointRead();
+                const attempt = stream => stream.next().then(value => ({ value }), error => ({ error: error.message }));
+                return Promise.all([attempt(fullStream), attempt(projectionStream), pointRead]);
+            });
+            for (const outcome of outcomes) {
+                assert.equal(outcome.value, undefined);
+                assert.match(outcome.error, /^MAGIC_ENCRYPTION_POLICY_MISMATCH:/);
+            }
+        } finally { await peer.close(); }
     });
 
     test('abrupt tab termination releases rotation ownership to a worker without replaying a committed batch', async ({ page, context }) => {

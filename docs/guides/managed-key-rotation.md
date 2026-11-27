@@ -30,13 +30,13 @@ are written to rotation metadata or progress diagnostics.
 
 ## Choose availability
 
-- **Exclusive** is the default. Ordinary operations on this vault wait for the
-  application to finish or resume rotation.
+- **Exclusive** is the default. Ordinary operations on this vault reject while
+  rotation is active. Resume or finish rotation, then retry the operation.
 - **ReadOnly** preserves authorized reads while both generations coexist. Record
   mutations, including deletes and public-field patches, reject.
 - **Online** preserves authorized reads and mutations during conversion. New
-  writes use the target key. A short final verification barrier rejects writes in
-  all modes. Retry an interrupted write after the vault is available.
+  writes use the target key. Final verification rejects writes in all modes until the target-only scan
+  completes. Retry an interrupted write after the vault is available.
 
 Application code that receives a rotation fence or authenticated readiness
 change can reauthorize and retry.
@@ -99,6 +99,13 @@ Retirement readiness follows a verified target-only scan and atomic finalization
 It applies to the active vault. Retain old keys required by backups and exports.
 The browser cannot prove physical erasure or detect replay of a complete consistent
 storage snapshot without an external trusted freshness anchor.
+
+Rotation includes retained encrypted audit evidence from authenticated migration
+recovery. Missing or invalid audit evidence blocks retirement. If an older
+runtime enrolled a previously recovered plaintext managed database and left its
+audit evidence unsealed, rotation cannot establish that evidence's authenticity
+and stops. Keep both keys and use the application's recovery policy. New
+authenticated enrollments seal retained plaintext evidence during enrollment.
 
 Rotation compares portable stored records, including native dates and byte arrays.
 Unsupported values written by external IndexedDB clients, such as cyclic

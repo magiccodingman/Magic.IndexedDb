@@ -1,6 +1,6 @@
 import { MigrationError, metadataStore, canonicalJson, sha256, requirePlainSchema, requireProtectedSchema, hasProtection, validateManifest, validateCompletedHistory,
     validateMigration, validateRecovery, requireCondition, physicalStores, samePhysical, compareNames } from "./protocol.js";
-import { isProtectedMigrationAdapter, equalEnvelope } from "./protectedMigrationAdapter.js";
+import { isProtectedMigrationAdapter, equalEnvelope, recoveryEvidenceKey, retainedRecoveries, sameRecoveryEvidence } from "./protectedMigrationAdapter.js";
 import { encryptionMetadataStore, encryptionMetadataKey } from "../utilities/encryptionPolicy.js";
 
 export { MigrationError };
@@ -482,6 +482,47 @@ async function authenticateSnapshot(options, snapshot, schema) {
     checkAuthorization(options);
 }
 
+async function prepareRecoveryEvidenceEnrollment(options, state) {
+    const entries = retainedRecoveries(state);
+    if (!entries.length) return [];
+    const db = await openExisting(options.name, options.signal);
+    requireCondition(db, "MAGDB_DATABASE_MISSING", "Storage disappeared before authenticated adoption.");
+    let evidence;
+    try {
+        const transaction = db.transaction(metadataStore, "readonly");
+        const done = transactionDone(transaction);
+        const metadata = transaction.objectStore(metadataStore);
+        try {
+            evidence = await Promise.all(entries.map(entry => requestResult(metadata.get(recoveryEvidenceKey(entry.recovery.id)))));
+            await done;
+        } catch (failure) {
+            await done.catch(() => {});
+            throw failure;
+        }
+    } finally { db.close(); }
+    return Promise.all(entries.map(async (entry, index) => {
+        const audit = evidence[index];
+        requireCondition(audit, "MAGDB_PROTECTION_STATE_INVALID", "Retained recovery evidence is missing.");
+        return { key: recoveryEvidenceKey(entry.recovery.id), audit, seal: await options.protection.sealRecoveryEvidence(audit, entry) };
+    }));
+}
+
+function enrollRecoveryEvidence(metadata, evidence, finalize, fail) {
+    if (!evidence.length) return finalize();
+    let remaining = evidence.length;
+    for (const { key, audit, seal } of evidence) {
+        const lookup = metadata.get(key);
+        lookup.onsuccess = () => {
+            try {
+                requireCondition(sameRecoveryEvidence(lookup.result, audit),
+                    "MAGDB_CONCURRENT_CHANGE", "Retained recovery evidence changed before authenticated adoption.");
+                metadata.put(seal, key);
+                if (--remaining === 0) finalize();
+            } catch (failure) { fail(failure); }
+        };
+    }
+}
+
 async function prepareProtection(options, state, schema, replacePolicy = false) {
     if (!options.protection) return null;
     checkAuthorization(options);
@@ -772,16 +813,21 @@ async function ensureLocked(options, recovering) {
             expectedState = adopted;
         } else if (options.protection && snapshot.state.protocolVersion !== 3) {
             const adopted = { ...snapshot.state, protocolVersion: 3 };
+            const evidence = await prepareRecoveryEvidenceEnrollment(options, snapshot.state);
             const prepared = await prepareProtection(options, adopted, initial.schema, true);
             db = await upgrade(options, snapshot.nativeVersion + 1, (connection, transaction, oldVersion, fail) => {
                 requireCondition(oldVersion === snapshot.nativeVersion && samePhysical(nativeStores(connection, transaction), initial.schema),
                     "MAGDB_CONCURRENT_CHANGE", "Database changed before authenticated adoption.");
-                const request = transaction.objectStore(metadataStore).get(stateKey);
+                const metadata = transaction.objectStore(metadataStore);
+                const request = metadata.get(stateKey);
                 request.onsuccess = () => guardStoragePolicy(options, connection, transaction, initial.schema, () => {
                     requireCondition(sameState(request.result, snapshot.state), "MAGDB_CONCURRENT_CHANGE", "The journal changed before authenticated adoption.");
-                    transaction.objectStore(metadataStore).put(adopted, stateKey);
-                    writeNumericPolicy(connection, transaction, initial.schema);
-                    writeProtection(connection, transaction, prepared);
+                    enrollRecoveryEvidence(metadata, evidence, () => {
+                        checkAuthorization(options);
+                        metadata.put(adopted, stateKey);
+                        writeNumericPolicy(connection, transaction, initial.schema);
+                        writeProtection(connection, transaction, prepared);
+                    }, fail);
                 }, fail);
             });
             options.protectionSnapshot = prepared;
@@ -1031,9 +1077,9 @@ async function recoverLocked(options, snapshot, manifest, base, model) {
         const completed = readyState(manifest.schemaId, edge.toRevision, to.hash, history, options.protection ? 3 : 2);
         const prepared = await prepareProtection(options, completed, to.schema, true);
         const audit = { original: state.active, recovery: state.recovery };
-        const evidence = options.protection ? await options.protection.sealState(audit) : audit;
+        const evidence = options.protection ? await options.protection.sealRecoveryEvidence(audit, history.at(-1)) : audit;
         await recoveryTransaction(options, db, state, to.schema, (_tx, metadata) => {
-            metadata.add(evidence, "recovery:" + binding.id);
+            metadata.add(evidence, recoveryEvidenceKey(binding.id));
             metadata.put(completed, stateKey);
         }, prepared);
         notify(options, "recovered", { recoveryId: binding.id, migrationId: edge.id, revision: edge.toRevision,

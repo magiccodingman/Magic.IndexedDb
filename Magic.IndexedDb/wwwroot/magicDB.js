@@ -68,7 +68,7 @@ function requireMigrationAuthorization(registration) {
 async function authorizeProtectedMigration(registration, keyId, input, initialize) {
     if (registration.pending && registration.authorization?.adapter &&
         !registration.authorization.controller.signal.aborted)
-        return; // Concurrent callers share the active authorization and attempt.
+        return registration.authorization; // Concurrent callers share the active authorization and attempt.
     registration.authorization?.controller.abort();
     const authorization = { controller: new AbortController(), adapter: null, key: null, keyId, initialize, id: crypto.randomUUID() };
     authorization.assertCurrent = () => {
@@ -90,6 +90,7 @@ async function authorizeProtectedMigration(registration, keyId, input, initializ
             account: registration.account, keyId, key, signal: authorization.controller.signal,
             assertCurrent: authorization.assertCurrent });
         authorization.assertCurrent();
+        return authorization;
     } catch (error) {
         authorization.controller.abort();
         authorization.key = null;
@@ -291,7 +292,7 @@ export function unlockProtectedDatabase(name, keyId, key, initialize = false) {
     const storage = protectedDatabases.get(name);
     if (!storage) throw new Error("The database does not have a Magic encryption policy.");
     const managed = managedDatabases.get(name);
-    if (managed?.protected) return authorizeProtectedMigration(managed, keyId, key, initialize);
+    if (managed?.protected) return authorizeProtectedMigration(managed, keyId, key, initialize).then(() => undefined);
     return storage.unlock(keyId, key, initialize);
 }
 
@@ -362,17 +363,20 @@ export async function getManagedEncryptionKeyHints(name) {
 
 export async function authorizeManagedKeyRotation(name, sourceKeyId, sourceInput, targetKeyId, targetInput) {
     const managed = managedRotationRegistration(name);
-    await authorizeProtectedMigration(managed, sourceKeyId, sourceInput, false);
-    const authorization = requireMigrationAuthorization(managed);
+    const authorization = await authorizeProtectedMigration(managed, sourceKeyId, sourceInput, false);
+    authorization.assertCurrent();
     try {
         const target = await rotationKey(targetInput);
         const keys = new Map([[sourceKeyId, authorization.key], [targetKeyId, target]]);
+        authorization.assertCurrent();
         await managed.db.open();
+        authorization.assertCurrent();
         const context = rotationContext(managed, keys, authorization.controller.signal);
         const active = await openRotation(context);
         if (!active) throw new Error("MAGIC_ROTATION_NOT_ACTIVE: No incomplete rotation was found.");
         await verifyRotationDeployment({ schema: managed.schema, manifestUrl: managed.manifestUrl,
             signal: authorization.controller.signal }, active.ready.revision);
+        authorization.assertCurrent();
         await attachRotation(managed, active, context, active.ready);
         return rotationStatus(active.document);
     } catch (error) {
@@ -397,7 +401,7 @@ export async function getManagedKeyRotationStatus(name) {
     return lineage ? { phase: "completed", rotationId: lineage.completed.rotationId,
         sourceKeyId: lineage.generations.at(-2), targetKeyId: lineage.generations.at(-1),
         converted: lineage.completed.converted, verified: lineage.completed.verified, retirementReady: true,
-        readsAllowed: true, writesAllowed: true } : { phase: "not-started", retirementReady: false };
+        readsAllowed: true, writesAllowed: true } : { phase: "not-started", retirementReady: false, readsAllowed: true, writesAllowed: true };
 }
 
 function assertRotationProgress(previous, current) {

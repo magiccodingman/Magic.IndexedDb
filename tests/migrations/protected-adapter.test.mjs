@@ -40,6 +40,24 @@ test('managed policy authenticates its identity and rejects wrong keys, accounts
     await rejects(adapter.verifyPolicy(changed, schema), 'MAGDB_AUTHORIZATION_REJECTED');
 });
 
+test('recovery evidence rotation preserves the legacy payload and binds it to its metadata slot', async () => {
+    const source = await createProtectedMigrationAdapter(identity);
+    const target = await createProtectedMigrationAdapter({ ...identity, keyId: 'next',
+        key: await importEncryptionKey(crypto.getRandomValues(new Uint8Array(32))) });
+    const entry = { id: 'edge', sha256: binding.migrationHash, recovery: { id: 'repair', sha256: binding.schemaHash } };
+    const audit = { original: { id: entry.id, sha256: entry.sha256, lastKey: new Date(42) },
+        recovery: { ...entry.recovery, lastKey: new Uint8Array([7, 9]) } };
+    const legacy = await source.sealState(audit);
+    const expected = await source.openRetainedRecoveryEvidence(legacy, entry);
+    const converted = await target.rotateRecoveryEvidence(legacy, entry, source);
+    assert.equal(await target.verifyRecoveryEvidence(converted, entry), expected);
+    await rejects(source.openRetainedRecoveryEvidence(converted, entry), 'MAGDB_PROTECTION_STATE_INVALID');
+    await rejects(target.verifyRecoveryEvidence(converted, { ...entry, recovery: { ...entry.recovery, id: 'other' } }),
+        'MAGDB_PROTECTION_STATE_INVALID');
+    await rejects(source.openRetainedRecoveryEvidence(legacy, { ...entry, sha256: entry.recovery.sha256 }),
+        'MAGDB_PROTECTION_STATE_INVALID');
+});
+
 test('legacy protected policy fingerprints stay exact and can be adopted semantically', async () => {
     const source = native();
     const legacy = createProtectionPolicy(source);

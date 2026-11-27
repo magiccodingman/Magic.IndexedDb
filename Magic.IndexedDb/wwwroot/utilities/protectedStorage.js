@@ -89,7 +89,6 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
         if (!snapshot) {
             throw new Error("MAGIC_ENCRYPTION_POLICY_REQUIRED: Unlock this connection to authenticate its storage policy.");
         }
-        await assertPersistedEncryptionPolicy(db.table(encryptionMetadataStore), snapshot);
         if (options.managedSchema) {
             const numeric = db.tables.find(table => table.name === numericMetadataStore);
             const journal = await db.table(migrationMetadataStore).get("state");
@@ -101,6 +100,9 @@ export function createProtectedStorage(db, account, schemas, numericStorage = nu
             if (canonicalJson(numericPolicy ?? null) !== readiness.numericPolicy)
                 throw new MigrationError("MAGDB_CODEC_POLICY_MISMATCH", "The authenticated connection's numeric policy changed.");
         }
+        // Admission can change only the policy. Read it after the other
+        // metadata, immediately before authorizing delivery or mutation.
+        await assertPersistedEncryptionPolicy(db.table(encryptionMetadataStore), snapshot);
         if (rotation !== access) throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Rotation access changed during the operation.");
         access?.assertCurrent();
         assertLive();
@@ -351,7 +353,7 @@ class ProtectedTable {
         await this.db.open();
         await this.assertPolicy();
         for await (const row of magicQueryYield(this.db, this.table, predicate, additions, forceCursor)) {
-            if (rotation) await this.assertPolicy();
+            if (projection !== null && this.managed) await this.assertPolicy();
             if (this.getRotation() !== rotation)
                 throw new Error("MAGIC_ROTATION_CONCURRENT_CHANGE: Restart the stream after the rotation access change.");
             if (projection !== null) {
@@ -361,7 +363,7 @@ class ProtectedTable {
             }
             this.assertLease(lease);
             const opened = await this.access(keys => this.openStoredRecord(row, this.key(row), keys));
-            if (rotation) await this.assertPolicy();
+            if (this.managed) await this.assertPolicy();
             this.assertLease(lease);
             yield opened;
         }
@@ -380,7 +382,7 @@ class ProtectedTable {
             await this.assertPolicy();
             const row = await this.table.get(primaryKey);
             const opened = row === undefined ? undefined : await this.openStoredRecord(row, primaryKey, keys);
-            if (keys.rotation) await this.assertPolicy();
+            if (this.managed) await this.assertPolicy();
             assertCurrent();
             return opened;
         });

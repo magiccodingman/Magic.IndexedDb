@@ -6,7 +6,10 @@ import path from 'node:path';
 
 const [cli, targetFile] = process.argv.slice(2);
 const exported = JSON.parse(await readFile(targetFile, 'utf8'));
-const target = exported.schemas?.[0] ?? exported;
+const target = exported.schemas.find(schema => schema.schemaId === 'protected-wasm');
+const rotation = exported.schemas.find(schema => schema.schemaId === 'rotation-wasm');
+assert.deepEqual(rotation.stores[0].encryptedFields, ['Secret']);
+await writeFile('rotation-model.json', JSON.stringify(rotation));
 assert.equal(target.schemaId, 'protected-wasm');
 assert.deepEqual(target.requiredCapabilities, ['authenticatedMigrationsV1']);
 const fieldModel = structuredClone(target);
@@ -57,6 +60,10 @@ await transform(3, `export async function transform(row) {
 }`, true);
 run(['migrations', 'validate', '--schema', 'public-model.json']);
 run(['migrations', 'publish', '--schema', 'public-model.json', '--output', 'App/wwwroot/releases/final']);
+
+run(['migrations', 'add', 'EncryptedRecords', '--schema', 'rotation-model.json']);
+run(['migrations', 'validate', '--schema', 'rotation-model.json']);
+run(['migrations', 'publish', '--schema', 'rotation-model.json', '--output', 'App/wwwroot/releases/rotation']);
 
 for (const legacyProtected of [false, true]) {
     const source = structuredClone(fieldModel);

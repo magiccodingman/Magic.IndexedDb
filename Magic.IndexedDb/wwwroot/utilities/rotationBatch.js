@@ -66,6 +66,20 @@ export async function readRotationBatch(db, storeName, afterKey, batchSize) {
     return rows;
 }
 
+export async function readRotationEntries(db, storeName, keys) {
+    const transaction = db.transaction(storeName, "readonly");
+    const done = transactionDone(transaction);
+    const store = transaction.objectStore(storeName);
+    try {
+        const values = await Promise.all(keys.map(key => requestResult(store.get(key))));
+        await done;
+        return values;
+    } catch (error) {
+        await done.catch(() => {});
+        throw error;
+    }
+}
+
 // Check the exact authenticated metadata and stored rows before any writes.
 // A concurrent delete, replacement, or public patch forces a fresh preparation.
 export async function commitRotationBatch(db, expectations, writes, assertCurrent, signal) {
