@@ -2,6 +2,8 @@
 using Magic.IndexedDb.Models;
 using System.Text.Json;
 using System.Diagnostics.CodeAnalysis;
+using Magic.IndexedDb.LinqTranslation.Models;
+using Magic.IndexedDb.Models.UniversalOperations;
 
 namespace Magic.IndexedDb.Helpers;
 
@@ -32,6 +34,9 @@ public static class MagicSerializationHelper
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(StoreRecord<>))]
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(UpdateRecord<>))]
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(PrimaryKeys))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(FilterNode))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(FilterCondition))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(StoredMagicQuery))]
     public static JsonElement SerializeObjectToJsonElement<T>(T value, MagicJsonSerializationSettings? settings = null)
     {
         if (settings == null)
