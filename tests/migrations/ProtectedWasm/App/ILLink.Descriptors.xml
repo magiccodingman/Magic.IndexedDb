@@ -1,0 +1,6 @@
+<linker>
+  <assembly fullname="App">
+    <type fullname="ProtectedRow" preserve="all" />
+    <type fullname="RotationRow" preserve="all" />
+  </assembly>
+</linker>

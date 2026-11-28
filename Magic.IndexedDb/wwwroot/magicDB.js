@@ -621,6 +621,13 @@ export async function destroyProtectedDatabase(physicalName, registeredRoute = n
     await Dexie.delete(physicalName);
 }
 
+export function conditionalProtectedMutation(name, store, workspaceStore, { record, revision, generation, replacement }) {
+    const table = protectedTable(name, store);
+    const workspace = protectedTable(name, workspaceStore);
+    if (!table || !workspace) throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: Protected tables are required.");
+    return table.conditionalMutation(record, revision, workspace, generation, replacement);
+}
+
 export function patchPublicRecord(name, store, key, changes) {
     const table = protectedTable(name, store);
     if (!table) throw new Error("A public patch requires a protected table.");

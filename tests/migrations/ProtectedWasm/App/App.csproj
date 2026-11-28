@@ -8,5 +8,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.11" />
     <PackageReference Include="Magic.IndexedDb" Version="$(MagicPackage)" />
     <Compile Include="../Model.cs" Link="Model.cs" />
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
   </ItemGroup>
 </Project>

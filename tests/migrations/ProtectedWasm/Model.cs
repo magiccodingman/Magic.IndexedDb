@@ -16,6 +16,7 @@ public sealed class ProtectedRepository : IMagicRepository
 // context and authenticated history remain after explicit declassification.
 public sealed class ProtectedRow : MagicTableTool<ProtectedRow>, IMagicTable<ProtectedRepository>
 {
+    [MagicNotMapped]
     public ProtectedRepository Databases { get; } = new();
     public IndexedDbSet GetDefaultDatabase() => ProtectedRepository.Records;
     public string GetTableName() => "records";
@@ -27,13 +28,17 @@ public sealed class ProtectedRow : MagicTableTool<ProtectedRow>, IMagicTable<Pro
     public int Visits { get; set; }
 }
 
+[MagicEncryptRecord(nameof(Id))]
 public sealed class RotationRow : MagicTableTool<RotationRow>, IMagicTable<ProtectedRepository>
 {
+    [MagicNotMapped]
     public ProtectedRepository Databases { get; } = new();
     public IndexedDbSet GetDefaultDatabase() => ProtectedRepository.RotationRecords;
     public string GetTableName() => "rotation-records";
     public IMagicCompoundKey GetKeys() => CreatePrimaryKey(row => row.Id, false);
     public List<IMagicCompoundIndex> GetCompoundIndexes() => [];
     public int Id { get; set; }
-    [MagicEncrypt] public string Secret { get; set; } = "";
+    public int Revision { get; set; }
+    public int Generation { get; set; }
+    public string Secret { get; set; } = "";
 }

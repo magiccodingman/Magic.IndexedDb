@@ -207,7 +207,8 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         var document = JsonNode.Parse(payload.GetRawText())!.AsObject();
         document["migrationSchema"] = JsonNode.Parse(MagicSchemaJson.Serialize(resolved.Schema));
         document["migrationManifestUrl"] = resolved.Definition.ManifestUrl;
-        payload = JsonSerializer.SerializeToElement(document);
+        using var wireDocument = JsonDocument.Parse(document.ToJsonString());
+        payload = wireDocument.RootElement.Clone();
         var module = await _jsModule!.Value;
         if (_encryption.ContainsKey(name) || _numericStorage.Mode(name) == MagicNumericStorageMode.Lossless)
             await EncryptionUnlock.InvokeAsync<bool>(module, IndexedDbFunctions.CREATE_LEGACY, true, payload);

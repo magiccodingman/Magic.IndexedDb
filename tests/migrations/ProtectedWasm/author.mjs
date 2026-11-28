@@ -8,7 +8,7 @@ const [cli, targetFile] = process.argv.slice(2);
 const exported = JSON.parse(await readFile(targetFile, 'utf8'));
 const target = exported.schemas.find(schema => schema.schemaId === 'protected-wasm');
 const rotation = exported.schemas.find(schema => schema.schemaId === 'rotation-wasm');
-assert.deepEqual(rotation.stores[0].encryptedFields, ['Secret']);
+assert.deepEqual(rotation.stores[0].exposedFields, ['Id']);
 await writeFile('rotation-model.json', JSON.stringify(rotation));
 assert.equal(target.schemaId, 'protected-wasm');
 assert.deepEqual(target.requiredCapabilities, ['authenticatedMigrationsV1']);
