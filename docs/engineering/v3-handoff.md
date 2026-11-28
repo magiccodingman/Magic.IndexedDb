@@ -90,22 +90,5 @@ remain unverified.
 - Review the [implemented bounded recovery contract](../architecture/adr-partial-migration-recovery.md).
   A deterministic failure requires developer intervention and an explicitly
   approved package. An ordinary later revision starts only after recovery commits.
-  Keep resumable and recovery support in preview pending implementation acceptance.
-- Keep the preview PR draft. The maintainer owns final release and separate
-  verification of the trusted publisher scopes.
-
-## Required response for peer review
-
-Return a concise executive status followed by:
-
-1. PR/branch and exact tested commit SHA; any later untested changes.
-2. Test matrix with pass/fail/skip/executed counts, commands, environments, and evidence.
-3. Every bug found: reproducer, original failure, root cause, fix, regression, commit.
-4. Data-preservation findings: old package/baseline versions, rows/invariants tested,
-   atomic rollback, resumable restart, native schema/policy/journal consistency.
-5. API/protocol decisions or compatibility changes needing the maintainer's judgment.
-6. Remaining blockers and unsupported operations, separated from optional polish.
-7. A merge-readiness recommendation with concrete evidence; do not merge yourself.
-
-The user will bring that response back to the original agent for an independent peer
-review and another iteration.
+  Validate resumable migration and recovery against the application’s actual rollout conditions.
+- Verify trusted publishing scopes for both package IDs before publishing.

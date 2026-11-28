@@ -3,8 +3,8 @@ import * as api from './_content/Magic.IndexedDb/magicDB.js';
 const physical = '__magic_protected__:published-migration-fixture';
 const route = physical + ':seed';
 
-async function rawRows() {
-    const opening = indexedDB.open(physical);
+async function rawRows(name = physical, store = 'records') {
+    const opening = indexedDB.open(name);
     opening.onupgradeneeded = () => opening.transaction.abort();
     const db = await new Promise((resolve, reject) => {
         opening.onsuccess = () => resolve(opening.result);
@@ -12,7 +12,7 @@ async function rawRows() {
     });
     try {
         return await new Promise((resolve, reject) => {
-            const request = db.transaction('records').objectStore('records').getAll();
+            const request = db.transaction(store).objectStore(store).getAll();
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
@@ -64,4 +64,38 @@ export async function assertFinalPlaintext() {
         row.Secret !== 'Private ' + row.Id || row.Name !== 'Public ' + row.Id || row.Visits !== 1 ||
         Object.hasOwn(row, '__magic_record')))
         throw new Error('The approved declassification did not preserve the logical records.');
+}
+
+export async function assertRotationCiphertext(name, expected) {
+    const rows = await rawRows(name, 'rotation-records');
+    if (rows.length !== expected.length || rows.some((row, index) => row.Id !== index + 1 ||
+        row.Secret?.keyId !== expected[index] || !(row.Secret.ciphertext instanceof ArrayBuffer) ||
+        row.Secret.ciphertext.byteLength === 0))
+        throw new Error('Persisted ciphertext does not match the expected rotation generations.');
+}
+
+let releaseRotation;
+let unsubscribeRotation;
+export function holdRotationAfterFirstRecord() {
+    unsubscribeRotation = api.subscribeKeyRotationEvents(event => {
+        if (event.phase !== 'converting' || event.targetKeyId !== 'rotation-target' || event.converted !== 1) return;
+        unsubscribeRotation();
+        const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+        crypto.subtle.encrypt = async (...args) => {
+            await new Promise(resolve => { releaseRotation = resolve; });
+            return encrypt(...args);
+        };
+    });
+}
+
+export async function waitForRotationCrypto() {
+    const deadline = performance.now() + 15_000;
+    while (!releaseRotation && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+    if (!releaseRotation) throw new Error('Rotation did not commit its first batch and start the next.');
+}
+
+export function releaseRotationCrypto() {
+    unsubscribeRotation?.();
+    delete crypto.subtle.encrypt;
+    releaseRotation?.();
 }

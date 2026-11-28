@@ -1625,10 +1625,144 @@ if (cliFixture) for (const [codecCase, sourceHasCodec] of [['absent-to-null', fa
     });
 }
 
+test('rotation batch preserves a concurrent write and commits conversion with its checkpoint', async ({ page }) => {
+    await page.goto(origin + '/');
+    const result = await page.evaluate(async () => {
+        const { readRotationBatch, commitRotationBatch } = await import('/engine/utilities/rotationBatch.js');
+        const open = indexedDB.open('rotation-transaction-fixture');
+        const request = operation => new Promise((resolve, reject) => {
+            operation.onsuccess = () => resolve(operation.result);
+            operation.onerror = () => reject(operation.error);
+        });
+        open.onupgradeneeded = () => {
+            open.result.createObjectStore('documents', { keyPath: ['group', 'id'] });
+            open.result.createObjectStore('metadata');
+        };
+        const db = await request(open);
+        const put = async (store, value, key) => {
+            const tx = db.transaction(store, 'readwrite');
+            return await request(key === undefined ? tx.objectStore(store).put(value) : tx.objectStore(store).put(value, key));
+        };
+        const key = ['catalog', 1];
+        const original = { group: 'catalog', id: 1, label: 'original', ciphertext: Uint8Array.of(1) };
+        const patch = { ...original, label: 'concurrent' };
+        await put('documents', original);
+        await put('metadata', { phase: 0 }, 'progress');
+        const [snapshot] = await readRotationBatch(db, 'documents', null, 1);
+        await put('documents', patch);
+        const progress = { store: 'metadata', key: 'progress', value: { phase: 0 } };
+        const next = { ...progress, value: { phase: 1 } };
+        const expect = { store: 'documents', key, value: snapshot.record };
+        const write = { store: 'documents', key, value: { ...patch, ciphertext: Uint8Array.of(2) } };
+        const stale = await commitRotationBatch(db, [expect, progress], [write, next], () => {});
+        const afterStale = await request(db.transaction('metadata').objectStore('metadata').get('progress'));
+        const fresh = await commitRotationBatch(db, [{ ...expect, value: patch }, progress], [write, next], () => {});
+        const final = await request(db.transaction('metadata').objectStore('metadata').get('progress'));
+        const [row] = await readRotationBatch(db, 'documents', null, 1);
+        const remainder = await readRotationBatch(db, 'documents', key, 1);
+        const unsupported = { ...row.record, foreign: new Map([['example', 'content']]) };
+        await put('documents', unsupported);
+        const [foreign] = await readRotationBatch(db, 'documents', null, 1);
+        let unsupportedCode = null;
+        try {
+            await commitRotationBatch(db, [{ store: 'documents', key, value: foreign.record },
+                { ...progress, value: { phase: 1 } }], [write, { ...next, value: { phase: 2 } }], () => {});
+        } catch (error) { unsupportedCode = error.message.split(':')[0]; }
+        const protectedProgress = await request(db.transaction('metadata').objectStore('metadata').get('progress'));
+        const [retained] = await readRotationBatch(db, 'documents', null, 1);
+        db.close();
+        return { stale, fresh, afterStale, final, label: row.record.label, bytes: [...row.record.ciphertext], remainder,
+            unsupportedCode, protectedProgress, retained: [...retained.record.foreign] };
+    });
+    assert.deepEqual(result, { stale: false, fresh: true, afterStale: { phase: 0 }, final: { phase: 1 },
+        label: 'concurrent', bytes: [2], remainder: [], unsupportedCode: 'MAGIC_ROTATION_RECORD_UNSUPPORTED',
+        protectedProgress: { phase: 1 }, retained: [['example', 'content']] });
+});
+
+test('rotation checkpoints preserve compound keys across protected and public stores', async ({ page }) => {
+    await page.goto(origin + '/');
+    const result = await page.evaluate(async () => {
+        const { advanceRotationPass } = await import('/engine/utilities/rotationPass.js');
+        const { sealRotationJournal, rotationJournalKey } = await import('/engine/utilities/rotationJournal.js');
+        const { encryptionMetadataStore } = await import('/engine/utilities/encryptionPolicy.js');
+        const { sealRecord, openRecord } = await import('/engine/utilities/encryptionRecord.js');
+        const { importEncryptionKey } = await import('/engine/utilities/encryptionEnvelope.js');
+        const generate = () => importEncryptionKey(crypto.getRandomValues(new Uint8Array(32)));
+        const keys = new Map([['old', await generate()], ['new', await generate()]]);
+        const open = indexedDB.open('rotation-checkpoint-fixture');
+        const request = operation => new Promise((resolve, reject) => {
+            operation.onsuccess = () => resolve(operation.result);
+            operation.onerror = () => reject(operation.error);
+        });
+        open.onupgradeneeded = () => {
+            open.result.createObjectStore('documents', { keyPath: ['group', 'id'] }).createIndex('byGroup', 'group');
+            open.result.createObjectStore('archive', { keyPath: 'id' });
+            open.result.createObjectStore('settings', { keyPath: 'id' });
+            open.result.createObjectStore(encryptionMetadataStore);
+        };
+        const db = await request(open);
+        const vault = { database: db.name, account: 'catalog-account' };
+        const policy = { fields: new Set(['content']), exposed: null };
+        const context = primaryKey => ({ ...vault, store: 'documents', primaryKey });
+        const put = async (storeName, value, key) => {
+            const store = db.transaction(storeName, 'readwrite').objectStore(storeName);
+            await request(key === undefined ? store.put(value) : store.put(value, key));
+        };
+        const get = (storeName, key) => request(db.transaction(storeName).objectStore(storeName).get(key));
+        const group = 'catalog';
+        const documentKeys = ['9007199254740993', '9007199254740994'].map(id => [group, id]);
+        const contents = documentKeys.map(([, id]) => ({ nested: [{ exact: id, decimal: '1.00000000000000000001' }] }));
+        for (const [index, key] of documentKeys.entries())
+            await put('documents', await sealRecord({ group, id: key[1], content: contents[index] }, policy, keys.get('old'), 'old', context(key)));
+        await put('settings', { id: 1, label: 'Public configuration' });
+        const assertCurrent = () => {};
+        const document = await sealRotationJournal({
+            version: 1, rotationId: 'rotation', sourceKeyId: 'old', targetKeyId: 'new', mode: 'exclusive',
+            modelHash: 'model', policyFingerprint: 'policy', writeKeyId: 'new', priorKeyIds: ['old'], sequence: 0,
+            phase: 'converting', storeIndex: 0, afterKey: null, converted: 0, verified: 0, paused: false
+        }, keys, vault, assertCurrent);
+        await put(encryptionMetadataStore, document, rotationJournalKey);
+        const install = async state => put(encryptionMetadataStore, await sealRotationJournal(state, keys, vault, assertCurrent), rotationJournalKey);
+        const step = async () => advanceRotationPass({ db, vault, keys, document: await get(encryptionMetadataStore, rotationJournalKey),
+            policies: new Map([['archive', policy], ['documents', policy],
+                ['settings', { fields: new Set(), exposed: null }]]), expectations: [], batchSize: 1, assertCurrent });
+        await step(); // Skip the empty protected store.
+        await step(); // Commit one record and its compound checkpoint.
+        const mixed = await Promise.all(documentKeys.map(async key => (await get('documents', key)).content.keyId));
+        const finishPass = async () => {
+            for (let i = 0; i < 6; i++) if ((await step()).outcome === 'pass-complete') return;
+            throw new Error('The bounded rotation pass did not finish.');
+        };
+        await finishPass();
+        const converted = (await get(encryptionMetadataStore, rotationJournalKey)).state;
+        // Exercise the verification scan against a persisted phase. The full
+        // lifecycle coordinator installs its finalization fence at this boundary.
+        await install({ ...converted, phase: 'verifying', storeIndex: 0 });
+        await finishPass();
+        const final = (await get(encryptionMetadataStore, rotationJournalKey)).state;
+        const rows = [];
+        for (const key of documentKeys)
+            rows.push(await openRecord(await get('documents', key), policy, keys.get('new'), 'new', context(key)));
+        let oldKeyRejected = false;
+        try {
+            const key = documentKeys[0];
+            await openRecord(await get('documents', key), policy, keys.get('old'), 'new', context(key));
+        } catch { oldKeyRejected = true; }
+        const indexedKeys = await request(db.transaction('documents').objectStore('documents').index('byGroup').getAllKeys(group));
+        const publicRow = await get('settings', 1);
+        db.close();
+        return { mixed, converted: final.converted, verified: final.verified, rows, indexedKeys, publicRow, oldKeyRejected };
+    });
+    const ids = ['9007199254740993', '9007199254740994'];
+    assert.deepEqual(result, { mixed: ['new', 'old'], converted: 2, verified: 2,
+        rows: ids.map(id => ({ group: 'catalog', id, content: { nested: [{ exact: id, decimal: '1.00000000000000000001' }] } })),
+        indexedKeys: ids.map(id => ['catalog', id]), publicRow: { id: 1, label: 'Public configuration' }, oldKeyRejected: true });
+});
+
 registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage, recoveryPackage,
     appendRevision, jsonAsset, assets, cliFixture, getOrigin: () => origin });
 registerProtectedRegistrationTests({ test, schema, bundle, jsonAsset, copy, registrationStore, inspect, appendRevision, assets });
-const expectedScenarioCount = cliFixture ? 126 : 122;
+const expectedScenarioCount = (cliFixture ? 142 : 138) + (process.env.MAGIC_ROTATION_BENCHMARK === "1" ? 9 : 0);
 assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
 
 if (listOnly) {
@@ -1693,7 +1827,8 @@ try {
             let timer;
             try {
                 await Promise.race([scenario.run({ page, context }), new Promise((_, reject) => {
-                    timer = setTimeout(() => reject(new Error('Scenario exceeded 35 seconds.')), 35_000);
+                    const timeout = scenario.name.startsWith('rotation benchmark:') ? 900_000 : 35_000;
+                    timer = setTimeout(() => reject(new Error(`Scenario exceeded ${timeout / 1000} seconds.`)), timeout);
                 })]);
             } finally { clearTimeout(timer); }
             if (pageErrors.length) throw new Error('Unhandled browser error:\n' + pageErrors.join('\n'));

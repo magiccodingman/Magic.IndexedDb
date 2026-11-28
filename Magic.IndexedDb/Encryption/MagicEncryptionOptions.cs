@@ -15,6 +15,9 @@ public sealed record MagicEncryptionOptions(
     /// <remarks>Use a reviewed migration history/baseline and retire older writers before enrollment.
     /// Retain this binding after enrollment, including when every record field becomes public again.</remarks>
     public string? PhysicalDatabaseName { get; init; }
+
+    /// <summary>Resume an interrupted rotation after both keys are authorized. A durable pause is respected.</summary>
+    public bool ResumeKeyRotationOnUnlock { get; init; }
 }
 
 public sealed record MagicEncryptionKeyRequest(string DatabaseName, string AccountScope, string KeyId);

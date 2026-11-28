@@ -3,7 +3,11 @@ using Magic.IndexedDb.Factories;
 namespace Magic.IndexedDb;
 
 /// <summary>An account-bound view of the database and encryption APIs.</summary>
-public sealed record MagicEncryptionContext(IMagicIndexedDb Database, IMagicIndexedDbEncryptionLifecycle Encryption);
+public sealed record MagicEncryptionContext(IMagicIndexedDb Database, IMagicIndexedDbEncryptionLifecycle Encryption)
+{
+    public IMagicIndexedDbKeyRotation KeyRotation => Encryption as IMagicIndexedDbKeyRotation
+        ?? throw new InvalidOperationException("This encryption context does not support key rotation.");
+}
 
 /// <summary>Manages protected account contexts within an existing service scope.</summary>
 public interface IMagicEncryptionContexts

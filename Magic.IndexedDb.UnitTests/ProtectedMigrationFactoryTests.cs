@@ -29,7 +29,7 @@ public sealed class ProtectedMigrationFactoryTests
     public async Task LockCanRevokeAuthorizationWhileMigrationIsWaiting()
     {
         var browser = new Browser { HoldMigration = true };
-        await using var factory = Create(browser, new());
+        await using var factory = Create(browser, new Provider());
         var unlocking = factory.UnlockDetailedAsync(Repository.Database);
         await browser.MigrationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -42,10 +42,49 @@ public sealed class ProtectedMigrationFactoryTests
     }
 
     [TestMethod]
+    public async Task LockReachesBrowserBeforePendingRotationAuthorizationCompletes()
+    {
+        var browser = new Browser { HoldRotationAuthorization = true };
+        await using var factory = Create(browser, new RotationProvider());
+        var unlocking = factory.UnlockDetailedAsync(Repository.Database);
+        await browser.RotationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await factory.LockAsync(Repository.Database).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.IsTrue(browser.Calls.Contains("lockProtectedDatabase"));
+            Assert.IsFalse(browser.RotationFinished.Task.IsCompleted);
+        }
+        finally
+        {
+            browser.RotationFinished.TrySetResult();
+        }
+
+        Assert.AreEqual(MagicUnlockResult.Cancelled, await unlocking.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.IsFalse(browser.Calls.Contains("ensureProtectedMigration"));
+        Assert.IsFalse(browser.Calls.Contains("scheduleManagedKeyRotationResume"));
+    }
+
+    [TestMethod]
+    public async Task ReadyRotationStatusReportsOrdinaryReadAndWriteAvailability()
+    {
+        var browser = new Browser();
+        await using var factory = Create(browser, new Provider());
+        Assert.IsTrue(await factory.EnsureUnlockedAsync(Repository.Database));
+
+        var status = await factory.GetKeyRotationStatusAsync(Repository.Database);
+
+        Assert.AreEqual(MagicKeyRotationPhase.NotStarted, status.Phase);
+        Assert.IsTrue(status.ReadsAllowed);
+        Assert.IsTrue(status.WritesAllowed);
+        Assert.IsFalse(status.RetirementReady);
+    }
+
+    [TestMethod]
     public async Task ExplicitBrowserCancellationReportsCancelled()
     {
         var browser = new Browser { MigrationDiagnostic = "MAGDB_CANCELLED: Migration was cancelled." };
-        await using var factory = Create(browser, new());
+        await using var factory = Create(browser, new Provider());
 
         Assert.AreEqual(MagicUnlockResult.Cancelled, await factory.UnlockDetailedAsync(Repository.Database));
     }
@@ -72,7 +111,7 @@ public sealed class ProtectedMigrationFactoryTests
     public async Task UnavailableAuthorizationDoesNotStartRecovery()
     {
         var browser = new Browser();
-        await using var factory = Create(browser, new() { Available = false });
+        await using var factory = Create(browser, new Provider { Available = false });
         var database = await factory.Database(Repository.Database);
 
         var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
@@ -87,7 +126,7 @@ public sealed class ProtectedMigrationFactoryTests
     public async Task ExplicitPhysicalBindingIsRetainedAndDestroyCarriesItsRegisteredRoute()
     {
         var browser = new Browser();
-        await using var factory = Create(browser, new(), "existing-browser-records");
+        await using var factory = Create(browser, new Provider(), "existing-browser-records");
         Assert.IsTrue(await factory.EnsureUnlockedAsync(Repository.Database));
         var registered = browser.Registration!.Value;
         Assert.AreEqual("existing-browser-records", registered.GetProperty("encryption").GetProperty("physicalName").GetString());
@@ -100,12 +139,12 @@ public sealed class ProtectedMigrationFactoryTests
         Assert.AreEqual(registered.GetProperty("name").GetString(), browser.DestroyedRoute);
     }
 
-    private static MagicDbFactory Create(Browser browser, Provider provider, string? physicalName = null) => new(browser, 1024, false,
+    private static MagicDbFactory Create(Browser browser, IMagicEncryptionKeyProvider provider, string? physicalName = null) => new(browser, 1024, false,
         tableTypes: [typeof(Row)], repositoryTypes: [typeof(Repository)],
         encryption: new Dictionary<string, EncryptionConfiguration>
         {
             [Repository.Database.DatabaseName] = new(new MagicEncryptionOptions(Repository.Database.DatabaseName, "account", "key")
-                { PhysicalDatabaseName = physicalName })
+                { PhysicalDatabaseName = physicalName, ResumeKeyRotationOnUnlock = true })
         }, keyProvider: provider);
 
     private sealed class Provider : IMagicEncryptionKeyProvider
@@ -119,6 +158,15 @@ public sealed class ProtectedMigrationFactoryTests
         }
     }
 
+    private sealed class RotationProvider : IMagicEncryptionRotationKeyProvider
+    {
+        public ValueTask<MagicEncryptionKey?> GetKeyAsync(MagicEncryptionKeyRequest request, CancellationToken cancellationToken) =>
+            ValueTask.FromResult<MagicEncryptionKey?>(MagicEncryptionKey.FromBytes(new byte[32]));
+
+        public ValueTask<bool> CanReacquireKeysAsync(MagicEncryptionKeyRequest source, MagicEncryptionKeyRequest target,
+            CancellationToken cancellationToken) => ValueTask.FromResult(true);
+    }
+
     private sealed class Browser : IJSRuntime, IJSObjectReference
     {
         public List<string> Calls { get; } = [];
@@ -128,6 +176,9 @@ public sealed class ProtectedMigrationFactoryTests
         public string? DestroyedPhysicalName { get; private set; }
         public string? DestroyedRoute { get; private set; }
         public bool HoldMigration { get; init; }
+        public bool HoldRotationAuthorization { get; init; }
+        public TaskCompletionSource RotationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource RotationFinished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public string? MigrationDiagnostic { get; init; }
         public TaskCompletionSource MigrationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private TaskCompletionSource<bool> MigrationFinished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -151,6 +202,16 @@ public sealed class ProtectedMigrationFactoryTests
                     DestroyedPhysicalName = (string)parameters[0]!;
                     DestroyedRoute = (string?)parameters[1];
                 }
+                if (method == "getManagedKeyRotationStatus")
+                    return ValueTask.FromResult((T)(object)JsonSerializer.SerializeToElement(new
+                        { phase = "not-started", readsAllowed = true, writesAllowed = true, retirementReady = false }));
+                if (method == "getManagedEncryptionKeyHints")
+                    return ValueTask.FromResult((T)(object)JsonSerializer.SerializeToElement(new { keyId = "key", targetKeyId = "next" }));
+                if (method == "authorizeManagedKeyRotation" && HoldRotationAuthorization)
+                {
+                    RotationStarted.TrySetResult();
+                    return WaitForRotation<T>();
+                }
                 return ValueTask.FromResult((T)(object)(method != "isProtectedDatabaseUnlocked"));
             }
             Calls.Add(identifier);
@@ -170,6 +231,7 @@ public sealed class ProtectedMigrationFactoryTests
         }
 
         private async ValueTask<T> WaitForMigration<T>() { await MigrationFinished.Task; return default!; }
+        private async ValueTask<T> WaitForRotation<T>() { await RotationFinished.Task; return default!; }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 

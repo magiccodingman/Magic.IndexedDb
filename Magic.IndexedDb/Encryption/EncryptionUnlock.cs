@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.JSInterop;
 
 namespace Magic.IndexedDb;
@@ -67,39 +68,83 @@ internal sealed class EncryptionUnlock(EncryptionConfiguration configuration, IM
             await previousLock;
             token.ThrowIfCancellationRequested();
             var module = await getModule().WaitAsync(token);
-            if (await InvokeAsync<bool>(module, "isProtectedDatabaseUnlocked", false, configuration.Route))
+            if (await InvokeAsync<bool>(module, "isProtectedDatabaseUnlocked", false, configuration.Route,
+                provider is IMagicEncryptionRotationKeyProvider))
             {
                 token.ThrowIfCancellationRequested();
                 attempt.Result.TrySetResult(MagicUnlockResult.AlreadyUnlocked);
                 return;
             }
 
-            var key = await provider.GetKeyAsync(configuration.Request, token);
-            await _browser.WaitAsync(token);
-            try
+            var request = configuration.Request;
+            string? targetId = null;
+            if (!initialize && provider is IMagicEncryptionRotationKeyProvider)
             {
-                token.ThrowIfCancellationRequested();
-                if (key is not null)
+                var hints = await InvokeAsync<JsonElement>(module, "getManagedEncryptionKeyHints", false, configuration.Route);
+                if (hints.ValueKind == JsonValueKind.Object)
                 {
-                    var temporary = (key.Material as byte[])?.ToArray();
+                    if (hints.TryGetProperty("keyId", out var keyId) && keyId.GetString() is { Length: > 0 } active)
+                        request = request with { KeyId = active };
+                    if (hints.TryGetProperty("targetKeyId", out var target) && target.GetString() is { Length: > 0 } id)
+                        targetId = id;
+                }
+            }
+            var key = await provider.GetKeyAsync(request, token);
+            var targetKey = key is not null && targetId is not null
+                ? await provider.GetKeyAsync(request with { KeyId = targetId }, token) : null;
+            var available = key is not null && (targetId is null || targetKey is not null);
+            if (available)
+            {
+                var temporary = (key!.Material as byte[])?.ToArray();
+                var temporaryTarget = (targetKey?.Material as byte[])?.ToArray();
+                try
+                {
+                    await _browser.WaitAsync(token);
+                    ValueTask<JsonElement> rotation = default;
                     try
                     {
-                        await InvokeAsync<bool>(module, "unlockProtectedDatabase", true,
-                            configuration.Route, configuration.Request.KeyId, temporary ?? key.Material, initialize);
+                        token.ThrowIfCancellationRequested();
+                        if (targetKey is null)
+                            await InvokeAsync<bool>(module, "unlockProtectedDatabase", true,
+                                configuration.Route, request.KeyId, temporary ?? key.Material, initialize);
+                        else
+                            rotation = InvokeAsync<JsonElement>(module, "authorizeManagedKeyRotation", false,
+                                configuration.Route, request.KeyId, temporary ?? key.Material,
+                                targetId, temporaryTarget ?? targetKey.Material);
                     }
                     finally
                     {
-                        if (temporary is not null) CryptographicOperations.ZeroMemory(temporary);
+                        _browser.Release();
+                    }
+
+                    if (targetKey is not null)
+                    {
+                        // The invocation has started. Its browser authorization can now
+                        // be revoked while deployment validation is still awaiting I/O.
+                        await rotation;
+                        if (configuration.ResumeKeyRotationOnUnlock)
+                        {
+                            await _browser.WaitAsync(token);
+                            try
+                            {
+                                token.ThrowIfCancellationRequested();
+                                await InvokeAsync<bool>(module, "scheduleManagedKeyRotationResume", true, configuration.Route);
+                            }
+                            finally
+                            {
+                                _browser.Release();
+                            }
+                        }
                     }
                 }
-
-                token.ThrowIfCancellationRequested();
-                attempt.Result.TrySetResult(key is null ? MagicUnlockResult.KeyUnavailable : MagicUnlockResult.Unlocked);
+                finally
+                {
+                    if (temporary is not null) CryptographicOperations.ZeroMemory(temporary);
+                    if (temporaryTarget is not null) CryptographicOperations.ZeroMemory(temporaryTarget);
+                }
             }
-            finally
-            {
-                _browser.Release();
-            }
+            token.ThrowIfCancellationRequested();
+            attempt.Result.TrySetResult(available ? MagicUnlockResult.Unlocked : MagicUnlockResult.KeyUnavailable);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
