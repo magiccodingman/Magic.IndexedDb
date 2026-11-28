@@ -121,6 +121,8 @@ interface Magic.IndexedDb.IMagicEncryptionContexts
   method System.Threading.Tasks.Task<Magic.IndexedDb.MagicEncryptionContext> ActivateAsync(System.Collections.Generic.IEnumerable<Magic.IndexedDb.MagicEncryptionOptions> databases)
 interface Magic.IndexedDb.IMagicEncryptionKeyProvider
   method System.Threading.Tasks.ValueTask<Magic.IndexedDb.MagicEncryptionKey> GetKeyAsync(Magic.IndexedDb.MagicEncryptionKeyRequest request, System.Threading.CancellationToken cancellationToken)
+interface Magic.IndexedDb.IMagicEncryptionRotationKeyProvider : Magic.IndexedDb.IMagicEncryptionKeyProvider
+  method System.Threading.Tasks.ValueTask<System.Boolean> CanReacquireKeysAsync(Magic.IndexedDb.MagicEncryptionKeyRequest source, Magic.IndexedDb.MagicEncryptionKeyRequest target, System.Threading.CancellationToken cancellationToken)
 interface Magic.IndexedDb.IMagicExecute<T>
   method System.Collections.Generic.IAsyncEnumerable<T> AsAsyncEnumerable(System.Threading.CancellationToken cancellationToken = null)
   method System.Threading.Tasks.Task<System.Collections.Generic.List<T>> ToListAsync()
@@ -138,6 +140,12 @@ interface Magic.IndexedDb.IMagicIndexedDbEncryption
 interface Magic.IndexedDb.IMagicIndexedDbEncryptionLifecycle : Magic.IndexedDb.IMagicIndexedDbEncryption
   method System.Threading.Tasks.Task<Magic.IndexedDb.MagicEncryptionState> GetStateAsync(Magic.IndexedDb.IndexedDbSet database, System.Threading.CancellationToken cancellationToken = null)
   method System.Threading.Tasks.Task<Magic.IndexedDb.MagicUnlockResult> UnlockDetailedAsync(Magic.IndexedDb.IndexedDbSet database, System.Boolean initialize = false, System.Threading.CancellationToken cancellationToken = null)
+interface Magic.IndexedDb.IMagicIndexedDbKeyRotation
+  method System.Threading.Tasks.Task CancelKeyRotationAsync(Magic.IndexedDb.IndexedDbSet database)
+  method System.Threading.Tasks.Task<Magic.IndexedDb.MagicKeyRotationStatus> GetKeyRotationStatusAsync(Magic.IndexedDb.IndexedDbSet database, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<Magic.IndexedDb.MagicKeyRotationStatus> PauseKeyRotationAsync(Magic.IndexedDb.IndexedDbSet database, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<Magic.IndexedDb.MagicKeyRotationStatus> ResumeKeyRotationAsync(Magic.IndexedDb.IndexedDbSet database, System.Int32 batchSize = 128, System.Threading.CancellationToken cancellationToken = null)
+  method System.Threading.Tasks.Task<Magic.IndexedDb.MagicKeyRotationStatus> RotateEncryptionKeyAsync(Magic.IndexedDb.IndexedDbSet database, Magic.IndexedDb.MagicKeyRotationOptions options, System.Threading.CancellationToken cancellationToken = null)
 interface Magic.IndexedDb.IMagicQuery<T> : Magic.IndexedDb.IMagicExecute<T>
   method Magic.IndexedDb.IMagicCursor<T> Cursor(System.Linq.Expressions.Expression<System.Func<T, System.Boolean>> predicate)
   method Magic.IndexedDb.IMagicQueryFinal<T> Skip(System.Int32 amount)
@@ -252,6 +260,7 @@ class Magic.IndexedDb.MagicEncryptionContext : System.IEquatable<Magic.IndexedDb
   method System.Void Deconstruct(out Magic.IndexedDb.IMagicIndexedDb Database, out Magic.IndexedDb.IMagicIndexedDbEncryptionLifecycle Encryption)
   property Magic.IndexedDb.IMagicIndexedDb Database { get; set; }
   property Magic.IndexedDb.IMagicIndexedDbEncryptionLifecycle Encryption { get; set; }
+  property Magic.IndexedDb.IMagicIndexedDbKeyRotation KeyRotation { get; }
 class Magic.IndexedDb.MagicEncryptionInteractionRequiredException : System.InvalidOperationException, System.Runtime.Serialization.ISerializable
   ctor Magic.IndexedDb.MagicEncryptionInteractionRequiredException()
 class Magic.IndexedDb.MagicEncryptionKey
@@ -277,6 +286,7 @@ class Magic.IndexedDb.MagicEncryptionOptions : System.IEquatable<Magic.IndexedDb
   method System.Int32 GetHashCode()
   method System.String ToString()
   method System.Void Deconstruct(out System.String DatabaseName, out System.String AccountScope, out System.String KeyId, out System.Collections.Generic.IReadOnlyDictionary<System.String, System.Collections.Generic.IReadOnlyCollection<System.String>> RecordPolicies)
+  property System.Boolean ResumeKeyRotationOnUnlock { get; set; }
   property System.Collections.Generic.IReadOnlyDictionary<System.String, System.Collections.Generic.IReadOnlyCollection<System.String>> RecordPolicies { get; set; }
   property System.String AccountScope { get; set; }
   property System.String DatabaseName { get; set; }
@@ -289,6 +299,49 @@ enum Magic.IndexedDb.MagicEncryptionState : System.IComparable, System.IConverti
   field static Magic.IndexedDb.MagicEncryptionState PolicyMismatch = 3
   field static Magic.IndexedDb.MagicEncryptionState Uninitialized = 0
   field static Magic.IndexedDb.MagicEncryptionState Unlocked = 2
+enum Magic.IndexedDb.MagicKeyRotationMode : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int32 value__
+  field static Magic.IndexedDb.MagicKeyRotationMode Exclusive = 0
+  field static Magic.IndexedDb.MagicKeyRotationMode Online = 2
+  field static Magic.IndexedDb.MagicKeyRotationMode ReadOnly = 1
+class Magic.IndexedDb.MagicKeyRotationOptions : System.IEquatable<Magic.IndexedDb.MagicKeyRotationOptions>
+  ctor Magic.IndexedDb.MagicKeyRotationOptions(System.String TargetKeyId, Magic.IndexedDb.MagicKeyRotationMode Mode = Exclusive, System.Int32 BatchSize = 128, System.Boolean YieldBetweenBatches = false)
+  method Magic.IndexedDb.MagicKeyRotationOptions <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.MagicKeyRotationOptions other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(out System.String TargetKeyId, out Magic.IndexedDb.MagicKeyRotationMode Mode, out System.Int32 BatchSize, out System.Boolean YieldBetweenBatches)
+  property Magic.IndexedDb.MagicKeyRotationMode Mode { get; set; }
+  property System.Boolean YieldBetweenBatches { get; set; }
+  property System.Int32 BatchSize { get; set; }
+  property System.String TargetKeyId { get; set; }
+enum Magic.IndexedDb.MagicKeyRotationPhase : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int32 value__
+  field static Magic.IndexedDb.MagicKeyRotationPhase AuthorizationRequired = 1
+  field static Magic.IndexedDb.MagicKeyRotationPhase Completed = 4
+  field static Magic.IndexedDb.MagicKeyRotationPhase Converting = 2
+  field static Magic.IndexedDb.MagicKeyRotationPhase NotStarted = 0
+  field static Magic.IndexedDb.MagicKeyRotationPhase Verifying = 3
+class Magic.IndexedDb.MagicKeyRotationStatus : System.IEquatable<Magic.IndexedDb.MagicKeyRotationStatus>
+  ctor Magic.IndexedDb.MagicKeyRotationStatus(Magic.IndexedDb.MagicKeyRotationPhase Phase, System.String RotationId, System.String SourceKeyId, System.String TargetKeyId, System.Nullable<Magic.IndexedDb.MagicKeyRotationMode> Mode, System.Boolean Paused, System.Int64 Converted, System.Int64 Verified, System.Boolean ReadsAllowed, System.Boolean WritesAllowed, System.Boolean RetirementReady)
+  method Magic.IndexedDb.MagicKeyRotationStatus <Clone>$()
+  method System.Boolean Equals(Magic.IndexedDb.MagicKeyRotationStatus other)
+  method System.Boolean Equals(System.Object obj)
+  method System.Int32 GetHashCode()
+  method System.String ToString()
+  method System.Void Deconstruct(out Magic.IndexedDb.MagicKeyRotationPhase Phase, out System.String RotationId, out System.String SourceKeyId, out System.String TargetKeyId, out System.Nullable<Magic.IndexedDb.MagicKeyRotationMode> Mode, out System.Boolean Paused, out System.Int64 Converted, out System.Int64 Verified, out System.Boolean ReadsAllowed, out System.Boolean WritesAllowed, out System.Boolean RetirementReady)
+  property Magic.IndexedDb.MagicKeyRotationPhase Phase { get; set; }
+  property System.Boolean Paused { get; set; }
+  property System.Boolean ReadsAllowed { get; set; }
+  property System.Boolean RetirementReady { get; set; }
+  property System.Boolean WritesAllowed { get; set; }
+  property System.Int64 Converted { get; set; }
+  property System.Int64 Verified { get; set; }
+  property System.Nullable<Magic.IndexedDb.MagicKeyRotationMode> Mode { get; set; }
+  property System.String RotationId { get; set; }
+  property System.String SourceKeyId { get; set; }
+  property System.String TargetKeyId { get; set; }
 enum Magic.IndexedDb.MagicNumericStorageMode : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
   field System.Int32 value__
   field static Magic.IndexedDb.MagicNumericStorageMode Legacy = 0

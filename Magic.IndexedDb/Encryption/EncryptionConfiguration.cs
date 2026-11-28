@@ -17,6 +17,7 @@ internal sealed class EncryptionConfiguration
     public MagicEncryptionKeyRequest Request { get; }
     public string PhysicalName { get; }
     public string Route { get; }
+    internal bool ResumeKeyRotationOnUnlock => _options.ResumeKeyRotationOnUnlock;
     internal bool HasExplicitPhysicalBinding => _options.PhysicalDatabaseName is not null;
     internal IReadOnlyDictionary<string, IReadOnlyCollection<string>> RecordPolicies =>
         _recordPolicies.ToDictionary(pair => pair.Key, pair => (IReadOnlyCollection<string>)pair.Value, StringComparer.Ordinal);

@@ -7,12 +7,13 @@ using Magic.IndexedDb.LinqTranslation.Interfaces;
 using Magic.IndexedDb.LinqTranslation.Models;
 using Magic.IndexedDb.Migrations;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Magic.IndexedDb.Factories;
 
-internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecycle, IAsyncDisposable
+internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecycle, IMagicIndexedDbKeyRotation, IAsyncDisposable
 {        
     // null value indicates that the factory is disposed
     Lazy<Task<IJSObjectReference>>? _jsModule;
@@ -456,6 +457,132 @@ internal class MagicDbFactory : IMagicIndexedDb, IMagicIndexedDbEncryptionLifecy
         var js = _jsModule;
         ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
         return GetUnlock(database).LockAsync(() => js.Value);
+    }
+
+    public async Task<MagicKeyRotationStatus> RotateEncryptionKeyAsync(IndexedDbSet database,
+        MagicKeyRotationOptions options, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.TargetKeyId);
+        if (_keyProvider is not IMagicEncryptionRotationKeyProvider provider)
+            throw new InvalidOperationException("The application must provide a rotation-capable encryption key provider.");
+        if (!await EnsureUnlockedAsync(database, cancellationToken))
+            throw new InvalidOperationException("Unlock the managed vault before starting key rotation.");
+
+        var configuration = _encryption[database.DatabaseName];
+        var module = await RotationModuleAsync(database, cancellationToken);
+        var admission = await EncryptionUnlock.InvokeAsync<JsonElement>(module, "getManagedRotationAdmission", false,
+            configuration.Route);
+        var source = configuration.Request with { KeyId = admission.GetProperty("keyId").GetString()! };
+        var target = source with { KeyId = options.TargetKeyId };
+        if (!await provider.CanReacquireKeysAsync(source, target, cancellationToken))
+            throw new InvalidOperationException("The provider could not attest that both keys can be reacquired.");
+        var key = await provider.GetKeyAsync(target, cancellationToken)
+            ?? throw new InvalidOperationException("The provider did not supply the target key.");
+        cancellationToken.ThrowIfCancellationRequested();
+        var payload = new Dictionary<string, object?>
+        {
+            ["targetKeyId"] = options.TargetKeyId,
+            ["mode"] = options.Mode switch
+            {
+                MagicKeyRotationMode.Exclusive => "exclusive",
+                MagicKeyRotationMode.ReadOnly => "read-only",
+                MagicKeyRotationMode.Online => "online",
+                _ => throw new ArgumentOutOfRangeException(nameof(options))
+            },
+            ["batchSize"] = options.BatchSize,
+            ["yieldBetweenBatches"] = options.YieldBetweenBatches,
+            ["recoverable"] = true,
+            ["authorizationId"] = admission.GetProperty("authorizationId").GetString()
+        };
+        return await StartRotationAsync(module, configuration.Route, payload, key).WaitAsync(cancellationToken);
+    }
+
+    private static async Task<MagicKeyRotationStatus> StartRotationAsync(IJSObjectReference module, string route,
+        Dictionary<string, object?> options, MagicEncryptionKey key)
+    {
+        var temporary = (key.Material as byte[])?.ToArray();
+        try
+        {
+            return ReadRotationStatus(await EncryptionUnlock.InvokeAsync<JsonElement>(module,
+                "rotateManagedEncryptionKey", false, route, options, temporary ?? key.Material));
+        }
+        finally
+        {
+            if (temporary is not null) CryptographicOperations.ZeroMemory(temporary);
+        }
+    }
+
+    public async Task<MagicKeyRotationStatus> ResumeKeyRotationAsync(IndexedDbSet database, int batchSize = 128,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await EnsureUnlockedAsync(database, cancellationToken))
+            throw new InvalidOperationException("Both rotation keys must be authorized before resuming.");
+        return await RotationStatusAsync(database, "resumeManagedEncryptionKeyRotation", cancellationToken,
+            new Dictionary<string, object?> { ["batchSize"] = batchSize });
+    }
+
+    public Task<MagicKeyRotationStatus> PauseKeyRotationAsync(IndexedDbSet database,
+        CancellationToken cancellationToken = default) =>
+        RotationStatusAsync(database, "pauseManagedEncryptionKeyRotation", cancellationToken);
+
+    public Task<MagicKeyRotationStatus> GetKeyRotationStatusAsync(IndexedDbSet database,
+        CancellationToken cancellationToken = default) =>
+        RotationStatusAsync(database, "getManagedKeyRotationStatus", cancellationToken);
+
+    public async Task CancelKeyRotationAsync(IndexedDbSet database)
+    {
+        var module = await RotationModuleAsync(database, CancellationToken.None);
+        await EncryptionUnlock.InvokeAsync<bool>(module, "cancelManagedEncryptionKeyRotation", true,
+            _encryption[database.DatabaseName].Route);
+    }
+
+    private async Task<IJSObjectReference> RotationModuleAsync(IndexedDbSet database, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        var js = _jsModule;
+        ObjectDisposedException.ThrowIf(js is null || _lifetime.IsCancellationRequested, this);
+        if (!_encryption.ContainsKey(database.DatabaseName))
+            throw new InvalidOperationException("This database does not have a Magic encryption policy.");
+        var module = await js.Value.WaitAsync(cancellationToken);
+        await RegisterDatabaseAsync(Definition(database.DatabaseName), database.DatabaseName).WaitAsync(cancellationToken);
+        return module;
+    }
+
+    private async Task<MagicKeyRotationStatus> RotationStatusAsync(IndexedDbSet database, string method,
+        CancellationToken cancellationToken, Dictionary<string, object?>? options = null)
+    {
+        var module = await RotationModuleAsync(database, cancellationToken);
+        var route = _encryption[database.DatabaseName].Route;
+        var pending = options is null
+            ? EncryptionUnlock.InvokeAsync<JsonElement>(module, method, false, route)
+            : EncryptionUnlock.InvokeAsync<JsonElement>(module, method, false, route, options);
+        return ReadRotationStatus(await pending.AsTask().WaitAsync(cancellationToken));
+    }
+
+    private static MagicKeyRotationStatus ReadRotationStatus(JsonElement json)
+    {
+        string? String(string field) => json.TryGetProperty(field, out var value) ? value.GetString() : null;
+        long Count(string field) => json.TryGetProperty(field, out var value) ? value.GetInt64() : 0;
+        bool Flag(string field) => json.TryGetProperty(field, out var value) && value.GetBoolean();
+        var phase = String("phase") switch
+        {
+            "not-started" => MagicKeyRotationPhase.NotStarted,
+            "authorization-required" => MagicKeyRotationPhase.AuthorizationRequired,
+            "converting" => MagicKeyRotationPhase.Converting,
+            "verifying" => MagicKeyRotationPhase.Verifying,
+            "completed" => MagicKeyRotationPhase.Completed,
+            _ => throw new InvalidOperationException("The browser returned an unknown rotation phase.")
+        };
+        MagicKeyRotationMode? mode = String("mode") switch
+        {
+            "exclusive" => MagicKeyRotationMode.Exclusive,
+            "read-only" => MagicKeyRotationMode.ReadOnly,
+            "online" => MagicKeyRotationMode.Online,
+            _ => null
+        };
+        return new(phase, String("rotationId"), String("sourceKeyId"), String("targetKeyId"), mode, Flag("paused"),
+            Count("converted"), Count("verified"), Flag("readsAllowed"), Flag("writesAllowed"), Flag("retirementReady"));
     }
 
     private EncryptionUnlock GetUnlock(IndexedDbSet database)

@@ -28,6 +28,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Schema evolution](guides/schema-evolution.md) — model and persisted-data change planning
 - [Managed migrations](guides/migrations.md) — static assets, readiness, events, and recovery
 - [Encrypted migrations](guides/encrypted-migrations.md) — authorization, protection changes, and in-place enrollment
+- [Managed key rotation](guides/managed-key-rotation.md) — availability, resumability, and key retirement
 - [Legacy writer cutover](guides/legacy-writer-cutover.md)
 - [Migration CLI](guides/migration-cli.md) — tool installation, project export, validation, and publication
 - [Migration schema declarations](guides/migration-schema.md) — default/explicit membership and shared C# model export
@@ -50,6 +51,7 @@ Start with the four pages below. The guides and reference pages are there when y
 - [Migration protocol and capabilities](architecture/migration-protocol.md)
 - [Partial migration recovery](architecture/adr-partial-migration-recovery.md)
 - [Authenticated migration contract](architecture/adr-authenticated-migrations.md)
+- [Managed key rotation contract](architecture/adr-managed-key-rotation.md)
 - [Version 3 implementation contract](architecture/v3-implementation-contract.md)
 
 ## Contributing

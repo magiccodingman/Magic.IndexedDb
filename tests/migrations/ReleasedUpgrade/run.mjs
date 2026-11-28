@@ -321,16 +321,31 @@ try {
                 const manifest = await (await fetch(manifestUrl)).json();
                 const reference = manifest.schemas.find(schema => schema.revision === manifest.targetRevision);
                 const model = await (await fetch(new URL(reference.path, location.href))).json();
-                await api.createDb({ name: route, ...numeric, migrationManifestUrl: manifestUrl, migrationSchema: model,
+                const config = { name: route, ...numeric, migrationManifestUrl: manifestUrl, migrationSchema: model,
                     encryption: { ...encryption, explicitPhysicalBinding: true },
-                    storeSchemas: [{ ...store, ...(legacyProtected ? { exposedFields: ['Name', 'Id'] } : { encryptedFields: ['Secret'] }) }] });
+                    storeSchemas: [{ ...store, ...(legacyProtected ? { exposedFields: ['Name', 'Id'] } : { encryptedFields: ['Secret'] }) }] };
+                const read = () => Promise.all(rows.map(row => api.findItem(route, 'records', [row.Name, row.Id])));
+                await api.createDb(config);
                 await api.unlockProtectedDatabase(route, 'fixture-key', new Uint8Array(32).fill(55), !legacyProtected);
                 await api.ensureProtectedMigration(route);
-                const result = await Promise.all(rows.map(row => api.findItem(route, 'records', [row.Name, row.Id])));
+                const adopted = await read();
+                const newKeyId = 'rotated-numeric-key';
+                const newKey = new Uint8Array(32).fill(91);
+                const rotation = await api.rotateManagedEncryptionKey(route, { targetKeyId: newKeyId,
+                    mode: 'online', batchSize: 1, recoverable: true }, newKey);
                 api.releaseProtectedDatabase(route);
-                return result;
+                await api.createDb(config);
+                await api.unlockProtectedDatabase(route, newKeyId, newKey);
+                await api.ensureProtectedMigration(route);
+                const reopened = await read();
+                api.releaseProtectedDatabase(route);
+                return { adopted, rotation, reopened };
             }, { manifestUrl, route, numeric, store, encryption, rows, legacyProtected });
-            assert.deepEqual(after, rows);
+            assert.deepEqual(after.adopted, rows);
+            assert.deepEqual(after.reopened, rows);
+            assert.equal(after.rotation.retirementReady, true);
+            assert.equal(after.rotation.converted, rows.length);
+            assert.equal(after.rotation.verified, rows.length);
             const final = await snapshot(current, physical, legacyProtected ? '__magic_record' : 'Secret');
             assert.deepEqual(final.data.records.keys, before.data.records.keys);
             assert.deepEqual(final.data.records.indexes, before.data.records.indexes);
@@ -338,6 +353,8 @@ try {
             assert.equal(final.data.__magic_migrations__.rows[0].revision, 2);
             assert.equal(final.data.__magic_numeric_policy.rows[0].mode, 'lossless');
             assert.deepEqual(final.data.records.ciphertext, [true, true, true]);
+            assert.ok(final.data.records.rows.every(row =>
+                row[legacyProtected ? '__magic_record' : 'Secret'].keyId === 'rotated-numeric-key'));
             if (legacyProtected) assert.ok(final.data.records.rows.every(row =>
                 !Object.hasOwn(row, 'Secret') && !Object.hasOwn(row, 'Wide') && !Object.hasOwn(row, 'Reference')));
             else assert.ok(final.data.records.rows.every((row, index) =>

@@ -2,9 +2,12 @@ import { assertEncryptionKey, importEncryptionKey, encryptValue, decryptValue } 
 import { openRecord, sealRecord } from "../utilities/encryptionRecord.js";
 import { encryptionMetadataStore, encryptionMetadataKey } from "../utilities/encryptionPolicy.js";
 import { portableProtectionPolicy, matchesProtectionFingerprint } from "../utilities/protectionPolicy.js";
-import { canonicalJson, MigrationError } from "./protocol.js";
+import { canonicalJson, metadataStore, MigrationError } from "./protocol.js";
+import { parsePolicyDocument, serializePolicyDocument, validLineage } from "../utilities/encryptionPolicyDocument.js";
 
 export const protectedStateKey = "migration-state";
+export const recoveryEvidenceKey = id => "recovery:" + id;
+export const retainedRecoveries = ready => ready.history.filter(entry => entry.outcome === "recovered");
 const adapters = new WeakSet();
 export function isProtectedMigrationAdapter(value) { return adapters.has(value); }
 
@@ -34,6 +37,34 @@ function authenticatedValue(value) {
         return ["object", Object.keys(value).sort().map(key => [key, authenticatedValue(value[key])])];
     }
     throw new MigrationError("MAGDB_PROTECTION_STATE_INVALID", "The migration state contains an unsupported value.");
+}
+
+const stateValue = state => JSON.stringify(["Magic.IndexedDb/migration-state", 1, authenticatedValue(state)]);
+
+export function sameRecoveryEvidence(left, right) {
+    try { return stateValue(left) === stateValue(right); }
+    catch { return false; }
+}
+
+function assertRecoveryEvidence(value, entry) {
+    let evidence;
+    try {
+        const [domain, version, payload] = JSON.parse(value);
+        if (domain === "Magic.IndexedDb/migration-state" && version === 1) evidence = payload;
+    } catch { /* reported without evidence contents below */ }
+    const member = (node, name) => node?.[0] === "object" && Array.isArray(node[1])
+        ? node[1].find(item => item?.[0] === name)?.[1] : undefined;
+    const matches = (node, name, expected) => {
+        const property = member(node, name);
+        return property?.[0] === "string" && property[1] === expected;
+    };
+    const original = member(evidence, "original");
+    const recovery = member(evidence, "recovery");
+    if (!matches(original, "id", entry.id) || !matches(original, "sha256", entry.sha256) ||
+        !matches(recovery, "id", entry.recovery.id) || !matches(recovery, "sha256", entry.recovery.sha256)) {
+        throw error("MAGDB_PROTECTION_STATE_INVALID", "Recovery evidence does not match authenticated history.");
+    }
+    return value;
 }
 
 function error(code, message) { return new MigrationError(code, message); }
@@ -87,39 +118,72 @@ export async function createProtectedMigrationAdapter(options) {
         assertCurrent();
         return envelope;
     };
-    const fenceValue = binding => canonicalJson(["Magic.IndexedDb/migration-fence", 1, binding]);
-    const stateValue = state => JSON.stringify(["Magic.IndexedDb/migration-state", 1, authenticatedValue(state)]);
+    let lineage = null;
+    const fenceValue = (binding, history = lineage) => canonicalJson(history === null
+        ? ["Magic.IndexedDb/migration-fence", 1, binding]
+        : ["Magic.IndexedDb/migration-fence", 2, binding, history]);
+    const recoveryContext = entry => context(recoveryEvidenceKey(entry.recovery.id), metadataStore);
+    async function openRecoveryEvidence(envelope, entry, acceptLegacy) {
+        let value;
+        try {
+            value = await decrypt(envelope, recoveryContext(entry), "MAGDB_PROTECTION_STATE_INVALID");
+        } catch (failure) {
+            if (!acceptLegacy) throw failure;
+            value = await decrypt(envelope, context(protectedStateKey), "MAGDB_PROTECTION_STATE_INVALID");
+        }
+        return assertRecoveryEvidence(value, entry);
+    }
     const adapter = Object.freeze({
         name, account, keyId, signal, assertCurrent,
         fingerprint: schema => portableProtectionPolicy(schema).policyFingerprint,
         async verifyPolicy(envelope, schema, { legacyOnly = false } = {}) {
             const value = await decrypt(envelope, context(encryptionMetadataKey), "MAGDB_AUTHORIZATION_REJECTED");
-            let parsed;
-            try { parsed = JSON.parse(value); } catch { /* redacted below */ }
-            if (!Array.isArray(parsed) || parsed.length !== 3 || parsed[0] !== "Magic.IndexedDb/policy" || parsed[1] !== 1 ||
-                !matchesProtectionFingerprint(parsed[2], schema))
+            const parsed = parsePolicyDocument(value, keyId);
+            if (!parsed || !matchesProtectionFingerprint(parsed.fingerprint, schema))
                 throw error("MAGDB_PROTECTION_POLICY_MISMATCH", "The authenticated protection policy differs from the installed model.");
             // A valid managed sentinel is evidence that authenticated history
             // already existed. Removing its journal/proof must never turn it
             // back into an adoptable legacy vault and replay old transforms.
-            const managed = parsed[2] === portableProtectionPolicy(schema).policyFingerprint;
+            const managed = parsed.fingerprint === portableProtectionPolicy(schema).policyFingerprint;
             if (legacyOnly && managed)
                 throw error("MAGDB_PROTECTION_STATE_INVALID", "A managed protection policy requires its authenticated migration journal.");
             if (!legacyOnly && !managed)
                 throw error("MAGDB_PROTECTION_STATE_INVALID", "An authenticated migration journal requires a managed protection policy.");
+            if (parsed.lineage !== null && !managed)
+                throw error("MAGDB_PROTECTION_STATE_INVALID", "Rotated protection requires authenticated history.");
+            lineage = parsed.lineage;
             return structuredClone(envelope);
         },
+        get keyLineage() { return structuredClone(lineage); },
         createPolicy(schema) {
             const fingerprint = portableProtectionPolicy(schema).policyFingerprint;
-            return encrypt(JSON.stringify(["Magic.IndexedDb/policy", 1, fingerprint]), context(encryptionMetadataKey));
+            return encrypt(serializePolicyDocument(fingerprint, lineage), context(encryptionMetadataKey));
         },
         createFence: binding => encrypt(fenceValue(binding), context(encryptionMetadataKey)),
         async authenticateFence(envelope, binding) {
             const actual = await decrypt(envelope, context(encryptionMetadataKey), "MAGDB_AUTHORIZATION_REJECTED");
-            if (actual !== fenceValue(binding))
+            if (actual === fenceValue(binding, null)) {
+                lineage = null;
+                return;
+            }
+            let parsed;
+            try { parsed = JSON.parse(actual); } catch { /* redacted below */ }
+            const history = Array.isArray(parsed) && parsed.length === 4 && validLineage(parsed[3], keyId) ? parsed[3] : null;
+            if (!history || actual !== fenceValue(binding, history))
                 throw error("MAGDB_PROTECTION_STATE_INVALID", "The authenticated migration fence does not match the interrupted edge.");
+            lineage = history;
         },
         sealState: state => encrypt(stateValue(state), context(protectedStateKey)),
+        sealRecoveryEvidence(audit, entry) {
+            return encrypt(assertRecoveryEvidence(stateValue(audit), entry), recoveryContext(entry));
+        },
+        verifyRecoveryEvidence: (envelope, entry) => openRecoveryEvidence(envelope, entry, false),
+        async rotateRecoveryEvidence(envelope, entry, source) {
+            const value = await source.openRetainedRecoveryEvidence(envelope, entry);
+            return encrypt(value, recoveryContext(entry));
+        },
+        // v3.0 sealed recovery evidence with migration-state associated data.
+        openRetainedRecoveryEvidence: (envelope, entry) => openRecoveryEvidence(envelope, entry, true),
         async verifyState(envelope, state) {
             const actual = await decrypt(envelope, context(protectedStateKey), "MAGDB_PROTECTION_STATE_INVALID");
             if (actual !== stateValue(state))

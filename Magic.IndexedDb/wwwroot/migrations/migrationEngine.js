@@ -1,6 +1,6 @@
 import { MigrationError, metadataStore, canonicalJson, sha256, requirePlainSchema, requireProtectedSchema, hasProtection, validateManifest, validateCompletedHistory,
     validateMigration, validateRecovery, requireCondition, physicalStores, samePhysical, compareNames } from "./protocol.js";
-import { isProtectedMigrationAdapter, equalEnvelope } from "./protectedMigrationAdapter.js";
+import { isProtectedMigrationAdapter, equalEnvelope, recoveryEvidenceKey, retainedRecoveries, sameRecoveryEvidence } from "./protectedMigrationAdapter.js";
 import { encryptionMetadataStore, encryptionMetadataKey } from "../utilities/encryptionPolicy.js";
 
 export { MigrationError };
@@ -23,6 +23,8 @@ function notify(options, phase, details = {}) {
         try { Promise.resolve(observer(event)).catch(() => {}); } catch { /* Observers never control commits. */ }
     }
 }
+
+export { notify as notifyManagedLifecycle };
 
 function abortCheck(signal) {
     if (signal?.aborted) throw new MigrationError("MAGDB_CANCELLED", "Migration was cancelled; committed checkpoints are retained.", {}, true);
@@ -103,7 +105,7 @@ function nativeStores(db, transaction) {
         }).sort((a, b) => compareNames(a.name, b.name));
 }
 
-async function inspectOpen(db) {
+export async function inspectOpen(db, rotationKey = null) {
     if (!db.objectStoreNames.length) return { name: db.name, nativeVersion: db.version, stores: [], state: null, numericPolicy: null };
     const transaction = db.transaction([...db.objectStoreNames], "readonly");
     const done = transactionDone(transaction);
@@ -111,22 +113,31 @@ async function inspectOpen(db) {
     const protection = db.objectStoreNames.contains(encryptionMetadataStore) ? transaction.objectStore(encryptionMetadataStore) : null;
     if (protection) requireCondition(protection.keyPath === null && !protection.autoIncrement && !protection.indexNames.length,
         "MAGDB_PROTECTION_INVALID", "The authenticated metadata store has an unsupported layout.");
-    const [state, numericPolicy, protectionPolicy, protectionState] = await Promise.all([
+    const [state, numericPolicy, protectionPolicy, protectionState, rotation] = await Promise.all([
         db.objectStoreNames.contains(metadataStore) ? requestResult(transaction.objectStore(metadataStore).get(stateKey)) : null,
         db.objectStoreNames.contains(numericStore) ? requestResult(transaction.objectStore(numericStore).get("policy")) : null,
         protection ? requestResult(protection.get(encryptionMetadataKey)) : null,
-        protection ? requestResult(protection.get(protectedStateKey)) : null
+        protection ? requestResult(protection.get(protectedStateKey)) : null,
+        protection && rotationKey ? requestResult(protection.get(rotationKey)) : null
     ]);
     await done;
     return { name: db.name, nativeVersion: db.version, stores, state: state ?? null, numericPolicy: numericPolicy ?? null,
         hasNumericMetadata: db.objectStoreNames.contains(numericStore),
-        hasProtectionMetadata: Boolean(protection), protectionPolicy: protectionPolicy ?? null, protectionState: protectionState ?? null };
+        hasProtectionMetadata: Boolean(protection), protectionPolicy: protectionPolicy ?? null, protectionState: protectionState ?? null,
+        ...(rotationKey ? { rotation } : {}) };
 }
 
-async function inspectDatabaseInternal(name, signal) {
+async function inspectDatabaseInternal(name, signal, rotationKey = null) {
     const db = await openExisting(name, signal);
     if (!db) return null;
-    try { return await inspectOpen(db); } finally { db.close(); }
+    try { return await inspectOpen(db, rotationKey); } finally { db.close(); }
+}
+
+export async function inspectKeyRoutingHints(name, rotationKey) {
+    const snapshot = await inspectDatabaseInternal(name, undefined, rotationKey);
+    return snapshot?.rotation ? { active: true, keyId: snapshot.rotation.state?.sourceKeyId,
+        targetKeyId: snapshot.rotation.state?.targetKeyId }
+        : snapshot?.protectionPolicy?.keyId ? { active: false, keyId: snapshot.protectionPolicy.keyId } : null;
 }
 
 /** Inspect metadata only. Durable record keys are never exposed in diagnostics. */
@@ -162,7 +173,7 @@ function writeNumericPolicy(db, transaction, schema) {
     store.put({ version: 1, mode: "lossless", schema: physicalStores(schema) }, "policy");
 }
 
-function assertNumericPolicy(snapshot, schema, legacyProtected = false) {
+export function assertNumericPolicy(snapshot, schema, legacyProtected = false) {
     if (schema.numericFormat === "lossless-v1") {
         // The released protected adapter authenticated its numeric mode in the
         // legacy sentinel without provisioning a separate numeric policy store.
@@ -471,6 +482,47 @@ async function authenticateSnapshot(options, snapshot, schema) {
     checkAuthorization(options);
 }
 
+async function prepareRecoveryEvidenceEnrollment(options, state) {
+    const entries = retainedRecoveries(state);
+    if (!entries.length) return [];
+    const db = await openExisting(options.name, options.signal);
+    requireCondition(db, "MAGDB_DATABASE_MISSING", "Storage disappeared before authenticated adoption.");
+    let evidence;
+    try {
+        const transaction = db.transaction(metadataStore, "readonly");
+        const done = transactionDone(transaction);
+        const metadata = transaction.objectStore(metadataStore);
+        try {
+            evidence = await Promise.all(entries.map(entry => requestResult(metadata.get(recoveryEvidenceKey(entry.recovery.id)))));
+            await done;
+        } catch (failure) {
+            await done.catch(() => {});
+            throw failure;
+        }
+    } finally { db.close(); }
+    return Promise.all(entries.map(async (entry, index) => {
+        const audit = evidence[index];
+        requireCondition(audit, "MAGDB_PROTECTION_STATE_INVALID", "Retained recovery evidence is missing.");
+        return { key: recoveryEvidenceKey(entry.recovery.id), audit, seal: await options.protection.sealRecoveryEvidence(audit, entry) };
+    }));
+}
+
+function enrollRecoveryEvidence(metadata, evidence, finalize, fail) {
+    if (!evidence.length) return finalize();
+    let remaining = evidence.length;
+    for (const { key, audit, seal } of evidence) {
+        const lookup = metadata.get(key);
+        lookup.onsuccess = () => {
+            try {
+                requireCondition(sameRecoveryEvidence(lookup.result, audit),
+                    "MAGDB_CONCURRENT_CHANGE", "Retained recovery evidence changed before authenticated adoption.");
+                metadata.put(seal, key);
+                if (--remaining === 0) finalize();
+            } catch (failure) { fail(failure); }
+        };
+    }
+}
+
 async function prepareProtection(options, state, schema, replacePolicy = false) {
     if (!options.protection) return null;
     checkAuthorization(options);
@@ -622,11 +674,9 @@ async function runManaged(options, recovering) {
     }
 }
 
-async function ensureLocked(options, recovering) {
-    notify(options, "preflight");
-    abortCheck(options.signal);
-    const expectedHash = await sha256(canonicalJson(options.schema));
-    let manifest, base = new URL(options.manifestUrl ?? ".", globalThis.location.href).href;
+async function loadPinnedManifest(options) {
+    let manifest;
+    const base = new URL(options.manifestUrl ?? ".", globalThis.location.href).href;
     requireCondition(new URL(base).origin === globalThis.location.origin && ["http:", "https:"].includes(new URL(base).protocol),
         "MAGDB_ASSET_ORIGIN", "The application-pinned manifest must use the application's HTTP(S) origin.");
     if (options.manifestUrl) {
@@ -634,6 +684,22 @@ async function ensureLocked(options, recovering) {
         manifest = decodeJson(bytes);
     } else if (options.manifest) manifest = structuredClone(options.manifest);
     else manifest = null;
+
+    return { manifest, base };
+}
+
+export async function verifyRotationDeployment(options, revision) {
+    const { manifest } = await loadPinnedManifest(options);
+    if (manifest) validateManifest(manifest, options.schema.schemaId);
+    requireCondition((manifest?.targetRevision ?? 1) === revision,
+        "MAGIC_ROTATION_DEPLOYMENT_CHANGED", "Resume rotation from the deployment that admitted it before upgrading this vault.");
+}
+
+async function ensureLocked(options, recovering) {
+    notify(options, "preflight");
+    abortCheck(options.signal);
+    const expectedHash = await sha256(canonicalJson(options.schema));
+    const { manifest, base } = await loadPinnedManifest(options);
 
     const models = new Map();
     async function model(revision) {
@@ -747,16 +813,21 @@ async function ensureLocked(options, recovering) {
             expectedState = adopted;
         } else if (options.protection && snapshot.state.protocolVersion !== 3) {
             const adopted = { ...snapshot.state, protocolVersion: 3 };
+            const evidence = await prepareRecoveryEvidenceEnrollment(options, snapshot.state);
             const prepared = await prepareProtection(options, adopted, initial.schema, true);
             db = await upgrade(options, snapshot.nativeVersion + 1, (connection, transaction, oldVersion, fail) => {
                 requireCondition(oldVersion === snapshot.nativeVersion && samePhysical(nativeStores(connection, transaction), initial.schema),
                     "MAGDB_CONCURRENT_CHANGE", "Database changed before authenticated adoption.");
-                const request = transaction.objectStore(metadataStore).get(stateKey);
+                const metadata = transaction.objectStore(metadataStore);
+                const request = metadata.get(stateKey);
                 request.onsuccess = () => guardStoragePolicy(options, connection, transaction, initial.schema, () => {
                     requireCondition(sameState(request.result, snapshot.state), "MAGDB_CONCURRENT_CHANGE", "The journal changed before authenticated adoption.");
-                    transaction.objectStore(metadataStore).put(adopted, stateKey);
-                    writeNumericPolicy(connection, transaction, initial.schema);
-                    writeProtection(connection, transaction, prepared);
+                    enrollRecoveryEvidence(metadata, evidence, () => {
+                        checkAuthorization(options);
+                        metadata.put(adopted, stateKey);
+                        writeNumericPolicy(connection, transaction, initial.schema);
+                        writeProtection(connection, transaction, prepared);
+                    }, fail);
                 }, fail);
             });
             options.protectionSnapshot = prepared;
@@ -1006,9 +1077,9 @@ async function recoverLocked(options, snapshot, manifest, base, model) {
         const completed = readyState(manifest.schemaId, edge.toRevision, to.hash, history, options.protection ? 3 : 2);
         const prepared = await prepareProtection(options, completed, to.schema, true);
         const audit = { original: state.active, recovery: state.recovery };
-        const evidence = options.protection ? await options.protection.sealState(audit) : audit;
+        const evidence = options.protection ? await options.protection.sealRecoveryEvidence(audit, history.at(-1)) : audit;
         await recoveryTransaction(options, db, state, to.schema, (_tx, metadata) => {
-            metadata.add(evidence, "recovery:" + binding.id);
+            metadata.add(evidence, recoveryEvidenceKey(binding.id));
             metadata.put(completed, stateKey);
         }, prepared);
         notify(options, "recovered", { recoveryId: binding.id, migrationId: edge.id, revision: edge.toRevision,

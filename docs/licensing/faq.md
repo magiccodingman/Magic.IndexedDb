@@ -244,7 +244,7 @@ Where possible, tell us:
 
 Additional information may be requested where necessary.
 
-You should not send confidential patient information, sensitive client records, passwords, or unrelated proprietary information as part of your inquiry.
+You should not send confidential records, credentials, or unrelated proprietary information as part of your inquiry.
 
 ### Where do I request permission?
 

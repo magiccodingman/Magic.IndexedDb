@@ -38,6 +38,126 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
         row.__magic_record?.ciphertext instanceof ArrayBuffer ? 'record' :
             row.name?.ciphertext instanceof ArrayBuffer ? 'field' : 'public'));
 
+    test('managed rotation admits only recoverable distinct keys and fences the older migration path', async ({ page }) => {
+        const source = model({ encryptedFields: ['name'] });
+        await seed(page, source);
+        const result = await page.evaluate(async schema => {
+            const { admitRotation, rotationCoordinator, enterRotationVerification } = await import('/engine/utilities/rotationLifecycle.js');
+            const { importEncryptionKey } = await import('/engine/utilities/encryptionEnvelope.js');
+            const ready = await engine.ensureDatabase({ name: 'test', schema, protection: protectionAdapter });
+            const db = await openRaw('test');
+            const vault = { database: db.name, account: 'protected-test' };
+            const key = byte => importEncryptionKey(new Uint8Array(32).fill(byte));
+            const keys = new Map([['test-key', await key(73)], ['target', await key(76)]]);
+            const make = patch => ({ db, vault, ready, schema, authorization: protectionAdapter, keys,
+                targetKeyId: 'target', mode: 'online', recoverable: true, priorKeyIds: new Set(), ...patch });
+            const rejected = async options => {
+                try { await admitRotation(options); return false; } catch { return true; }
+            };
+            const ephemeral = await rejected(make({ recoverable: false }));
+            const sameKey = await rejected(make({ keys: new Map(keys).set('target', await key(73)) }));
+            const wrongSource = await rejected(make({ keys: new Map(keys).set('test-key', await key(75)) }));
+            await engine.assertDatabaseReady(db, ready, protectionAdapter);
+            const admitted = await rotationCoordinator(db, undefined, () => admitRotation(make()));
+            let oldOpenFenced = false;
+            try { await engine.assertDatabaseReady(db, ready, protectionAdapter); }
+            catch { oldOpenFenced = true; }
+            let prematureVerification = false;
+            try {
+                await enterRotationVerification({ ...admitted, db, vault, schema, keys,
+                    assertCurrent: protectionAdapter.assertCurrent });
+            } catch { prematureVerification = true; }
+            db.close();
+            return { ephemeral, sameKey, wrongSource, oldOpenFenced, prematureVerification,
+                writeGeneration: admitted.document.state.writeKeyId };
+        }, source);
+        assert.deepEqual(result, { ephemeral: true, sameKey: true, wrongSource: true, oldOpenFenced: true,
+            prematureVerification: true, writeGeneration: 'target' });
+    });
+
+    for (const mode of ['exclusive', 'read-only', 'online']) for (const [layout, policy] of [
+        ['field', { encryptedFields: ['name'] }],
+        ['whole-record', { exposedFields: ['id', 'visits'] }]
+    ]) {
+        test(`rotation storage enforces ${mode} access for ${layout} protection and restores a target-only vault`, async ({ page }) => {
+            const source = model(policy);
+            await seed(page, source);
+            const observed = await page.evaluate(async ({ schema, mode, policy }) => {
+                const { Dexie } = await import('/engine/dexie/dexie.js');
+                const { createProtectedStorage } = await import('/engine/utilities/protectedStorage.js');
+                const { admitRotation, enterRotationVerification, finishRotation } = await import('/engine/utilities/rotationLifecycle.js');
+                const { advanceRotationPass } = await import('/engine/utilities/rotationPass.js');
+                const { importEncryptionKey } = await import('/engine/utilities/encryptionEnvelope.js');
+                const { createProtectedMigrationAdapter } = await import('/engine/migrations/protectedMigrationAdapter.js');
+                const { portableProtectionPolicy } = await import('/engine/utilities/protectionPolicy.js');
+                const ready = await engine.ensureDatabase({ name: 'test', schema, protection: protectionAdapter });
+                const dexie = new Dexie('test');
+                await dexie.open();
+                const db = dexie.backendDB();
+                const vault = { database: db.name, account: 'protected-test' };
+                const storage = createProtectedStorage(dexie, vault.account, [{ tableName: 'clients',
+                    columnNamesInCompoundKey: ['id'], primaryKeyAuto: false, indexes: [], uniqueIndexes: [],
+                    columnNamesInCompoundIndex: [], ...policy }], null, { managedSchema: schema });
+                const keys = new Map([['test-key', await importEncryptionKey(new Uint8Array(32).fill(73))],
+                    ['target', await importEncryptionKey(new Uint8Array(32).fill(76))]]);
+                storage.setManagedReadiness(ready);
+                await storage.unlock('test-key', keys.get('test-key'), false);
+                const table = storage.forTable('clients');
+                const common = { db, vault, ready, schema, keys, assertCurrent: protectionAdapter.assertCurrent };
+                let active = await admitRotation({ ...common, authorization: protectionAdapter, targetKeyId: 'target',
+                    mode, recoverable: true });
+                const attach = () => storage.setRotationAccess(active.document, active.fence, keys, common.assertCurrent);
+                await attach();
+                const attempt = async action => {
+                    try { return { allowed: true, value: await action() }; }
+                    catch (err) { return { allowed: false, fenced: err.message.startsWith('MAGIC_ROTATION_ACCESS_FENCED:') }; }
+                };
+                const read = await attempt(() => table.read(1));
+                const write = await attempt(() => table.write([{ id: 4, name: 'New generation', visits: 0 }],
+                    (store, sealed) => store.put(sealed[0])));
+                const policies = portableProtectionPolicy(schema).policies;
+                const run = async () => {
+                    for (let index = 0; index < 12; index++) {
+                        const step = await advanceRotationPass({ ...common, document: active.document, policies, batchSize: 1,
+                            expectations: [...active.checks, { store: '__magic_encryption', key: 'policy', value: active.fence }] });
+                        if (step.outcome === 'pass-complete') return;
+                        if (step.outcome !== 'advanced') throw Error('The rotation step did not advance.');
+                        active.document = step.document;
+                    }
+                    throw Error('The bounded pass did not complete.');
+                };
+                await run();
+                active = await enterRotationVerification({ ...common, ...active });
+                await attach();
+                const verificationWrite = await attempt(() => table.patch(1, { visits: 10 }));
+                await run();
+                const finalized = await finishRotation({ ...common, ...active });
+                dexie.close();
+                const target = await createProtectedMigrationAdapter({ name: 'test', account: vault.account, keyId: 'target', key: keys.get('target') });
+                const reopened = await engine.ensureDatabase({ name: 'test', schema, protection: target });
+                const raw = await readRows('test');
+                const logical = [];
+                for (const row of raw) logical.push(await target.openRecord(row, schema, 'clients', row.id));
+                return { read, write, verificationWrite, lineage: target.keyLineage.generations,
+                    retirement: finalized.lineage.completed, revision: reopened.revision, logical,
+                    publicRows: raw.map(row => ({ id: row.id, visits: row.visits })),
+                    deployed: raw.map(row => (row.__magic_record ?? row.name).keyId) };
+            }, { schema: source, mode, policy });
+            assert.equal(observed.read.allowed, mode !== 'exclusive');
+            if (!observed.read.allowed) assert.equal(observed.read.fenced, true);
+            assert.equal(observed.write.allowed, mode === 'online');
+            if (!observed.write.allowed) assert.equal(observed.write.fenced, true);
+            assert.deepEqual(observed.verificationWrite, { allowed: false, fenced: true });
+            assert.deepEqual(observed.lineage, ['test-key', 'target']);
+            assert.equal(observed.retirement.converted, 3);
+            assert.equal(observed.retirement.verified, mode === 'online' ? 4 : 3);
+            assert.equal(observed.revision, 1);
+            assert.deepEqual(observed.logical, mode === 'online' ? [...rows, { id: 4, name: 'New generation', visits: 0 }] : rows);
+            assert.deepEqual(observed.publicRows, observed.logical.map(({ id, visits }) => ({ id, visits })));
+            assert.ok(observed.deployed.every(generation => generation === 'target'));
+        });
+    }
+
     for (const [label, before, after, loss] of [
         ['plaintext to field encryption', {}, { encryptedFields: ['name'] }, false],
         ['field encryption to plaintext', { encryptedFields: ['name'] }, {}, true],
@@ -455,6 +575,182 @@ export function registerProtectedEngineTests({ test, schema, bundle, copy, inspe
         assert.equal(advanced.protocolVersion, 3);
         assert.deepEqual(advanced.history[0], completed.history[0]);
         assert.deepEqual(await logical(reopened, target), expected.map(row => ({ ...row, normalized: true })));
+    });
+
+    test('rotation resumes retained authenticated recovery evidence and verifies it with only the target key', async ({ page, context }) => {
+        const source = model({ encryptedFields: ['name'] });
+        await seed(page, source, rows.map(row => ({ ...row, value: 1 })));
+        const plan = planFor(source, source, [{ op: 'transform', store: 'clients' }], { module: `
+            export function transform(row) { if (row.id === 2) throw new Error(row.name); return { ...row, value: 11 }; }` });
+        const recovery = recoveryPackage(plan);
+        const failed = await run(page, plan);
+        assert.equal(failed.error?.code, 'MAGDB_HOOK_FAILED');
+        assert.equal((await inspect(page)).state.active.processedRecords, 1);
+        const options = { name: 'test', schema: source, manifestUrl: plan.url, batchSize: 1 };
+        const recovered = await page.evaluate(async ({ options, recovery }) =>
+            tryEnsure({ ...options, recovery, protection: protectionAdapter }, true), { options, recovery });
+        assert.equal(recovered.value?.outcome, 'recovered', JSON.stringify(recovered));
+
+        const partial = await page.evaluate(async options => {
+            const api = await import('/engine/magicDB.js');
+            const { importEncryptionKey, encryptValue } = await import('/engine/utilities/encryptionEnvelope.js');
+            const ready = await engine.ensureDatabase({ ...options, protection: protectionAdapter });
+            const entry = ready.history[0];
+            const old = new Uint8Array(32).fill(73), target = new Uint8Array(32).fill(76);
+            const key = 'recovery:' + entry.recovery.id;
+            const db = await openRaw('test');
+            const store = mode => db.transaction('__magic_migrations__', mode).objectStore('__magic_migrations__');
+            const evidence = await request(store('readonly').get(key));
+            const plaintext = await protectionAdapter.verifyRecoveryEvidence(evidence, entry);
+            // Recreate the exact v3.0 envelope binding for the retained evidence
+            // produced by the real recovery above.
+            const legacyEvidence = await encryptValue(plaintext, await importEncryptionKey(old), 'test-key',
+                { database: 'test', account: 'protected-test', store: '__magic_encryption', primaryKey: 'migration-state', member: null });
+            await request(store('readwrite').put(legacyEvidence, key));
+            db.close();
+            const config = { name: '__magic_protected__:recovery-rotation', migrationSchema: options.schema,
+                migrationManifestUrl: options.manifestUrl,
+                encryption: { physicalName: 'test', account: 'protected-test', explicitPhysicalBinding: true },
+                storeSchemas: [{ tableName: 'clients', columnNamesInCompoundKey: ['id'], primaryKeyAuto: false,
+                    indexes: [], uniqueIndexes: [], columnNamesInCompoundIndex: [], encryptedFields: ['name'] }] };
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'test-key', old);
+            await api.ensureProtectedMigration(config.name);
+            const { rotationJournalKey } = await import('/engine/utilities/rotationJournal.js');
+            // Prevent the next crypto preparation from completing after the
+            // metadata batch commits. The native checkpoint is the barrier.
+            const decrypt = crypto.subtle.decrypt.bind(crypto.subtle);
+            crypto.subtle.decrypt = async (...args) => {
+                const opened = await openRaw('test');
+                let progress;
+                try { progress = await request(opened.transaction('__magic_encryption').objectStore('__magic_encryption').get(rotationJournalKey)); }
+                finally { opened.close(); }
+                if (progress?.state.afterKey === key) {
+                    globalThis.evidenceCheckpointReached = true;
+                    await new Promise(() => {});
+                }
+                return decrypt(...args);
+            };
+            void api.rotateManagedEncryptionKey(config.name, { targetKeyId: 'next', mode: 'online',
+                batchSize: 1, recoverable: true }, target).catch(error => { globalThis.rotationFailure = error.message; });
+            return { config, plaintext, key };
+        }, options);
+        await page.waitForFunction(() => globalThis.evidenceCheckpointReached || globalThis.rotationFailure);
+        assert.equal(await page.evaluate(() => globalThis.rotationFailure ?? null), null);
+        await page.close();
+
+        const resumed = await loadPage(context);
+        const result = await resumed.evaluate(async ({ config, key, plaintext }) => {
+            const api = await import('/engine/magicDB.js');
+            const { createProtectedMigrationAdapter } = await import('/engine/migrations/protectedMigrationAdapter.js');
+            const { rotationJournalKey } = await import('/engine/utilities/rotationJournal.js');
+            const source = new Uint8Array(32).fill(73), target = new Uint8Array(32).fill(76);
+            const readMetadata = async (name, id) => {
+                const db = await openRaw('test');
+                try { return await request(db.transaction(name).objectStore(name).get(id)); }
+                finally { db.close(); }
+            };
+            const progress = await readMetadata('__magic_encryption', rotationJournalKey);
+            const converted = await readMetadata('__magic_migrations__', key);
+            await api.createDb(config);
+            const partialStatus = await api.authorizeManagedKeyRotation(config.name, 'test-key', source, 'next', target);
+            const changeEvidence = async (action, ...args) => {
+                const db = await openRaw('test');
+                try { await request(db.transaction('__magic_migrations__', 'readwrite').objectStore('__magic_migrations__')[action](...args)); }
+                finally { db.close(); }
+            };
+            await changeEvidence('delete', key);
+            let missingEvidenceRejected = false;
+            try { await api.resumeManagedEncryptionKeyRotation(config.name, { batchSize: 1 }); }
+            catch (failure) { missingEvidenceRejected = failure.code === 'MAGDB_PROTECTION_STATE_INVALID'; }
+            const blocked = await api.getManagedKeyRotationStatus(config.name);
+            await changeEvidence('put', converted, key);
+            const completed = await api.resumeManagedEncryptionKeyRotation(config.name, { batchSize: 1 });
+            api.releaseProtectedDatabase(config.name);
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'next', target);
+            const ready = await api.ensureProtectedMigration(config.name);
+            const entry = ready.history[0];
+            const evidence = await readMetadata('__magic_migrations__', key);
+            const adapter = keyId => createProtectedMigrationAdapter({ name: 'test', account: config.encryption.account,
+                keyId, key: keyId === 'next' ? target : source });
+            const intact = await (await adapter('next')).verifyRecoveryEvidence(evidence, entry) === plaintext;
+            let oldKeyRejected = false;
+            try { await (await adapter('test-key')).openRetainedRecoveryEvidence(evidence, entry); }
+            catch { oldKeyRejected = true; }
+            return { progress: progress.state.afterKey, convertedKey: converted.keyId, partialStatus, blocked, missingEvidenceRejected, completed, intact,
+                oldKeyRejected, history: ready.history, ciphertextUnchanged: [...new Uint8Array(converted.ciphertext)].join() ===
+                    [...new Uint8Array(evidence.ciphertext)].join(), rows: await api.toArray(config.name, 'clients') };
+        }, partial);
+        assert.equal(result.progress, partial.key);
+        assert.equal(result.convertedKey, 'next');
+        assert.equal(result.partialStatus.retirementReady, false);
+        assert.equal(result.missingEvidenceRejected, true);
+        assert.equal(result.blocked.phase, 'verifying');
+        assert.equal(result.blocked.retirementReady, false);
+        assert.equal(result.completed.retirementReady, true);
+        assert.equal(result.intact, true);
+        assert.equal(result.oldKeyRejected, true);
+        assert.equal(result.ciphertextUnchanged, true);
+        assert.equal(result.history[0].recovery.id, recovery.id);
+        assert.deepEqual(result.rows, rows.map(row => ({ ...row, value: 10, repairs: 1 })));
+    });
+
+    test('authenticated enrollment seals evidence retained by a prior plaintext managed recovery', async ({ page }) => {
+        const source = schema();
+        const name = 'test';
+        await page.evaluate(async ({ source, rows }) => {
+            await engine.ensureDatabase({ name: 'test', schema: source });
+            await writeRows('test', rows);
+        }, { source, rows: rows.map(row => ({ ...row, value: 1 })) });
+        const plan = bundle(source, source, [{ op: 'transform', store: 'clients' }], { mode: 'resumable', module: `
+            export function transform(row) { if (row.id === 2) throw new Error('Fixture failure'); return { ...row, value: 11 }; }` });
+        const recovery = recoveryPackage(plan);
+        const options = { name, schema: source, manifestUrl: plan.url, batchSize: 1 };
+        const failed = await page.evaluate(options => tryEnsure(options), options);
+        assert.equal(failed.error?.code, 'MAGDB_HOOK_FAILED');
+        const recovered = await page.evaluate(options => tryEnsure(options, true), { ...options, recovery });
+        assert.equal(recovered.value?.outcome, 'recovered', JSON.stringify(recovered));
+        assert.equal((await inspect(page)).state.protocolVersion, 2);
+        const plaintextAudit = await page.evaluate(async id => {
+            const db = await openRaw('test');
+            try { return await request(db.transaction('__magic_migrations__').objectStore('__magic_migrations__').get('recovery:' + id)); }
+            finally { db.close(); }
+        }, recovery.id);
+        plan.manifest.requiredCapabilities.push(capability);
+        jsonAsset(plan.base + '/manifest.json', plan.manifest);
+
+        await authorize(page);
+        const enrolled = await page.evaluate(async ({ options, plaintextAudit }) => {
+            const ready = await engine.ensureDatabase({ ...options, initialize: true, protection: protectionAdapter });
+            const entry = ready.history[0];
+            const db = await openRaw('test');
+            try {
+                const key = 'recovery:' + entry.recovery.id;
+                const meta = mode => db.transaction('__magic_migrations__', mode).objectStore('__magic_migrations__');
+                const audit = await request(meta('readonly').get(key));
+                const plaintext = await protectionAdapter.verifyRecoveryEvidence(audit, entry);
+                // Older v3 enrollment could have left the v2 audit unsealed.
+                await request(meta('readwrite').put(plaintextAudit, key));
+                const { admitRotation } = await import('/engine/utilities/rotationLifecycle.js');
+                const { importEncryptionKey } = await import('/engine/utilities/encryptionEnvelope.js');
+                const from = await importEncryptionKey(new Uint8Array(32).fill(73));
+                const to = await importEncryptionKey(new Uint8Array(32).fill(76));
+                let rejectedBeforeAdmission = false;
+                try {
+                    await admitRotation({ db, ready, schema: options.schema, authorization: protectionAdapter,
+                        vault: { database: db.name, account: 'protected-test' }, keys: new Map([['test-key', from], ['next', to]]),
+                        targetKeyId: 'next', mode: 'exclusive', recoverable: true });
+                } catch (failure) { rejectedBeforeAdmission = failure.code === 'MAGDB_PROTECTION_STATE_INVALID'; }
+                await engine.assertDatabaseReady(db, ready, protectionAdapter);
+                await request(meta('readwrite').put(audit, key));
+                return { protocol: ready.protocolVersion, sealed: audit.ciphertext instanceof ArrayBuffer &&
+                    audit.keyId === 'test-key' && !Object.hasOwn(audit, 'original'), payloadPreserved: plaintext.includes('processedRecords'),
+                    rejectedBeforeAdmission };
+            } finally { db.close(); }
+        }, { options, plaintextAudit });
+        assert.deepEqual(enrolled, { protocol: 3, sealed: true, payloadPreserved: true, rejectedBeforeAdmission: true });
+        assert.deepEqual(await read(page), rows.map(row => ({ ...row, value: 10, repairs: 1 })));
     });
 
     if (cliFixture) test('installed CLI protected history executes all encryption directions and later structural revision', async ({ page }) => {
