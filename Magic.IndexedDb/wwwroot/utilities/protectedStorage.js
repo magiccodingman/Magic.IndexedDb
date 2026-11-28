@@ -280,9 +280,9 @@ class ProtectedTable {
         }
     }
 
-    async fencedWrite(operation, assertCurrent = () => {}) {
+    async fencedWrite(operation, assertCurrent = () => {}, additionalTables = []) {
         await this.db.open();
-        const stores = [this.table, this.db.table(encryptionMetadataStore)];
+        const stores = [this.table, this.db.table(encryptionMetadataStore), ...additionalTables];
         if (this.managed) {
             stores.push(this.db.table(migrationMetadataStore));
             const numeric = this.db.tables.find(table => table.name === numericMetadataStore);
@@ -324,6 +324,39 @@ class ProtectedTable {
                     sealRecord(record, this.policy, key, keyId, this.context(this.key(record))))));
             }
             return this.fencedWrite(table => operation(table, sealed), assertCurrent);
+        });
+    }
+
+    conditionalMutation(record, revision, workspace, generation, replacement) {
+        if (!this.managed || !workspace.managed || workspace.db !== this.db)
+            throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: Conditions require one protected managed database.");
+        const check = (table, condition) => {
+            validateMember(condition.member);
+            table.requirePublic([condition.member]);
+            if (typeof condition.expected !== "string" && !Number.isSafeInteger(condition.expected))
+                throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: Expected values must be strings or safe integers.");
+        };
+        check(this, revision);
+        check(workspace, generation);
+
+        return this.access(async ({ key, keyId }, assertCurrent) => {
+            await this.assertPolicy(true);
+            const primaryKey = this.key(record);
+            const generationKey = workspace.key(generation.record);
+            if (replacement !== null && indexedDB.cmp(primaryKey, this.key(replacement)) !== 0)
+                throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: A replacement must retain the primary key.");
+            const sealed = replacement === null ? null : await sealRecord(replacement, this.policy, key, keyId, this.context(primaryKey));
+
+            return this.fencedWrite(async table => {
+                const current = await table.get(primaryKey);
+                const workspaceRecord = await workspace.table.get(generationKey);
+                const matches = (row, condition) => row && Object.hasOwn(row, condition.member) &&
+                    row[condition.member] === condition.expected;
+                if (!matches(current, revision) || !matches(workspaceRecord, generation)) return false;
+                if (sealed === null) await table.delete(primaryKey);
+                else await table.put(sealed);
+                return true;
+            }, assertCurrent, workspace.table.name === this.table.name ? [] : [workspace.table]);
         });
     }
 

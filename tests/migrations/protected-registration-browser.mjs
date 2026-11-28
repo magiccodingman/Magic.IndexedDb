@@ -74,6 +74,49 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
         assert.deepEqual(result.row, { id: 1, name: 'Public', secret: 'Never persist this plaintext' });
     });
 
+    test('conditional protected mutations check record revision and workspace generation atomically', async ({ page, context }) => {
+        const source = model();
+        const workspace = structuredClone(source.stores[0]);
+        workspace.name = 'workspaces';
+        delete workspace.encryptedFields;
+        source.stores.push(workspace);
+        const config = configuration('__magic_protected__:conditional-mutation', 'route', source, initial(source).url);
+        config.storeSchemas.push({ ...registrationStore(), tableName: 'workspaces' });
+        const open = (tab, initialize) => tab.evaluate(async ({ config, initialize }) => {
+            globalThis.api = await import('/engine/magicDB.js');
+            await api.createDb(config);
+            await api.unlockProtectedDatabase(config.name, 'key', new Uint8Array(32).fill(41), initialize);
+            await api.ensureProtectedMigration(config.name);
+        }, { config, initialize });
+        await open(page, true);
+        await page.evaluate(async config => {
+            await api.addItem({ dbName: config.name, storeName: 'clients', record: { id: 1, name: 'r0', secret: 'Original' } });
+            await api.addItem({ dbName: config.name, storeName: 'workspaces', record: { id: 2, name: 'g0' } });
+        }, config);
+        const peer = await context.newPage();
+        try {
+            await peer.goto(page.url());
+            await open(peer, false);
+            const apply = (tab, revision, generation, replacement) => tab.evaluate(
+                ({ config, revision, generation, replacement }) => api.conditionalProtectedMutation(config.name, 'clients', 'workspaces', {
+                    record: { id: 1 }, revision: { member: 'name', expected: revision },
+                    generation: { record: { id: 2 }, member: 'name', expected: generation }, replacement
+                }), { config, revision, generation, replacement });
+            const replacement = { id: 1, name: 'r1', secret: 'Replacement' };
+            const outcomes = await Promise.all([
+                apply(page, 'r0', 'g0', replacement), apply(peer, 'r0', 'g0', replacement)
+            ]);
+            assert.deepEqual(outcomes.sort(), [false, true]);
+            await peer.evaluate(config => api.putItem({ dbName: config.name, storeName: 'workspaces',
+                record: { id: 2, name: 'g1' } }), config);
+            assert.equal(await apply(page, 'r1', 'g0', null), false);
+            assert.deepEqual(await page.evaluate(config => api.findItem(config.name, 'clients', 1), config), replacement);
+            assert.equal(await apply(page, 'r0', 'g1', null), false);
+            assert.equal(await apply(page, 'r1', 'g1', null), true);
+            assert.equal(await page.evaluate(config => api.findItem(config.name, 'clients', 1), config), undefined);
+        } finally { await peer.close(); }
+    });
+
     test('public rotation API resumes after release and unlocks with the new key only', async ({ page }) => {
         const physical = '__magic_protected__:public-rotation';
         const target = model();

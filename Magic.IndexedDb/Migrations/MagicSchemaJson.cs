@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Magic.IndexedDb.Protocol;
 
 namespace Magic.IndexedDb.Migrations;
@@ -15,7 +16,9 @@ public static class MagicSchemaJson
         WriteIndented = false
     };
 
-    public static JsonElement ToElement<T>(T value) => JsonSerializer.SerializeToElement(value, CreateSerializerOptions());
+    public static JsonElement ToElement<T>(T value) => value is MagicSchemaDocument schema
+        ? JsonSerializer.SerializeToElement(schema, SchemaJsonContext.Default.MagicSchemaDocument)
+        : JsonSerializer.SerializeToElement(value, CreateSerializerOptions());
 
     public static string Serialize<T>(T value) => Canonicalize(ToElement(value));
 
@@ -32,3 +35,9 @@ public static class MagicSchemaJson
         }
     }
 }
+
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(MagicSchemaDocument))]
+[JsonSerializable(typeof(string[]))]
+internal partial class SchemaJsonContext : JsonSerializerContext;

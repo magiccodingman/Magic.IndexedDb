@@ -119,3 +119,18 @@ responsiveness. Larger batches can reduce transaction overhead but increase
 preparation memory and retry work. Rotation and schema migration serialize on the
 physical vault. Complete rotation from the admitting deployment before applying a newer manifest or managed schema.
 See the [architecture contract](../architecture/adr-managed-key-rotation.md).
+
+
+## Conditional protected writes
+
+Use `ReplaceProtectedIfCurrentAsync` or `DeleteProtectedIfCurrentAsync` on an
+unlocked managed table. Supply the expected row and workspace records with
+selectors for their persisted revision and generation properties. The selectors
+must name public top-level members stored as strings or safe integers. Both
+tables must belong to the same managed database context.
+
+The operation checks both rows and applies the mutation in one IndexedDB
+transaction. It returns `Conflict` if either row is missing or either value
+differs. Replacements preserve the primary key. Applications must advance the
+revision on each write and update the workspace generation through the same
+database. A conflict leaves the current record intact.

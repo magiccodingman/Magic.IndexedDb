@@ -105,6 +105,22 @@
         var table = await database.Query<RotationRow>();
         foreach (var id in new[] { 1, 2, 3 })
             await table.AddAsync(new RotationRow { Id = id, Secret = "Document " + id });
+        var expected = new RotationRow { Id = 1 };
+        var workspace = new RotationRow { Id = 2 };
+        var next = new RotationRow { Id = 1, Revision = 1, Secret = "Document 1" };
+        Require(await table.ReplaceProtectedIfCurrentAsync(expected, next, row => row.Revision,
+            table, workspace, row => row.Generation) == MagicConditionalMutationResult.Applied, "The matching mutation failed.");
+        Require(await table.DeleteProtectedIfCurrentAsync(expected, row => row.Revision,
+            table, workspace, row => row.Generation) == MagicConditionalMutationResult.Conflict, "A stale revision deleted a record.");
+        workspace.Generation = 1;
+        await table.AddAsync(new RotationRow { Id = 4, Generation = 1, Secret = "Temporary document" });
+        workspace.Id = 4;
+        Require(await table.DeleteProtectedIfCurrentAsync(next, row => row.Revision, table,
+            new RotationRow { Id = 4 }, row => row.Generation) == MagicConditionalMutationResult.Conflict, "A stale generation deleted a record.");
+        Require(await table.DeleteProtectedIfCurrentAsync(workspace, row => row.Revision, table,
+            workspace, row => row.Generation) == MagicConditionalMutationResult.Applied, "The matching delete failed.");
+        Require((await table.ToListAsync()).Any(row => row.Id == 1 && row.Revision == 1 && row.Secret == "Document 1"),
+            "A conflict changed the protected record.");
         var ready = await context.KeyRotation.GetKeyRotationStatusAsync(records);
         Require(ready.Phase == MagicKeyRotationPhase.NotStarted && ready.ReadsAllowed && ready.WritesAllowed &&
             !ready.RetirementReady, "A ready vault reported incorrect availability before its first rotation.");

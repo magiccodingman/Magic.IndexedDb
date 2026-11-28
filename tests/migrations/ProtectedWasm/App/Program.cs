@@ -1,3 +1,4 @@
+using Microsoft.JSInterop;
 using Magic.IndexedDb;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 
@@ -10,7 +11,7 @@ builder.Services.AddMagicIndexedDbEncryption<FixtureKeys>(_ =>
         { PhysicalDatabaseName = ProtectedRepository.PhysicalName }]);
 await builder.Build().RunAsync();
 
-public sealed class FixtureKeys : IMagicEncryptionRotationKeyProvider
+public sealed class FixtureKeys(IJSRuntime runtime) : IMagicEncryptionRotationKeyProvider
 {
     public static byte? KeyByte { get; set; } = 55;
     public static bool RotationSourceAvailable { get; set; } = true;
@@ -18,6 +19,7 @@ public sealed class FixtureKeys : IMagicEncryptionRotationKeyProvider
     public static int Requests { get; private set; }
     public ValueTask<MagicEncryptionKey?> GetKeyAsync(MagicEncryptionKeyRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(runtime);
         Requests++;
         if (request.DatabaseName == ProtectedRepository.RotationRecords.DatabaseName)
         {

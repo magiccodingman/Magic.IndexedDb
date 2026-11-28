@@ -1,4 +1,5 @@
-﻿using Magic.IndexedDb.Factories;
+﻿using System.Diagnostics.CodeAnalysis;
+using Magic.IndexedDb.Factories;
 using Magic.IndexedDb.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -63,7 +64,7 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>Registers account-bound encryption policies and an application-supplied key provider.</summary>
-    public static IServiceCollection AddMagicIndexedDbEncryption<TProvider>(this IServiceCollection services,
+    public static IServiceCollection AddMagicIndexedDbEncryption<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TProvider>(this IServiceCollection services,
         Func<IServiceProvider, IEnumerable<MagicEncryptionOptions>> configure)
         where TProvider : class, IMagicEncryptionKeyProvider
     {
@@ -81,7 +82,7 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>Registers an application key provider for runtime account activation.</summary>
-    public static IServiceCollection AddMagicIndexedDbEncryption<TProvider>(this IServiceCollection services)
+    public static IServiceCollection AddMagicIndexedDbEncryption<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TProvider>(this IServiceCollection services)
         where TProvider : class, IMagicEncryptionKeyProvider =>
         services.AddMagicIndexedDbEncryption<TProvider>(_ => []);
 

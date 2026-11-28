@@ -247,7 +247,13 @@ enum Magic.IndexedDb.LinqTranslation.Models.FilterNodeType : System.IComparable,
   field System.Int32 value__
   field static Magic.IndexedDb.LinqTranslation.Models.FilterNodeType Condition = 1
   field static Magic.IndexedDb.LinqTranslation.Models.FilterNodeType Logical = 0
+enum Magic.IndexedDb.MagicConditionalMutationResult : System.IComparable, System.IConvertible, System.IFormattable, System.ISpanFormattable
+  field System.Int32 value__
+  field static Magic.IndexedDb.MagicConditionalMutationResult Applied = 1
+  field static Magic.IndexedDb.MagicConditionalMutationResult Conflict = 0
 static class Magic.IndexedDb.MagicEncryptedQueryExtensions
+  method static System.Threading.Tasks.Task<Magic.IndexedDb.MagicConditionalMutationResult> DeleteProtectedIfCurrentAsync<T, TWorkspace, TRevision, TGeneration>(Magic.IndexedDb.IMagicQuery<T> source, T expectedRecord, System.Linq.Expressions.Expression<System.Func<T, TRevision>> revision, Magic.IndexedDb.IMagicQuery<TWorkspace> workspace, TWorkspace expectedWorkspace, System.Linq.Expressions.Expression<System.Func<TWorkspace, TGeneration>> generation, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<Magic.IndexedDb.MagicConditionalMutationResult> ReplaceProtectedIfCurrentAsync<T, TWorkspace, TRevision, TGeneration>(Magic.IndexedDb.IMagicQuery<T> source, T expectedRecord, T replacement, System.Linq.Expressions.Expression<System.Func<T, TRevision>> revision, Magic.IndexedDb.IMagicQuery<TWorkspace> workspace, TWorkspace expectedWorkspace, System.Linq.Expressions.Expression<System.Func<TWorkspace, TGeneration>> generation, System.Threading.CancellationToken cancellationToken = null)
   method static System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TValue>> SelectPublicAsync<T, TValue>(Magic.IndexedDb.IMagicExecute<T> source, System.Linq.Expressions.Expression<System.Func<T, TValue>> member, System.Threading.CancellationToken cancellationToken = null)
   method static System.Threading.Tasks.Task<System.Int32> PatchPublicAsync<T, TValue>(Magic.IndexedDb.IMagicQuery<T> source, T recordWithKey, System.Linq.Expressions.Expression<System.Func<T, TValue>> member, System.Threading.CancellationToken cancellationToken = null)
 class Magic.IndexedDb.MagicEncryptionContext : System.IEquatable<Magic.IndexedDb.MagicEncryptionContext>

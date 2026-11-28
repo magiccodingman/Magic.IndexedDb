@@ -35,5 +35,7 @@ public sealed class RotationRow : MagicTableTool<RotationRow>, IMagicTable<Prote
     public IMagicCompoundKey GetKeys() => CreatePrimaryKey(row => row.Id, false);
     public List<IMagicCompoundIndex> GetCompoundIndexes() => [];
     public int Id { get; set; }
+    public int Revision { get; set; }
+    public int Generation { get; set; }
     [MagicEncrypt] public string Secret { get; set; } = "";
 }
