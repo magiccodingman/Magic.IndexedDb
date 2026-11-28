@@ -112,8 +112,9 @@
             table, workspace, row => row.Generation) == MagicConditionalMutationResult.Applied, "The matching mutation failed.");
         Require(await table.DeleteProtectedIfCurrentAsync(expected, row => row.Revision,
             table, workspace, row => row.Generation) == MagicConditionalMutationResult.Conflict, "A stale revision deleted a record.");
+        Require(await table.InsertProtectedIfCurrentAsync(new RotationRow { Id = 4, Generation = 1, Secret = "Temporary document" },
+            table, workspace, row => row.Generation) == MagicConditionalMutationResult.Applied, "The guarded insert failed.");
         workspace.Generation = 1;
-        await table.AddAsync(new RotationRow { Id = 4, Generation = 1, Secret = "Temporary document" });
         workspace.Id = 4;
         Require(await table.DeleteProtectedIfCurrentAsync(next, row => row.Revision, table,
             new RotationRow { Id = 4 }, row => row.Generation) == MagicConditionalMutationResult.Conflict, "A stale generation deleted a record.");
@@ -121,6 +122,12 @@
             workspace, row => row.Generation) == MagicConditionalMutationResult.Applied, "The matching delete failed.");
         Require((await table.ToListAsync()).Any(row => row.Id == 1 && row.Revision == 1 && row.Secret == "Document 1"),
             "A conflict changed the protected record.");
+        var oldFence = new RotationRow { Id = 2 };
+        var advancedFence = new RotationRow { Id = 2, Revision = 1, Generation = 1, Secret = "Document 2" };
+        Require(await table.ReplaceProtectedIfCurrentAsync(oldFence, advancedFence, row => row.Revision,
+            table, oldFence, row => row.Generation) == MagicConditionalMutationResult.Applied, "The fence could not advance itself.");
+        Require(await table.InsertProtectedIfCurrentAsync(new RotationRow { Id = 4, Secret = "Stale generation" },
+            table, oldFence, row => row.Generation) == MagicConditionalMutationResult.Conflict, "The retired generation inserted a record.");
         var ready = await context.KeyRotation.GetKeyRotationStatusAsync(records);
         Require(ready.Phase == MagicKeyRotationPhase.NotStarted && ready.ReadsAllowed && ready.WritesAllowed &&
             !ready.RetirementReady, "A ready vault reported incorrect availability before its first rotation.");

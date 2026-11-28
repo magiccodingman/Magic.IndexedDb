@@ -1,3 +1,4 @@
+import { sameStoredValue } from "./rotationBatch.js";
 import { assertEncryptionKey, importEncryptionKey } from "./encryptionEnvelope.js";
 import { assertPersistedEncryptionPolicy, verifyEncryptionPolicy, encryptionMetadataKey, encryptionMetadataStore } from "./encryptionPolicy.js";
 import { openRecord, sealRecord, encryptedRecordMember } from "./encryptionRecord.js";
@@ -330,30 +331,41 @@ class ProtectedTable {
     conditionalMutation(record, revision, workspace, generation, replacement) {
         if (!this.managed || !workspace.managed || workspace.db !== this.db)
             throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: Conditions require one protected managed database.");
-        const check = (table, condition) => {
+        const check = condition => {
             validateMember(condition.member);
-            table.requirePublic([condition.member]);
             if (typeof condition.expected !== "string" && !Number.isSafeInteger(condition.expected))
-                throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: Expected values must be strings or safe integers.");
+                throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: Expected tokens must be strings or safe integers.");
         };
-        check(this, revision);
-        check(workspace, generation);
+        if (revision !== null) check(revision);
+        check(generation);
+        if (revision === null && replacement === null)
+            throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: Insert requires a record.");
 
-        return this.access(async ({ key, keyId }, assertCurrent) => {
+        return this.access(async (keys, assertCurrent) => {
             await this.assertPolicy(true);
             const primaryKey = this.key(record);
             const generationKey = workspace.key(generation.record);
             if (replacement !== null && indexedDB.cmp(primaryKey, this.key(replacement)) !== 0)
                 throw new Error("MAGIC_CONDITIONAL_WRITE_UNSUPPORTED: A replacement must retain the primary key.");
-            const sealed = replacement === null ? null : await sealRecord(replacement, this.policy, key, keyId, this.context(primaryKey));
+
+            const sameRow = workspace.table.name === this.table.name && indexedDB.cmp(primaryKey, generationKey) === 0;
+            const current = await this.table.get(primaryKey);
+            const workspaceRecord = sameRow ? current : await workspace.table.get(generationKey);
+            const matches = (row, condition) => row && Object.hasOwn(row, condition.member) &&
+                row[condition.member] === condition.expected;
+            if (!workspaceRecord || (revision === null ? current !== undefined : current === undefined)) return false;
+            const opened = current === undefined ? undefined : await this.openStoredRecord(current, primaryKey, keys);
+            const fence = sameRow ? opened : await workspace.openStoredRecord(workspaceRecord, generationKey, keys);
+            if (!matches(fence, generation) || (revision !== null && !matches(opened, revision))) return false;
+            assertCurrent();
+            const sealed = replacement === null ? null : await sealRecord(replacement, this.policy, keys.key, keys.keyId,
+                this.context(primaryKey));
 
             return this.fencedWrite(async table => {
-                const current = await table.get(primaryKey);
-                const workspaceRecord = await workspace.table.get(generationKey);
-                const matches = (row, condition) => row && Object.hasOwn(row, condition.member) &&
-                    row[condition.member] === condition.expected;
-                if (!matches(current, revision) || !matches(workspaceRecord, generation)) return false;
+                if (!sameStoredValue(current, await table.get(primaryKey)) ||
+                    (!sameRow && !sameStoredValue(workspaceRecord, await workspace.table.get(generationKey)))) return false;
                 if (sealed === null) await table.delete(primaryKey);
+                else if (revision === null) await table.add(sealed);
                 else await table.put(sealed);
                 return true;
             }, assertCurrent, workspace.table.name === this.table.name ? [] : [workspace.table]);

@@ -75,8 +75,16 @@ public static class MagicEncryptedQueryExtensions
         CancellationToken cancellationToken = default) where T : class where TWorkspace : class =>
         MutateIfCurrent(source, expectedRecord, null, revision, workspace, expectedWorkspace, generation, cancellationToken);
 
+    /// <summary>Inserts a protected record with an unused key if the workspace generation still matches.</summary>
+    public static Task<MagicConditionalMutationResult> InsertProtectedIfCurrentAsync<T, TWorkspace, TGeneration>(
+        this IMagicQuery<T> source, T record, IMagicQuery<TWorkspace> workspace, TWorkspace expectedWorkspace,
+        Expression<Func<TWorkspace, TGeneration>> generation, CancellationToken cancellationToken = default)
+        where T : class where TWorkspace : class =>
+        MutateIfCurrent<T, TWorkspace, object, TGeneration>(source, record, record, null, workspace, expectedWorkspace,
+            generation, cancellationToken);
+
     private static async Task<MagicConditionalMutationResult> MutateIfCurrent<T, TWorkspace, TRevision, TGeneration>(
-        IMagicQuery<T> source, T expectedRecord, T? replacement, Expression<Func<T, TRevision>> revision,
+        IMagicQuery<T> source, T expectedRecord, T? replacement, Expression<Func<T, TRevision>>? revision,
         IMagicQuery<TWorkspace> workspace, TWorkspace expectedWorkspace, Expression<Func<TWorkspace, TGeneration>> generation,
         CancellationToken token) where T : class where TWorkspace : class
     {
@@ -88,11 +96,11 @@ public static class MagicEncryptedQueryExtensions
         var settings = query.Manager.Settings(query.DatabaseName);
         var record = MagicSerializationHelper.SerializeObjectToJsonElement(expectedRecord, settings);
         var workspaceRecord = MagicSerializationHelper.SerializeObjectToJsonElement(expectedWorkspace, settings);
-        var revisionName = MappedMember(revision).JsPropertyName;
+        var revisionName = revision is null ? null : MappedMember(revision).JsPropertyName;
         var generationName = MappedMember(generation).JsPropertyName;
         var next = replacement is null ? (JsonElement?)null : MagicSerializationHelper.SerializeObjectToJsonElement(replacement, settings);
         var applied = await query.Manager.ConditionalProtectedMutationAsync(query, workspaceQuery.SchemaName,
-            KeyOf(expectedRecord, record), revisionName, record.GetProperty(revisionName),
+            KeyOf(expectedRecord, record), revisionName, revisionName is null ? null : record.GetProperty(revisionName),
             KeyOf(expectedWorkspace, workspaceRecord), generationName, workspaceRecord.GetProperty(generationName), next, token);
         return applied ? MagicConditionalMutationResult.Applied : MagicConditionalMutationResult.Conflict;
     }

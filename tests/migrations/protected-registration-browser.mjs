@@ -112,7 +112,37 @@ export function registerProtectedRegistrationTests({ test, schema, bundle, appen
             assert.equal(await apply(page, 'r1', 'g0', null), false);
             assert.deepEqual(await page.evaluate(config => api.findItem(config.name, 'clients', 1), config), replacement);
             assert.equal(await apply(page, 'r0', 'g1', null), false);
-            assert.equal(await apply(page, 'r1', 'g1', null), true);
+
+            const race = async (id, expectedRevision, generation, nextGeneration) => {
+                await page.evaluate(async ({ config, id, expectedRevision, generation }) => {
+                    const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+                    crypto.subtle.encrypt = async (...args) => {
+                        const ciphertext = await encrypt(...args);
+                        await new Promise(resolve => { globalThis.unblockPreparation = resolve; });
+                        return ciphertext;
+                    };
+                    globalThis.pendingConditional = api.conditionalProtectedMutation(config.name, 'clients', 'workspaces', {
+                        record: { id }, revision: expectedRevision === null ? null : { member: 'name', expected: expectedRevision },
+                        generation: { record: { id: 2 }, member: 'name', expected: generation },
+                        replacement: { id, name: 'uncommitted', secret: 'Must not replace' }
+                    });
+                }, { config, id, expectedRevision, generation });
+                await page.waitForFunction(() => typeof globalThis.unblockPreparation === 'function');
+                await peer.evaluate(({ config, nextGeneration }) => api.putItem({ dbName: config.name, storeName: 'workspaces',
+                    record: { id: 2, name: nextGeneration } }), { config, nextGeneration });
+                const applied = await page.evaluate(() => {
+                    delete crypto.subtle.encrypt;
+                    globalThis.unblockPreparation();
+                    delete globalThis.unblockPreparation;
+                    return globalThis.pendingConditional;
+                });
+                assert.equal(applied, false);
+            };
+            await race(1, 'r1', 'g1', 'g2');
+            await race(3, null, 'g2', 'g3');
+            assert.deepEqual(await page.evaluate(config => api.findItem(config.name, 'clients', 1), config), replacement);
+            assert.equal(await page.evaluate(config => api.findItem(config.name, 'clients', 3), config), undefined);
+            assert.equal(await apply(page, 'r1', 'g3', null), true);
             assert.equal(await page.evaluate(config => api.findItem(config.name, 'clients', 1), config), undefined);
         } finally { await peer.close(); }
     });

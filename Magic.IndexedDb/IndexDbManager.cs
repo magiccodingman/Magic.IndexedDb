@@ -357,17 +357,17 @@ internal class IndexedDbManager
             new TypedArgument<JsonElement>(changes));
 
     internal Task<bool> ConditionalProtectedMutationAsync<T>(MagicQuery<T> query, string workspaceStore,
-        System.Text.Json.Nodes.JsonObject record, string revision, JsonElement expectedRevision,
+        System.Text.Json.Nodes.JsonObject record, string? revision, JsonElement? expectedRevision,
         System.Text.Json.Nodes.JsonObject workspace, string generation, JsonElement expectedGeneration,
         JsonElement? replacement, CancellationToken token) where T : class
     {
         using var payload = JsonDocument.Parse(new System.Text.Json.Nodes.JsonObject
         {
             ["record"] = record,
-            ["revision"] = new System.Text.Json.Nodes.JsonObject
+            ["revision"] = expectedRevision is null ? null : new System.Text.Json.Nodes.JsonObject
             {
                 ["member"] = revision,
-                ["expected"] = System.Text.Json.Nodes.JsonNode.Parse(expectedRevision.GetRawText())
+                ["expected"] = System.Text.Json.Nodes.JsonNode.Parse(expectedRevision.Value.GetRawText())
             },
             ["generation"] = new System.Text.Json.Nodes.JsonObject
             {

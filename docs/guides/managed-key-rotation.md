@@ -123,14 +123,16 @@ See the [architecture contract](../architecture/adr-managed-key-rotation.md).
 
 ## Conditional protected writes
 
-Use `ReplaceProtectedIfCurrentAsync` or `DeleteProtectedIfCurrentAsync` on an
-unlocked managed table. Supply the expected row and workspace records with
-selectors for their persisted revision and generation properties. The selectors
-must name public top-level members stored as strings or safe integers. Both
-tables must belong to the same managed database context.
+Use `ReplaceProtectedIfCurrentAsync`, `DeleteProtectedIfCurrentAsync`, or
+`InsertProtectedIfCurrentAsync` on an unlocked managed table. Select a direct
+persisted revision or commit token and a workspace generation token. Both
+tables must belong to the same managed database context. Tokens may be
+encrypted and must serialize as strings or safe integers.
 
-The operation checks both rows and applies the mutation in one IndexedDB
-transaction. It returns `Conflict` if either row is missing or either value
-differs. Replacements preserve the primary key. Applications must advance the
-revision on each write and update the workspace generation through the same
-database. A conflict leaves the current record intact.
+Magic authenticates the relevant records, then compares the exact stored
+snapshots in the same transaction that applies the mutation. It returns
+`Conflict` for a missing fence, a token mismatch, a concurrent change, or a
+guarded insert with an occupied key. Replacements preserve the primary key.
+The workspace row can guard its own replacement. Applications can write a
+fresh generation token through that guarded replacement to retire the previous
+generation.
