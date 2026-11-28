@@ -57,8 +57,12 @@ internal sealed class MagicMigrationSubscription : IAsyncDisposable
         }
     }
 
-    [JSInvokable]
-    public async Task OnMigrationEvent(MagicMigrationEvent notification)
+    [JSInvokable("OnMigrationEvent")]
+    public Task ReceiveMigrationEvent(JsonElement payload) =>
+        OnMigrationEvent(payload.Deserialize(MigrationEventJsonContext.Default.MagicMigrationEvent)
+            ?? throw new JsonException("A migration event is required."));
+
+    internal async Task OnMigrationEvent(MagicMigrationEvent notification)
     {
         var observer = Volatile.Read(ref _observer);
         if (observer is null) return;
@@ -78,3 +82,8 @@ internal sealed class MagicMigrationSubscription : IAsyncDisposable
         finally { reference.Dispose(); }
     }
 }
+
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(MagicMigrationEvent))]
+internal partial class MigrationEventJsonContext : JsonSerializerContext;
