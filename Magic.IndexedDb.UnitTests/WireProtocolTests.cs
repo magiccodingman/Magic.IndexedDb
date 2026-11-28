@@ -27,7 +27,7 @@ public sealed class WireProtocolTests
         };
 
         await using var stream = new MemoryStream();
-        await MagicSerializationHelper.SerializeJsPackageToStreamAsync(stream, package, settings);
+        await MagicSerializationHelper.SerializeJsPackageToStreamAsync(stream, package);
         stream.Position = 0;
         using var document = await JsonDocument.ParseAsync(stream);
         var root = document.RootElement;
