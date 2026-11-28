@@ -136,3 +136,8 @@ guarded insert with an occupied key. Replacements preserve the primary key.
 The workspace row can guard its own replacement. Applications can write a
 fresh generation token through that guarded replacement to retire the previous
 generation.
+
+Full trimming still requires the app to preserve persisted model members used
+through reflection. Root the relevant model types in the application linker
+descriptor and mark infrastructure-only properties with `[MagicNotMapped]` so
+the exporter and runtime agree on the persisted schema.
