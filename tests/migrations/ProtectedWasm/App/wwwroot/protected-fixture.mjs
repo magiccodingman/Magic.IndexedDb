@@ -69,8 +69,8 @@ export async function assertFinalPlaintext() {
 export async function assertRotationCiphertext(name, expected) {
     const rows = await rawRows(name, 'rotation-records');
     if (rows.length !== expected.length || rows.some((row, index) => row.Id !== index + 1 ||
-        row.Secret?.keyId !== expected[index] || !(row.Secret.ciphertext instanceof ArrayBuffer) ||
-        row.Secret.ciphertext.byteLength === 0))
+        row.__magic_record?.keyId !== expected[index] || !(row.__magic_record.ciphertext instanceof ArrayBuffer) ||
+        row.__magic_record.ciphertext.byteLength === 0 || Object.hasOwn(row, "Revision") || Object.hasOwn(row, "Generation")))
         throw new Error('Persisted ciphertext does not match the expected rotation generations.');
 }
 

@@ -1762,7 +1762,7 @@ test('rotation checkpoints preserve compound keys across protected and public st
 registerProtectedEngineTests({ test, schema, bundle, copy, inspect, read, loadPage, recoveryPackage,
     appendRevision, jsonAsset, assets, cliFixture, getOrigin: () => origin });
 registerProtectedRegistrationTests({ test, schema, bundle, jsonAsset, copy, registrationStore, inspect, appendRevision, assets });
-const expectedScenarioCount = (cliFixture ? 142 : 138) + (process.env.MAGIC_ROTATION_BENCHMARK === "1" ? 9 : 0);
+const expectedScenarioCount = (cliFixture ? 143 : 139) + (process.env.MAGIC_ROTATION_BENCHMARK === "1" ? 9 : 0);
 assert.equal(tests.length, expectedScenarioCount, 'Unexpected migration scenario count.');
 
 if (listOnly) {

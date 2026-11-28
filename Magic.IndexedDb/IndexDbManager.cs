@@ -356,6 +356,33 @@ internal class IndexedDbManager
             new TypedArgument<JsonElement>(JsonSerializer.SerializeToElement(key)),
             new TypedArgument<JsonElement>(changes));
 
+    internal Task<bool> ConditionalProtectedMutationAsync<T>(MagicQuery<T> query, string workspaceStore,
+        System.Text.Json.Nodes.JsonObject record, string? revision, JsonElement? expectedRevision,
+        System.Text.Json.Nodes.JsonObject workspace, string generation, JsonElement expectedGeneration,
+        JsonElement? replacement, CancellationToken token) where T : class
+    {
+        using var payload = JsonDocument.Parse(new System.Text.Json.Nodes.JsonObject
+        {
+            ["record"] = record,
+            ["revision"] = expectedRevision is null ? null : new System.Text.Json.Nodes.JsonObject
+            {
+                ["member"] = revision,
+                ["expected"] = System.Text.Json.Nodes.JsonNode.Parse(expectedRevision.Value.GetRawText())
+            },
+            ["generation"] = new System.Text.Json.Nodes.JsonObject
+            {
+                ["member"] = generation,
+                ["expected"] = System.Text.Json.Nodes.JsonNode.Parse(expectedGeneration.GetRawText()),
+                ["record"] = workspace
+            },
+            ["replacement"] = replacement.HasValue
+                ? System.Text.Json.Nodes.JsonNode.Parse(replacement.Value.GetRawText()) : null
+        }.ToJsonString());
+        return Invocation(query.DatabaseName).CallJsAsync<bool>(Cache.MagicDbJsImportPath, "conditionalProtectedMutation",
+            token, new TypedArgument<string>(Route(query.DatabaseName)), new TypedArgument<string>(query.SchemaName),
+            new TypedArgument<string>(workspaceStore), new TypedArgument<JsonElement>(payload.RootElement.Clone()));
+    }
+
     internal async Task DeleteAsync<T>(T item, string dbName, CancellationToken cancellationToken = default) where T : class
     {
         string schemaName = SchemaHelper.GetTableName<T>();

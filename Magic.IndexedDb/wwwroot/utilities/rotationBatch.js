@@ -16,7 +16,7 @@ function bytes(value) {
     return null;
 }
 
-function sameStoredValue(left, right, ancestors = new WeakSet()) {
+export function sameStoredValue(left, right, ancestors = new WeakSet()) {
     if (Object.is(left, right)) return true;
     if (!left || !right || typeof left !== "object" || typeof right !== "object" ||
         Object.getPrototypeOf(left) !== Object.getPrototypeOf(right)) return false;

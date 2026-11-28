@@ -16,5 +16,5 @@ for mode in "$@"; do
     if [[ "$mode" == aot ]]; then aot=true; fi
     dotnet publish "$app/App/App.csproj" -c Release -o "$output/published/$mode/protected" \
         --artifacts-path "$output/app-build/$mode/protected" \
-        -p:RunAOTCompilation="$aot" -p:PublishTrimmed=true
+        -p:RunAOTCompilation="$aot" -p:PublishTrimmed=true -p:TrimMode=full
 done

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Magic.IndexedDb.Helpers;
 using Magic.IndexedDb.SchemaAnnotations;
 
@@ -106,35 +107,43 @@ internal sealed class EncryptionConfiguration
                     "Configure whole-record encryption with an explicit public allowlist instead.");
             }
 
-            return new
+            return new JsonObject
             {
-                entry.Schema.TableName,
-                entry.Schema.PrimaryKeyAuto,
-                entry.Schema.ColumnNamesInCompoundKey,
-                entry.Schema.Indexes,
-                entry.Schema.UniqueIndexes,
-                entry.Schema.ColumnNamesInCompoundIndex,
-                EncryptedFields = protectedFields,
-                ExposedFields = exposedFields
+                ["tableName"] = entry.Schema.TableName,
+                ["primaryKeyAuto"] = entry.Schema.PrimaryKeyAuto,
+                ["columnNamesInCompoundKey"] = Strings(entry.Schema.ColumnNamesInCompoundKey),
+                ["indexes"] = Strings(entry.Schema.Indexes),
+                ["uniqueIndexes"] = Strings(entry.Schema.UniqueIndexes),
+                ["columnNamesInCompoundIndex"] = new JsonArray(entry.Schema.ColumnNamesInCompoundIndex.Select(Strings).ToArray()),
+                ["encryptedFields"] = Strings(protectedFields),
+                ["exposedFields"] = exposedFields is null ? null : Strings(exposedFields)
             };
         }).ToArray();
 
-        if (_recordPolicies.Keys.Any(table => !rows.Any(row => row.TableName == table)))
+        if (_recordPolicies.Keys.Any(table => !rows.Any(row => row["tableName"]!.GetValue<string>() == table)))
             throw new InvalidOperationException("A Magic record policy names an unregistered table.");
 
-        var payload = new Dictionary<string, object?>
+        var payload = new JsonObject
         {
             ["name"] = Route,
             ["version"] = 1,
-            ["storeSchemas"] = rows,
-            ["encryption"] = new { Account = Request.AccountScope, PhysicalName,
-                ExplicitPhysicalBinding = HasExplicitPhysicalBinding }
+            ["storeSchemas"] = new JsonArray(rows),
+            ["encryption"] = new JsonObject
+            {
+                ["account"] = Request.AccountScope,
+                ["physicalName"] = PhysicalName,
+                ["explicitPhysicalBinding"] = HasExplicitPhysicalBinding
+            }
         };
         if (_numericMode == MagicNumericStorageMode.Lossless)
         {
-            payload["numericStorage"] = NumericStorageConfiguration.Policy;
+            payload["numericStorage"] = new JsonObject { ["version"] = 1, ["mode"] = "lossless" };
             payload["numericLegacyName"] = _legacyPhysicalName;
         }
-        return JsonSerializer.SerializeToElement(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        using var document = JsonDocument.Parse(payload.ToJsonString());
+        return document.RootElement.Clone();
     }
+
+    private static JsonArray Strings(IEnumerable<string> values) =>
+        new(values.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray());
 }

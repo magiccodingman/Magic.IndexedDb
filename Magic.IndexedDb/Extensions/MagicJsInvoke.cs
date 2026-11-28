@@ -108,7 +108,7 @@ internal class MagicJsInvoke
         string instanceId = Guid.NewGuid().ToString();
 
         using var stream = new MemoryStream();
-        await MagicSerializationHelper.SerializeJsPackageToStreamAsync(stream, package, settings, token);
+        await MagicSerializationHelper.SerializeJsPackageToStreamAsync(stream, package, token);
 
         stream.Position = 0;
 
@@ -146,7 +146,7 @@ internal class MagicJsInvoke
         string instanceId = Guid.NewGuid().ToString();
 
         using var stream = new MemoryStream();
-        await MagicSerializationHelper.SerializeJsPackageToStreamAsync(stream, package, settings, token);
+        await MagicSerializationHelper.SerializeJsPackageToStreamAsync(stream, package, token);
 
         stream.Position = 0;
         using var streamRef = new DotNetStreamReference(stream);

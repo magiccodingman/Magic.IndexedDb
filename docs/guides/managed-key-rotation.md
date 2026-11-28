@@ -119,3 +119,25 @@ responsiveness. Larger batches can reduce transaction overhead but increase
 preparation memory and retry work. Rotation and schema migration serialize on the
 physical vault. Complete rotation from the admitting deployment before applying a newer manifest or managed schema.
 See the [architecture contract](../architecture/adr-managed-key-rotation.md).
+
+
+## Conditional protected writes
+
+Use `ReplaceProtectedIfCurrentAsync`, `DeleteProtectedIfCurrentAsync`, or
+`InsertProtectedIfCurrentAsync` on an unlocked managed table. Select a direct
+persisted revision or commit token and a workspace generation token. Both
+tables must belong to the same managed database context. Tokens may be
+encrypted and must serialize as strings or safe integers.
+
+Magic authenticates the relevant records, then compares the exact stored
+snapshots in the same transaction that applies the mutation. It returns
+`Conflict` for a missing fence, a token mismatch, a concurrent change, or a
+guarded insert with an occupied key. Replacements preserve the primary key.
+The workspace row can guard its own replacement. Applications can write a
+fresh generation token through that guarded replacement to retire the previous
+generation.
+
+Full trimming still requires the app to preserve persisted model members used
+through reflection. Root the relevant model types in the application linker
+descriptor and mark infrastructure-only properties with `[MagicNotMapped]` so
+the exporter and runtime agree on the persisted schema.

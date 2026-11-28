@@ -1,6 +1,9 @@
 ﻿using Magic.IndexedDb.Interfaces;
 using Magic.IndexedDb.Models;
 using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
+using Magic.IndexedDb.LinqTranslation.Models;
+using Magic.IndexedDb.Models.UniversalOperations;
 
 namespace Magic.IndexedDb.Helpers;
 
@@ -28,6 +31,12 @@ public static class MagicSerializationHelper
         return objs.Select(arg => arg.SerializeToJsonString(settings)).ToArray();
     }
 
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(StoreRecord<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(UpdateRecord<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(PrimaryKeys))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(FilterNode))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(FilterCondition))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(StoredMagicQuery))]
     public static JsonElement SerializeObjectToJsonElement<T>(T value, MagicJsonSerializationSettings? settings = null)
     {
         if (settings == null)
@@ -70,16 +79,26 @@ public static class MagicSerializationHelper
     internal static async Task SerializeJsPackageToStreamAsync(
         Stream stream,
         MagicJsPackage package,
-        MagicJsonSerializationSettings settings,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(package);
 
-        // The envelope is infrastructure JSON. Its JsonElement parameters have already
-        // been serialized with Magic's contracts and must be written as raw JSON values.
-        var options = new JsonSerializerOptions(settings.Options);
-        await JsonSerializer.SerializeAsync(stream, package, options, cancellationToken);
+        // The wire envelope has stable names under both the standard and
+        // fully linked runtimes. Arguments already carry their own contracts.
+        using var writer = new Utf8JsonWriter(stream);
+        writer.WriteStartObject();
+        writer.WriteNumber("protocolVersion", package.ProtocolVersion);
+        writer.WriteBoolean("yieldResults", package.YieldResults);
+        writer.WriteString("modulePath", package.ModulePath);
+        writer.WriteString("methodName", package.MethodName);
+        writer.WriteBoolean("isVoid", package.IsVoid);
+        writer.WriteStartArray("parameters");
+        foreach (var parameter in package.Parameters)
+            parameter.WriteTo(writer);
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+        await writer.FlushAsync(cancellationToken);
         await stream.FlushAsync(cancellationToken);
     }
 

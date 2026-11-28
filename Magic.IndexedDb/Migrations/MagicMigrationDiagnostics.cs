@@ -57,8 +57,37 @@ internal sealed class MagicMigrationSubscription : IAsyncDisposable
         }
     }
 
-    [JSInvokable]
-    public async Task OnMigrationEvent(MagicMigrationEvent notification)
+    [JSInvokable("OnMigrationEvent")]
+    public Task ReceiveMigrationEvent(JsonElement payload)
+    {
+        var metadata = payload.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.Clone(), StringComparer.OrdinalIgnoreCase);
+        JsonElement Take(string name) => metadata.Remove(name, out var value) ? value : default;
+        string? Text(string name) => Take(name) is { ValueKind: JsonValueKind.String } value ? value.GetString() : null;
+        int? Int(string name) => Take(name) is { ValueKind: JsonValueKind.Number } value ? value.GetInt32() : null;
+        long? Long(string name) => Take(name) is { ValueKind: JsonValueKind.Number } value ? value.GetInt64() : null;
+
+        return OnMigrationEvent(new MagicMigrationEvent
+        {
+            ProtocolVersion = Int("protocolVersion") ?? 0,
+            Name = Text("name"),
+            SchemaId = Text("schemaId"),
+            Phase = Text("phase") ?? "",
+            Code = Text("code"),
+            Retryable = Take("retryable").ValueKind == JsonValueKind.True,
+            Revision = Int("revision"),
+            TargetRevision = Int("targetRevision"),
+            MigrationId = Text("migrationId"),
+            RecoveryId = Text("recoveryId"),
+            RecoveryPhase = Text("recoveryPhase"),
+            VerifiedRecords = Long("verifiedRecords"),
+            ProcessedRecords = Long("processedRecords"),
+            DocumentationUrl = Text("documentationUrl"),
+            Details = metadata.Count == 0 ? null : metadata
+        });
+    }
+
+    internal async Task OnMigrationEvent(MagicMigrationEvent notification)
     {
         var observer = Volatile.Read(ref _observer);
         if (observer is null) return;
